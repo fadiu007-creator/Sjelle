@@ -1,6 +1,6 @@
 # Copy to .dev.vars locally; never commit actual values.
 APP_ENV=development
-ALLOWED_ORIGIN=http://localhost:8081
+ALLOWED_ORIGIN=http://localhost:8787
 # Use the existing zikos project; keep secrets in local .dev.vars / Cloudflare secret bindings.
 SUPABASE_URL=https://saavqlbwffrwxingbnri.supabase.co
 # Never commit a real service-role key.
