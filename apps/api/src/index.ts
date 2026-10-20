@@ -102,6 +102,41 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+type PolygonGeoJSON = { type: "Polygon"; coordinates: number[][][] };
+
+function isPolygonGeoJSON(value: unknown): value is PolygonGeoJSON {
+  if (!isRecord(value) || value.type !== "Polygon" || !Array.isArray(value.coordinates) || !value.coordinates.length) return false;
+  for (const ring of value.coordinates) {
+    if (!Array.isArray(ring) || ring.length < 4 || ring.length > 500) return false;
+    for (const point of ring) {
+      if (!Array.isArray(point) || point.length < 2 || typeof point[0] !== "number" || typeof point[1] !== "number"
+        || !Number.isFinite(point[0]) || !Number.isFinite(point[1])
+        || point[0] < 19.7 || point[0] > 22.0 || point[1] < 41.7 || point[1] > 43.4) return false;
+    }
+    const first = ring[0] as number[], last = ring[ring.length - 1] as number[];
+    if (Math.abs(first[0]-last[0]) > 1e-6 || Math.abs(first[1]-last[1]) > 1e-6) return false;
+  }
+  return true;
+}
+
+function pointInRing(lat: number, lon: number, ring: number[][]): boolean {
+  let inside = false;
+  for (let i=0,j=ring.length-1;i<ring.length;j=i++) {
+    const [xi,yi] = ring[i], [xj,yj] = ring[j];
+    const intersects = ((yi>lat)!==(yj>lat)) && (lon < ((xj-xi)*(lat-yi)/(yj-yi))+xi);
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+function pointInServiceArea(lat: number, lon: number, polygon: unknown): boolean {
+  if (!isPolygonGeoJSON(polygon)) return false;
+  if (!pointInRing(lat,lon,polygon.coordinates[0])) return false;
+  for (const hole of polygon.coordinates.slice(1)) if (pointInRing(lat,lon,hole)) return false;
+  return true;
+}
+
+
 type UploadedFile = { arrayBuffer(): Promise<ArrayBuffer>; size: number; type: string; name: string };
 
 function isUploadedFile(value: unknown): value is UploadedFile {
