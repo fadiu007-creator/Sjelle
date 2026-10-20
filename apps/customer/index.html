@@ -86,6 +86,23 @@
       </section>
 
       <section id="ride-panel" class="service-panel ride-panel" role="tabpanel" aria-labelledby="tab-ride" hidden>
+        <section class="ride-quote-box">
+          <div><p class="eyebrow">LLOGARIT ÇMIMIN</p><h3>Ku po shkon?</h3><p class="ride-quote-intro">Zgjedh adresat për të marrë një çmim nga rruga reale. Rezervimi krijohet vetëm pasi ta konfirmosh.</p></div>
+          <form id="ride-quote-form" class="ride-quote-form">
+            <label>Nisja<input name="pickup_query" required minlength="3" maxlength="160" placeholder="Adresa e nisjes"></label>
+            <button id="find-pickup" class="secondary-button" type="button">Gjej adresën e nisjes</button>
+            <div id="pickup-suggestions" class="address-suggestions"></div>
+            <input name="pickup_label" type="hidden"><input name="pickup_lat" type="hidden"><input name="pickup_lon" type="hidden">
+            <label>Destinacioni<input name="destination_query" required minlength="3" maxlength="160" placeholder="Adresa e destinacionit"></label>
+            <button id="find-destination" class="secondary-button" type="button">Gjej adresën e destinacionit</button>
+            <div id="destination-suggestions" class="address-suggestions"></div>
+            <input name="destination_label" type="hidden"><input name="destination_lat" type="hidden"><input name="destination_lon" type="hidden">
+            <label>Lloji i automjetit<select name="vehicle_type"><option value="standard">Standard</option><option value="comfort">Comfort</option><option value="van">Furgon</option></select></label>
+            <button class="primary-button" type="submit">Llogarit çmimin</button>
+            <p id="ride-quote-message" class="form-message" role="status"></p>
+          </form>
+          <div id="ride-quote-result" class="ride-quote-result" aria-live="polite"></div>
+        </section>
         <div id="ride-routes" class="ride-routes" aria-live="polite"></div>
         <div class="ride-message-art" aria-hidden="true"><span>↗</span></div>
         <div class="ride-message-copy">
