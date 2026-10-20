@@ -13,7 +13,7 @@ function renderDocuments(){const root=$("#document-list");root.replaceChildren()
 $("#driver-application").addEventListener("submit",async e=>{e.preventDefault();try{const f=new FormData(e.currentTarget);await api("/driver/apply",{method:"POST",body:JSON.stringify({city:f.get("city"),mode:f.get("mode")})});showAlert("Aplikimi u dërgua. Tani regjistro automjetin dhe ngarko dokumentet.","success");await refreshProfile();}catch(err){showAlert("Aplikimi dështoi: "+err.message,"error");}});
 $("#vehicle-form").addEventListener("submit",async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{await api("/driver/vehicles",{method:"POST",body:JSON.stringify({vehicle_type:f.get("vehicle_type"),registration_number:f.get("registration_number"),make:f.get("make"),model:f.get("model"),color:f.get("color"),capacity:Number(f.get("capacity"))})});e.currentTarget.reset();showAlert("Automjeti u regjistrua për shqyrtim.","success");await refreshProfile();}catch(err){showAlert("Automjeti nuk u regjistrua: "+err.message,"error");}});
 $("#document-form").addEventListener("submit",async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{await api("/driver/documents",{method:"POST",body:f});e.currentTarget.reset();showAlert("Dokumenti u ngarkua në hapësirë private dhe pret shqyrtimin.","success");await refreshProfile();}catch(err){showAlert("Ngarkimi dështoi: "+err.message,"error");}});
-async function setAvailability(online){try{await api("/driver/availability",{method:"PATCH",body:JSON.stringify({online,mode:$("#driver-mode").value})});showAlert(online?"Je online. Sigurohu që vendndodhja të jetë e përditësuar.":"Je offline.","success");await refreshProfile();}catch(e){showAlert("Nuk mund të ndryshohet statusi: "+e.message,"error");}}
+async function setAvailability(online){try{await api("/driver/availability",{method:"PATCH",body:JSON.stringify({online,mode:$("#driver-mode").value})});showAlert(online?"Je online. Po kërkojmë vendndodhjen për dispatch.":"Je offline.","success");await refreshProfile();if(online)refreshLocationSilently();}catch(e){showAlert("Nuk mund të ndryshohet statusi: "+e.message,"error");}}
 $("#driver-online").addEventListener("click",()=>setAvailability(true));$("#driver-offline").addEventListener("click",()=>setAvailability(false));
 $("#driver-location").addEventListener("click",()=>{if(!navigator.geolocation){showAlert("Shfletuesi nuk mbështet vendndodhjen.","error");return;}showAlert("Po marrim vendndodhjen…");navigator.geolocation.getCurrentPosition(async p=>{try{await api("/driver/location",{method:"POST",body:JSON.stringify({latitude:p.coords.latitude,longitude:p.coords.longitude,accuracy_m:p.coords.accuracy})});showAlert("Vendndodhja u dërgua.","success");await loadOffers();}catch(e){showAlert("Vendndodhja nuk u dërgua: "+e.message,"error");}},()=>showAlert("Nuk u lejua ose nuk u mor vendndodhja.","error"),{enableHighAccuracy:true,timeout:10000,maximumAge:30000});});
 async function loadOffers(){try{const r=await api("/driver/offers");state.offers=r.data||[];renderOffers();}catch(e){$("#driver-offers").textContent=e.message;}}
@@ -27,3 +27,12 @@ refreshProfile();
 
 setInterval(()=>{if(document.visibilityState==='visible'&&token()&&state.profile){loadOffers();loadJobs();}},10000);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&token()&&state.profile){loadOffers();loadJobs();}});
+
+function refreshLocationSilently(){
+ if(!state.profile?.online||!token()||!navigator.geolocation)return;
+ navigator.geolocation.getCurrentPosition(async p=>{
+  try{await api("/driver/location",{method:"POST",body:JSON.stringify({latitude:p.coords.latitude,longitude:p.coords.longitude,accuracy_m:p.coords.accuracy})});}
+  catch(e){if(document.visibilityState==="visible")showAlert("Vendndodhja nuk u përditësua: "+e.message,"error");}
+ },()=>{if(document.visibilityState==="visible")showAlert("Lejo vendndodhjen për të marrë oferta pranë teje.","error");},{enableHighAccuracy:true,timeout:10000,maximumAge:20000});
+}
+setInterval(()=>{if(document.visibilityState==="visible"&&state.profile?.online)refreshLocationSilently();},45000);
