@@ -1314,10 +1314,10 @@ export default {
         || typeof body.destination_label !== "string" || body.destination_label.trim().length < 2 || body.destination_label.length > 160
         || !["standard","comfort","van"].includes(String(body.vehicle_type)) || !Number.isSafeInteger(body.amount_cents) || Number(body.amount_cents) < 1
         || typeof body.version !== "string" || !/^[a-zA-Z0-9._-]{1,40}$/.test(body.version)
-        || typeof body.origin_lat !== "number" || body.origin_lat < -90 || body.origin_lat > 90
-        || typeof body.origin_lon !== "number" || body.origin_lon < -180 || body.origin_lon > 180
-        || typeof body.destination_lat !== "number" || body.destination_lat < -90 || body.destination_lat > 90
-        || typeof body.destination_lon !== "number" || body.destination_lon < -180 || body.destination_lon > 180) {
+        || typeof body.origin_lat !== "number" || body.origin_lat < 41.7 || body.origin_lat > 43.4
+        || typeof body.origin_lon !== "number" || body.origin_lon < 19.7 || body.origin_lon > 22.0
+        || typeof body.destination_lat !== "number" || body.destination_lat < 41.7 || body.destination_lat > 43.4
+        || typeof body.destination_lon !== "number" || body.destination_lon < 19.7 || body.destination_lon > 22.0) {
         return response({ error: { code: "INVALID_ROUTE", request_id: requestId } }, 400, requestId, origin, env);
       }
       try {
@@ -1361,6 +1361,9 @@ export default {
           if (route.origin_lat === null || route.origin_lon === null || route.destination_lat === null || route.destination_lon === null || route.amount_cents < 1) {
             return response({ error: { code: "ROUTE_COORDINATES_REQUIRED", request_id: requestId } }, 409, requestId, origin, env);
           }
+          const areaResponse = await databaseRequest(env, "sjelle_service_areas?city_id=eq." + encodeURIComponent(route.city_id) + "&active=eq.true&select=boundary_geojson");
+          const areas = await parseJson(areaResponse) as Array<{ boundary_geojson: unknown }>;
+          if (!areaResponse.ok || !Array.isArray(areas) || !areas.some(area => pointInServiceArea(route.origin_lat as number,route.origin_lon as number,area.boundary_geojson))) return response({ error: { code: "ROUTE_ORIGIN_OUTSIDE_SERVICE_AREA", request_id: requestId } }, 409, requestId, origin, env);
           const pricing = await databaseRequest(env, "sjelle_city_pricing?city_id=eq." + encodeURIComponent(route.city_id) + "&active=eq.true&select=city_id&limit=1");
           const pricingRows = await parseJson(pricing) as unknown[];
           if (!pricing.ok || !pricingRows.length) return response({ error: { code: "CITY_PRICING_NOT_CONFIGURED", request_id: requestId } }, 409, requestId, origin, env);
