@@ -3,6 +3,7 @@ export interface Env {
   ALLOWED_ORIGIN?: string;
   SUPABASE_URL?: string;
   SUPABASE_SERVICE_ROLE_KEY?: string;
+  ASSETS?: Fetcher;
 }
 
 type AuthUser = { id: string; email?: string };
@@ -327,6 +328,8 @@ export default {
         return response({ error: { code: "PROFILE_SAVE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
       }
     }
+
+    if (!url.pathname.startsWith("/api/") && env.ASSETS) return env.ASSETS.fetch(request);
 
     return response({
       error: {
