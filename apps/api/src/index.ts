@@ -212,7 +212,8 @@ export default {
           return response({ error: { code: "CITY_LIST_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
         }
         const cities = await parseJson(result) as City[];
-        return response({ data: Array.isArray(cities) ? cities : [] }, 200, requestId, origin, env);
+        const data = Array.isArray(cities) ? cities.map(city => ({ ...city, routing_enabled: Boolean(env.ROUTING_API_URL), geocoding_enabled: Boolean(env.GEOCODING_API_URL) })) : [];
+        return response({ data }, 200, requestId, origin, env);
       } catch {
         return response({ error: { code: "CITY_LIST_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
       }
