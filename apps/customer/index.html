@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="sq">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102f28">
+  <meta name="description" content="Sjelle — udhëtime dhe ushqim në qytetin tënd.">
+  <title>Sjelle — Lëviz. Shijo.</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Sjelle, faqja kryesore">
+      <span class="brand-mark" aria-hidden="true">s</span>
+      <span>sjelle<span class="brand-dot">.</span></span>
+    </a>
+    <div class="topbar-right">
+      <span class="country-pill"><span class="live-dot"></span> Kosovë</span>
+      <a class="help-link" href="#status">Ndihmë</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">MË AFËR, MË LEHTË</p>
+        <h1>Lëviz. Shijo.<br><span>Vazhdo ditën.</span></h1>
+        <p class="hero-description">Udhëtime dhe ushqim nga një vend i vetëm. Sjelle po përgatitet të jetë pranë teje në Kosovë.</p>
+        <div class="city-picker">
+          <label for="city-select">Qyteti yt</label>
+          <div class="select-wrap">
+            <span aria-hidden="true">⌖</span>
+            <select id="city-select" aria-describedby="city-status">
+              <option value="">Duke ngarkuar qytetet…</option>
+            </select>
+            <span class="select-chevron" aria-hidden="true">⌄</span>
+          </div>
+          <p id="city-status" class="city-status" role="status">Po kontrollojmë disponueshmërinë.</p>
+        </div>
+      </div>
+      <div class="hero-art" aria-hidden="true">
+        <div class="orbit orbit-one"></div>
+        <div class="orbit orbit-two"></div>
+        <div class="art-sun"></div>
+        <div class="art-card card-top"><span class="art-icon">↗</span><span><b>Rruga jote</b><small>Pa komplikime</small></span></div>
+        <div class="art-card card-bottom"><span class="food-icon">✳</span><span><b>Diçka e mirë</b><small>Vetëm pak më vonë</small></span></div>
+        <div class="art-road"></div>
+      </div>
+    </section>
+
+    <section class="service-section" aria-labelledby="service-heading">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">NJË APLIKACION</p>
+          <h2 id="service-heading">Çfarë të duhet sot?</h2>
+        </div>
+        <p class="section-side-note">Zgjedh shërbimin tënd</p>
+      </div>
+
+      <div class="service-tabs" role="tablist" aria-label="Zgjedh shërbimin">
+        <button class="service-tab is-active" id="tab-food" type="button" role="tab" aria-selected="true" aria-controls="food-panel" data-service="food">
+          <span class="tab-icon food-tab-icon" aria-hidden="true">✳</span>
+          <span><b>Ushqim</b><small>Restorante pranë teje</small></span>
+          <span class="tab-arrow" aria-hidden="true">↗</span>
+        </button>
+        <button class="service-tab" id="tab-ride" type="button" role="tab" aria-selected="false" aria-controls="ride-panel" data-service="ride">
+          <span class="tab-icon ride-tab-icon" aria-hidden="true">↗</span>
+          <span><b>Udhëtim</b><small>Shko ku të duhet</small></span>
+          <span class="tab-arrow" aria-hidden="true">↗</span>
+        </button>
+      </div>
+
+      <section id="food-panel" class="service-panel" role="tabpanel" aria-labelledby="tab-food">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">PËR TY, NË QYTETIN TËND</p>
+            <h3>Çfarë të hahet?</h3>
+          </div>
+          <span class="subtle-tag">Ushqim</span>
+        </div>
+        <div id="restaurant-results" class="restaurant-grid" aria-live="polite">
+          <div class="loading-card"><span class="spinner"></span><p>Po ngarkojmë restorantet…</p></div>
+        </div>
+      </section>
+
+      <section id="ride-panel" class="service-panel ride-panel" role="tabpanel" aria-labelledby="tab-ride" hidden>
+        <div class="ride-message-art" aria-hidden="true"><span>↗</span></div>
+        <div class="ride-message-copy">
+          <p class="eyebrow">SË SHPEJTI NË QYTETIN TËND</p>
+          <h3>Udhëtimi fillon këtu.</h3>
+          <p>Po përgatisim çmimet, mbulimin dhe verifikimin e shoferëve. Rezervimet do të hapen vetëm kur shërbimi të jetë realisht gati — pa konfirmime të rreme.</p>
+          <span class="coming-tag"><span class="live-dot"></span> Në përgatitje</span>
+        </div>
+      </section>
+    </section>
+
+    <section class="trust-strip" aria-label="Parimet e Sjelle">
+      <div><span class="trust-icon">✓</span><span><b>Çmime të qarta</b><small>Para konfirmimit të udhëtimit</small></span></div>
+      <div><span class="trust-icon">⌁</span><span><b>Shoferë të verifikuar</b><small>Siguria para aktivizimit</small></span></div>
+      <div><span class="trust-icon">◎</span><span><b>Pagesë me para në dorë</b><small>Në fazën e parë</small></span></div>
+    </section>
+
+    <section id="status" class="status-note">
+      <span class="status-symbol" aria-hidden="true">i</span>
+      <p><b>Po ndërtojmë shërbimin, jo vetëm një demonstrim.</b> Qytetet dhe shërbimet shfaqen si aktive vetëm pasi të jenë konfiguruar dhe verifikuar.</p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <a class="brand footer-brand" href="/"><span class="brand-mark" aria-hidden="true">s</span><span>sjelle<span class="brand-dot">.</span></span></a>
+    <span>© <span id="year"></span> Sjelle</span>
+    <span class="footer-location">Ndërtuar për Kosovën</span>
+  </footer>
+
+  <dialog id="menu-dialog" class="menu-dialog" aria-labelledby="menu-title">
+    <div class="dialog-header">
+      <div><p class="eyebrow">MENUJA</p><h2 id="menu-title">Restoranti</h2></div>
+      <button id="close-menu" class="close-button" type="button" aria-label="Mbyll menunë">×</button>
+    </div>
+    <div id="menu-content" class="menu-content"></div>
+  </dialog>
+</body>
+</html>
