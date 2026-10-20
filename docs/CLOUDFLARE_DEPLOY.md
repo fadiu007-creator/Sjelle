@@ -9,6 +9,7 @@ Sjelle uses Cloudflare Workers with the static customer app in `apps/customer/`.
    - `CLOUDFLARE_ACCOUNT_ID` — the Cloudflare account ID.
 2. In Cloudflare Worker settings, configure both `sjelle-api-staging` and `sjelle-api-production` separately:
    - `SUPABASE_URL=https://saavqlbwffrwxingbnri.supabase.co`
+   - `SUPABASE_PUBLISHABLE_KEY` as a Worker variable
    - `SUPABASE_SERVICE_ROLE_KEY` as a secret
    - `ALLOWED_ORIGIN` to the exact public origin serving the customer app
 3. Confirm the deployed Worker environment has the expected assets binding and test `/api/v1/health`, `/api/v1/ready`, and `/api/v1/cities`.
