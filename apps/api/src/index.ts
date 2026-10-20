@@ -23,6 +23,7 @@ const jsonHeaders = {
   "x-content-type-options": "nosniff",
   "referrer-policy": "no-referrer",
   "permissions-policy": "geolocation=(self)",
+  "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
 };
 
 function response(
