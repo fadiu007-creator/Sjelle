@@ -39,9 +39,10 @@ For each city, use **Operations → Tarifat dhe shërbimet**:
 
 1. Enter actual approved delivery fee, service fee, minimum order and ride pricing in euro (the API stores integer euro cents).
 2. Use a new pricing version when prices change.
-3. Activate the pricing record only after the values are reviewed.
-4. Create fixed routes with reviewed endpoints, coordinates, vehicle type and fare. New routes start inactive.
-5. Activate each route only after checking both endpoints and the fare.
+3. Create a GeoJSON Polygon service area for the city, verify its boundary and activate it. The polygon must be closed and use `[longitude, latitude]` coordinate pairs.
+4. Activate the pricing record only after the values are reviewed.
+5. Create fixed routes with reviewed endpoints, coordinates, vehicle type and fare. New routes start inactive.
+6. Activate each route only after checking that its pickup is inside the active service area, both endpoints are correct and the fare is approved.
 
 No sample fares are seeded, because they would be real customer prices if accidentally activated.
 
@@ -67,8 +68,8 @@ Driver documents are stored in the private `sjelle-driver-documents` bucket. Sig
 
 A safe initial sequence is:
 
-1. Configure and activate pricing.
-2. Approve at least one restaurant and have it publish a menu, and/or approve drivers and create at least one active fixed route.
+1. Configure and activate the service-area polygon and pricing.
+2. Approve at least one restaurant, have it publish an available menu, and/or approve drivers and create at least one active fixed route whose pickup is inside the area.
 3. Use the explicit city activation form, tick the readiness confirmation and write the operational checks completed.
 4. Have the restaurant owner enable service and drivers go online.
 5. Test with a controlled account before public marketing.
