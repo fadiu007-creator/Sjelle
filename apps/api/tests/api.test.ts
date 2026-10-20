@@ -105,3 +105,46 @@ test("inactive food cities do not trigger restaurant queries", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("malformed bearer tokens are rejected without calling Supabase", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    throw new Error("fetch must not be called for malformed tokens");
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/me", {
+      headers: { authorization: "Bearernot-a-token" },
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-only",
+    });
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 401);
+    assert.equal(body.error.code, "UNAUTHENTICATED");
+    assert.equal(calls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("food order creation requires authentication before processing", async () => {
+  const response = await callWorker(new Request("https://sjelle.test/api/v1/food-orders", {
+    method: "POST",
+    headers: { "content-type": "application/json", "idempotency-key": "0123456789ab" },
+    body: JSON.stringify({}),
+  }), {});
+  const body = await response.json() as { error: { code: string } };
+  assert.equal(response.status, 401);
+  assert.equal(body.error.code, "UNAUTHENTICATED");
+});
+
+test("ride routes require a city slug", async () => {
+  const response = await callWorker(new Request("https://sjelle.test/api/v1/ride-routes"), {});
+  const body = await response.json() as { error: { code: string } };
+  assert.equal(response.status, 400);
+  assert.equal(body.error.code, "CITY_REQUIRED");
+});
