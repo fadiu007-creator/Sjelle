@@ -1,5 +1,5 @@
 -- Sjelle initial domain schema.
--- Apply only to a dedicated Sjelle development Supabase project after review.
+-- Additive, namespaced Sjelle objects for shared project zikos; existing app objects are untouched.
 -- All prices are EUR cents. No client-side policy may grant role/verification/assignment/payment authority.
 
 create extension if not exists pgcrypto;
