@@ -1330,9 +1330,13 @@ export default {
           const pricing = await parseJson(pricingResponse) as unknown[];
           if (!pricingResponse.ok || !pricing.length) return response({ error: { code: "CITY_PRICING_NOT_CONFIGURED", request_id: requestId } }, 409, requestId, origin, env);
           if (body.food_enabled) {
-            const restaurantResponse = await databaseRequest(env, "sjelle_restaurants?city_id=eq." + encodeURIComponent(cityId) + "&approval_status=eq.approved&is_open=eq.true&delivery_enabled=eq.true&select=id&limit=1");
-            const restaurants = await parseJson(restaurantResponse) as unknown[];
+            const restaurantResponse = await databaseRequest(env, "sjelle_restaurants?city_id=eq." + encodeURIComponent(cityId) + "&approval_status=eq.approved&select=id&limit=100");
+            const restaurants = await parseJson(restaurantResponse) as Array<{ id: string }>;
             if (!restaurantResponse.ok || !restaurants.length) return response({ error: { code: "NO_READY_RESTAURANTS", request_id: requestId } }, 409, requestId, origin, env);
+            const restaurantIds = "in.(" + restaurants.map(item => item.id).join(",") + ")";
+            const menuResponse = await databaseRequest(env, "sjelle_menu_items?restaurant_id=" + restaurantIds + "&available=eq.true&select=id&limit=1");
+            const menuItems = await parseJson(menuResponse) as unknown[];
+            if (!menuResponse.ok || !menuItems.length) return response({ error: { code: "NO_READY_RESTAURANTS", message: "At least one approved restaurant must have an available menu item. The restaurant can be opened after the city is activated.", request_id: requestId } }, 409, requestId, origin, env);
           }
           if (body.rides_enabled) {
             const [routeResponse, driverResponse] = await Promise.all([
