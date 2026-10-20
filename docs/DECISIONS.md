@@ -4,7 +4,7 @@
 **Decision:** Cloudflare Pages for web portals and Cloudflare Workers for API endpoints. Vercel is excluded.
 
 ## ADR-002 — Namespaced Sjelle data in existing Supabase project
-**Decision:** By explicit owner direction, Sjelle uses existing Supabase project `zikos` (`saavqlbwffrwxingbnri`). Every Sjelle table, enum, index and policy is namespaced `sjelle_`; migrations are additive only. Never rename, drop, or alter grants/policies on unrelated app objects. Review a separate project again before production scale-up.
+**Decision:** By explicit owner direction, Sjelle uses existing Supabase project `zikos` (`saavqlbwffrwxingbnri`). Every Sjelle table, enum, index and policy is namespaced `sjelle_`; migrations are additive only. Never rename, drop, or alter grants/policies on unrelated app objects. Do not create another project unless the owner explicitly reverses this decision.
 
 ## ADR-003 — One brand, multiple surfaces
 **Decision:** One Sjelle customer brand/app for rides and food; a separate driver app with Ride/Delivery mode switch; merchant and admin web portals.
