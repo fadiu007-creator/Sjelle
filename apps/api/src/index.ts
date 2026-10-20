@@ -45,7 +45,7 @@ function response(
   if (origin && env.ALLOWED_ORIGIN && origin === env.ALLOWED_ORIGIN) {
     headers.set("access-control-allow-origin", origin);
     headers.set("vary", "Origin");
-    headers.set("access-control-allow-headers", "authorization, content-type, idempotency-key");
+    headers.set("access-control-allow-headers", "authorization, content-type, idempotency-key, x-route-id");
     headers.set("access-control-allow-methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
   }
 
@@ -147,7 +147,7 @@ export default {
       if (origin && env.ALLOWED_ORIGIN && origin === env.ALLOWED_ORIGIN) {
         headers.set("access-control-allow-origin", origin);
         headers.set("vary", "Origin");
-        headers.set("access-control-allow-headers", "authorization, content-type, idempotency-key");
+        headers.set("access-control-allow-headers", "authorization, content-type, idempotency-key, x-route-id");
         headers.set("access-control-allow-methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
       }
       return new Response(null, { status: 204, headers });
