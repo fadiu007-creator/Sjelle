@@ -253,6 +253,242 @@ export default {
       }
     }
 
+
+    // Supabase Auth proxy: the publishable key is used only for Auth; the service-role key never leaves this Worker.
+    if ((url.pathname === "/api/v1/auth/signup" && request.method === "POST")
+      || (url.pathname === "/api/v1/auth/login" && request.method === "POST")) {
+      if (!env.SUPABASE_URL || !env.SUPABASE_PUBLISHABLE_KEY) {
+        return response({ error: { code: "AUTH_NOT_CONFIGURED", request_id: requestId } }, 503, requestId, origin, env);
+      }
+      let body: unknown;
+      try { body = await request.json(); } catch {
+        return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      if (!isRecord(body) || typeof body.email !== "string" || typeof body.password !== "string") {
+        return response({ error: { code: "INVALID_CREDENTIALS", message: "Email and password are required.", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      const email = body.email.trim().toLowerCase();
+      const password = body.password;
+      if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) || email.length > 254 || password.length < 8 || password.length > 128) {
+        return response({ error: { code: "INVALID_CREDENTIALS", message: "Enter a valid email and a password between 8 and 128 characters.", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      const signup = url.pathname.endsWith("/signup");
+      const authPath = signup ? "/auth/v1/signup" : "/auth/v1/token?grant_type=password";
+      const payload = signup
+        ? { email, password, data: { display_name: typeof body.display_name === "string" ? body.display_name.trim().slice(0, 80) : "", preferred_language: isLanguage(body.preferred_language) ? body.preferred_language : "sq" } }
+        : { email, password };
+      try {
+        const authResponse = await fetch(supabaseUrl(env, authPath), {
+          method: "POST",
+          headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, "content-type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const authBody = await parseJson(authResponse);
+        if (!authResponse.ok) {
+          const message = isRecord(authBody) && typeof authBody.msg === "string" ? authBody.msg
+            : isRecord(authBody) && typeof authBody.message === "string" ? authBody.message : "Authentication failed.";
+          return response({ error: { code: "AUTH_FAILED", message: message.slice(0, 220), request_id: requestId } }, authResponse.status >= 500 ? 503 : authResponse.status, requestId, origin, env);
+        }
+        return response({ data: authBody }, signup ? 201 : 200, requestId, origin, env);
+      } catch {
+        return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+      }
+    }
+
+    if (url.pathname === "/api/v1/ride-routes" && request.method === "GET") {
+      const citySlug = (url.searchParams.get("city") ?? "").trim().toLowerCase();
+      if (!/^[a-z0-9-]{2,60}$/.test(citySlug)) {
+        return response({ error: { code: "CITY_REQUIRED", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      if (!configured(env)) return response({ error: { code: "BACKEND_NOT_CONFIGURED", request_id: requestId } }, 503, requestId, origin, env);
+      try {
+        const cityResponse = await databaseRequest(env, `sjelle_cities?slug=eq.${encodeURIComponent(citySlug)}&select=id,slug,active,rides_enabled&limit=1`);
+        if (!cityResponse.ok) return response({ error: { code: "RIDE_ROUTES_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+        const cityRows = await parseJson(cityResponse) as Array<{ id: string; slug: string; active: boolean; rides_enabled: boolean }>;
+        const city = cityRows[0];
+        if (!city) return response({ error: { code: "CITY_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+        if (!city.active || !city.rides_enabled) return response({ data: [], meta: { city: city.slug, service_available: false } }, 200, requestId, origin, env);
+        const routeResponse = await databaseRequest(env,
+          `sjelle_fixed_route_prices?city_id=eq.${encodeURIComponent(city.id)}&active=eq.true&select=id,route_key,origin_label,destination_label,vehicle_type,amount_cents,currency,version,origin_lat,origin_lon,destination_lat,destination_lon,effective_from,effective_until&effective_from=lte.${encodeURIComponent(new Date().toISOString())}&order=origin_label.asc`);
+        if (!routeResponse.ok) return response({ error: { code: "RIDE_ROUTES_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+        const routes = await parseJson(routeResponse);
+        const now = Date.now();
+        const valid = Array.isArray(routes) ? routes.filter((r) => isRecord(r)
+          && typeof r.origin_lat === "number" && typeof r.origin_lon === "number"
+          && typeof r.destination_lat === "number" && typeof r.destination_lon === "number"
+          && (r.effective_until === null || typeof r.effective_until !== "string" || Date.parse(r.effective_until) > now)) : [];
+        return response({ data: valid, meta: { city: city.slug, service_available: true } }, 200, requestId, origin, env);
+      } catch {
+        return response({ error: { code: "RIDE_ROUTES_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+      }
+    }
+
+    if (url.pathname === "/api/v1/rides" && request.method === "POST") {
+      let user: AuthUser | null;
+      try { user = await getAuthenticatedUser(request, env); } catch {
+        return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+      }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      const routeId = request.headers.get("x-route-id");
+      const idempotencyKey = request.headers.get("idempotency-key");
+      if (!routeId || !/^[0-9a-f-]{36}$/i.test(routeId) || !idempotencyKey || idempotencyKey.length < 12 || idempotencyKey.length > 128) {
+        return response({ error: { code: "INVALID_RIDE_REQUEST", message: "Provide x-route-id and a unique Idempotency-Key.", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      try {
+        const result = await databaseRequest(env, "rpc/sjelle_book_fixed_route_ride", {
+          method: "POST", body: JSON.stringify({ p_customer_id: user.id, p_route_id: routeId, p_idempotency_key: idempotencyKey }),
+        });
+        const payload = await parseJson(result);
+        if (!result.ok) {
+          const code = isRecord(payload) && typeof payload.message === "string" ? payload.message : "RIDE_BOOKING_FAILED";
+          const status = ["CITY_UNAVAILABLE","ROUTE_NOT_AVAILABLE","CITY_PRICING_NOT_CONFIGURED"].includes(code) ? 409
+            : ["INVALID_RIDE_REQUEST"].includes(code) ? 400 : 503;
+          return response({ error: { code, request_id: requestId } }, status, requestId, origin, env);
+        }
+        return response({ data: payload }, 201, requestId, origin, env);
+      } catch {
+        return response({ error: { code: "RIDE_BOOKING_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+      }
+    }
+
+    if (url.pathname === "/api/v1/food-orders" && request.method === "POST") {
+      let user: AuthUser | null;
+      try { user = await getAuthenticatedUser(request, env); } catch {
+        return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+      }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      const idempotencyKey = request.headers.get("idempotency-key");
+      if (!idempotencyKey || idempotencyKey.length < 12 || idempotencyKey.length > 128) {
+        return response({ error: { code: "IDEMPOTENCY_KEY_REQUIRED", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      let body: unknown;
+      try { body = await request.json(); } catch {
+        return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      if (!isRecord(body) || typeof body.restaurant_id !== "string" || !/^[0-9a-f-]{36}$/i.test(body.restaurant_id)
+        || typeof body.delivery_address_text !== "string" || typeof body.delivery_lat !== "number" || typeof body.delivery_lon !== "number"
+        || !Array.isArray(body.items) || body.items.length < 1 || body.items.length > 50
+        || body.items.some(item => !isRecord(item) || typeof item.id !== "string" || !/^[0-9a-f-]{36}$/i.test(item.id) || !Number.isInteger(item.quantity) || Number(item.quantity) < 1 || Number(item.quantity) > 100)) {
+        return response({ error: { code: "INVALID_ORDER", message: "Provide a restaurant, delivery address, valid coordinates, and 1–50 item/quantity pairs.", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      if (body.delivery_address_text.trim().length < 4 || body.delivery_address_text.length > 500
+        || body.delivery_lat < -90 || body.delivery_lat > 90 || body.delivery_lon < -180 || body.delivery_lon > 180
+        || (body.delivery_instructions !== undefined && body.delivery_instructions !== null && (typeof body.delivery_instructions !== "string" || body.delivery_instructions.length > 500))) {
+        return response({ error: { code: "INVALID_DELIVERY_ADDRESS", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      try {
+        const result = await databaseRequest(env, "rpc/sjelle_create_food_order", {
+          method: "POST",
+          body: JSON.stringify({
+            p_customer_id: user.id, p_restaurant_id: body.restaurant_id, p_idempotency_key: idempotencyKey,
+            p_delivery_address_text: body.delivery_address_text.trim(), p_delivery_lat: body.delivery_lat,
+            p_delivery_lon: body.delivery_lon, p_delivery_instructions: typeof body.delivery_instructions === "string" ? body.delivery_instructions.trim() : null,
+            p_items: body.items,
+          }),
+        });
+        const payload = await parseJson(result);
+        if (!result.ok) {
+          const code = isRecord(payload) && typeof payload.message === "string" ? payload.message : "ORDER_CREATE_FAILED";
+          const status = ["CITY_UNAVAILABLE","RESTAURANT_UNAVAILABLE","MENU_ITEM_UNAVAILABLE","FOOD_PRICING_NOT_CONFIGURED","MINIMUM_ORDER_NOT_MET"].includes(code) ? 409
+            : ["INVALID_ORDER","INVALID_IDEMPOTENCY_KEY","INVALID_DELIVERY_ADDRESS","INVALID_DELIVERY_COORDINATES","INVALID_ORDER_ITEMS","ORDER_TOTAL_TOO_LARGE"].includes(code) ? 400 : 503;
+          return response({ error: { code, request_id: requestId } }, status, requestId, origin, env);
+        }
+        return response({ data: payload }, 201, requestId, origin, env);
+      } catch {
+        return response({ error: { code: "ORDER_CREATE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+      }
+    }
+
+    if (url.pathname === "/api/v1/food-orders" && request.method === "GET") {
+      let user: AuthUser | null;
+      try { user = await getAuthenticatedUser(request, env); } catch {
+        return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+      }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try {
+        const result = await databaseRequest(env,
+          `sjelle_food_orders?customer_id=eq.${encodeURIComponent(user.id)}&select=id,restaurant_id,status,payment_method,sjelle_cash_status,item_subtotal_cents,delivery_fee_cents,service_fee_cents,total_cents,currency,delivery_address_text,created_at,updated_at,sjelle_food_order_items(id,item_name_snapshot,unit_price_cents,quantity,line_total_cents)&order=created_at.desc&limit=50`);
+        if (!result.ok) return response({ error: { code: "ORDERS_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const rows = await parseJson(result);
+        return response({ data: Array.isArray(rows) ? rows : [] }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "ORDERS_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
+    const orderMatch = url.pathname.match(/^\\/api\\/v1\\/food-orders\\/([0-9a-f-]{36})(?:\\/(cancel|status))?$/i);
+    if (orderMatch && request.method === "GET") {
+      let user: AuthUser | null;
+      try { user = await getAuthenticatedUser(request, env); } catch {
+        return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+      }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try {
+        const result = await databaseRequest(env,
+          `sjelle_food_orders?id=eq.${encodeURIComponent(orderMatch[1])}&customer_id=eq.${encodeURIComponent(user.id)}&select=id,restaurant_id,status,payment_method,sjelle_cash_status,item_subtotal_cents,delivery_fee_cents,service_fee_cents,total_cents,currency,delivery_address_text,created_at,updated_at,sjelle_food_order_items(id,item_name_snapshot,unit_price_cents,quantity,line_total_cents)&limit=1`);
+        if (!result.ok) return response({ error: { code: "ORDER_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const rows = await parseJson(result) as unknown[];
+        if (!Array.isArray(rows) || !rows.length) return response({ error: { code: "ORDER_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+        return response({ data: rows[0] as Record<string, unknown> }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "ORDER_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
+    const cancelMatch = url.pathname.match(/^\\/api\\/v1\\/food-orders\\/([0-9a-f-]{36})\\/cancel$/i);
+    if (cancelMatch && request.method === "POST") {
+      let user: AuthUser | null;
+      try { user = await getAuthenticatedUser(request, env); } catch {
+        return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+      }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try {
+        const result = await databaseRequest(env, "rpc/sjelle_cancel_food_order", { method: "POST", body: JSON.stringify({ p_customer_id: user.id, p_order_id: cancelMatch[1] }) });
+        const payload = await parseJson(result);
+        if (!result.ok) {
+          const code = isRecord(payload) && typeof payload.message === "string" ? payload.message : "ORDER_CANCEL_FAILED";
+          const status = code === "ORDER_NOT_FOUND" ? 404 : code === "ORDER_NOT_CANCELLABLE" ? 409 : 503;
+          return response({ error: { code, request_id: requestId } }, status, requestId, origin, env);
+        }
+        return response({ data: payload }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "ORDER_CANCEL_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
+    const merchantStatusMatch = url.pathname.match(/^\\/api\\/v1\\/merchant\\/orders\\/([0-9a-f-]{36})\\/status$/i);
+    if (merchantStatusMatch && request.method === "PATCH") {
+      let user: AuthUser | null;
+      try { user = await getAuthenticatedUser(request, env); } catch {
+        return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+      }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      let body: unknown;
+      try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
+      if (!isRecord(body) || !["accepted","preparing","ready_for_pickup","rejected"].includes(String(body.status))) {
+        return response({ error: { code: "INVALID_ORDER_TRANSITION", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      try {
+        const result = await databaseRequest(env, "rpc/sjelle_update_food_order_status", { method: "POST", body: JSON.stringify({ p_actor_id: user.id, p_order_id: merchantStatusMatch[1], p_next_status: body.status }) });
+        const payload = await parseJson(result);
+        if (!result.ok) {
+          const code = isRecord(payload) && typeof payload.message === "string" ? payload.message : "ORDER_STATUS_UPDATE_FAILED";
+          const status = code === "FORBIDDEN" ? 403 : code === "ORDER_NOT_FOUND" ? 404 : code === "INVALID_ORDER_TRANSITION" ? 409 : 503;
+          return response({ error: { code, request_id: requestId } }, status, requestId, origin, env);
+        }
+        return response({ data: payload }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "ORDER_STATUS_UPDATE_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
+    if (url.pathname === "/api/v1/rides" && request.method === "GET") {
+      let user: AuthUser | null;
+      try { user = await getAuthenticatedUser(request, env); } catch {
+        return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+      }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try {
+        const result = await databaseRequest(env,
+          `sjelle_rides?customer_id=eq.${encodeURIComponent(user.id)}&select=id,vehicle_type,pickup_label,destination_label,status,pricing_kind,pricing_version,quoted_amount_cents,final_amount_cents,payment_method,sjelle_cash_status,requested_at&order=requested_at.desc&limit=50`);
+        if (!result.ok) return response({ error: { code: "RIDES_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const rows = await parseJson(result);
+        return response({ data: Array.isArray(rows) ? rows : [] }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "RIDES_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
     if (url.pathname === "/api/v1/me" && (request.method === "GET" || request.method === "PUT")) {
       let user: AuthUser | null;
       try {
