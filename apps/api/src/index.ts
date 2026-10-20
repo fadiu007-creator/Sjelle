@@ -1501,7 +1501,7 @@ export default {
         if (!ownedResponse.ok || !staffResponse.ok) return response({ error: { code: "MERCHANT_RESTAURANTS_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
         const owned = await parseJson(ownedResponse) as Array<Record<string, unknown>>;
         const staff = await parseJson(staffResponse) as Array<{ restaurant_id: string; can_manage_menu: boolean; can_manage_orders: boolean }>;
-        const restaurants = [...(Array.isArray(owned) ? owned : [])].map(r => ({ ...r, can_manage_menu: true, can_manage_orders: true }));
+        const restaurants: Array<Record<string, unknown> & { can_manage_menu: boolean; can_manage_orders: boolean }> = (Array.isArray(owned) ? owned : []).map(r => ({ ...r, can_manage_menu: true, can_manage_orders: true }));
         const ids = new Set(restaurants.map(r => String(r.id)));
         for (const item of Array.isArray(staff) ? staff : []) {
           if (ids.has(item.restaurant_id)) continue;
