@@ -213,7 +213,7 @@ async function start() {
       showEmpty("Po përgatisim nisjen", "Lista e qyteteve nuk është e disponueshme ende.", "⌖");
       return;
     }
-    state.selectedCity = state.cities[0].slug;
+    state.selectedCity = state.cities.some(city => city.slug === "prishtina") ? "prishtina" : state.cities[0].slug;
     citySelect.value = state.selectedCity;
     updateCityStatus();
     await loadRestaurants();
