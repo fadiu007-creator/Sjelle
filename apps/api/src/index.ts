@@ -706,6 +706,24 @@ export default {
       } catch { return response({ error: { code: "ORDER_STATUS_UPDATE_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
     }
 
+
+    const cancelRideMatch = url.pathname.match(/^\/api\/v1\/rides\/([0-9a-f-]{36})\/cancel$/i);
+    if (cancelRideMatch && request.method === "POST") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try {
+        const result = await databaseRequest(env,"rpc/sjelle_cancel_ride",{method:"POST",body:JSON.stringify({p_customer_id:user.id,p_ride_id:cancelRideMatch[1]})});
+        const payload = await parseJson(result);
+        if (!result.ok) {
+          const code = isRecord(payload) && typeof payload.message === "string" ? payload.message : "RIDE_CANCEL_FAILED";
+          const status = code === "RIDE_NOT_FOUND" ? 404 : code === "RIDE_NOT_CANCELLABLE" ? 409 : 503;
+          return response({error:{code,request_id:requestId}},status,requestId,origin,env);
+        }
+        return response({data:payload},200,requestId,origin,env);
+      } catch { return response({error:{code:"RIDE_CANCEL_FAILED",request_id:requestId}},503,requestId,origin,env); }
+    }
+
     if (url.pathname === "/api/v1/rides" && request.method === "GET") {
       let user: AuthUser | null;
       try { user = await getAuthenticatedUser(request, env); } catch {
