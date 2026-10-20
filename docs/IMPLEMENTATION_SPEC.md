@@ -10,7 +10,7 @@ Sjelle is a single-brand Kosovo ride-hailing and restaurant-delivery platform. C
 - Payments: cash for rides and food in MVP; online payments later after Kosovo provider, refund, settlement, webhook and reconciliation validation.
 - Food dispatch: after restaurant acceptance; use prep-time estimate to time courier assignment.
 - Driver verification: identity, driving licence and vehicle documents reviewed by authorized admin before activation.
-- Hosting: Cloudflare Pages/Workers. Dedicated Supabase project, isolated from all existing apps. No Vercel.
+- Hosting: Cloudflare Pages/Workers. Existing Supabase project `zikos` (`saavqlbwffrwxingbnri`) by explicit owner choice; all Sjelle objects use `sjelle_` names, and migrations must be additive only. No Vercel.
 
 ## 2. Roles and authorization
 - Customer: manages own profile, rides, orders, addresses, ratings and support tickets.
