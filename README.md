@@ -38,12 +38,16 @@ Sjelle is a Kosovo-first ride-hailing and food-delivery platform. One customer e
 
 ## Security and operating principles
 
-1. Keep every Sjelle database object namespaced; do not run broad schema or grant changes in the shared project.
+1. Keep every Sjelle database object namespaced; do not run broad schema/grant changes or destructive resets in the shared project.
 2. Never expose Supabase service-role keys in browser/mobile bundles or commit real secrets.
 3. Server-side logic must be authoritative for pricing, role checks, dispatch, job state and financial records.
 4. Use integer euro cents, idempotency keys, immutable ledger entries and auditable administrative actions.
 5. Do not use fake driver GPS, fake payments or fake success states.
 6. Do not activate a city until licensing, operating coverage, support and driver/merchant supply are verified.
+
+## Deployment
+
+See [Cloudflare deployment instructions](docs/CLOUDFLARE_DEPLOY.md). Deployment is manual and has not yet been run from this repository.
 
 ## Local API development
 
