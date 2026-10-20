@@ -269,7 +269,7 @@ export default {
       }
       const email = body.email.trim().toLowerCase();
       const password = body.password;
-      if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) || email.length > 254 || password.length < 8 || password.length > 128) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || password.length < 8 || password.length > 128) {
         return response({ error: { code: "INVALID_CREDENTIALS", message: "Enter a valid email and a password between 8 and 128 characters.", request_id: requestId } }, 400, requestId, origin, env);
       }
       const signup = url.pathname.endsWith("/signup");
@@ -414,7 +414,7 @@ export default {
       } catch { return response({ error: { code: "ORDERS_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
     }
 
-    const orderMatch = url.pathname.match(/^\\/api\\/v1\\/food-orders\\/([0-9a-f-]{36})(?:\\/(cancel|status))?$/i);
+    const orderMatch = url.pathname.match(/^\/api\/v1\/food-orders\/([0-9a-f-]{36})(?:\/(cancel|status))?$/i);
     if (orderMatch && request.method === "GET") {
       let user: AuthUser | null;
       try { user = await getAuthenticatedUser(request, env); } catch {
@@ -431,7 +431,7 @@ export default {
       } catch { return response({ error: { code: "ORDER_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
     }
 
-    const cancelMatch = url.pathname.match(/^\\/api\\/v1\\/food-orders\\/([0-9a-f-]{36})\\/cancel$/i);
+    const cancelMatch = url.pathname.match(/^\/api\/v1\/food-orders\/([0-9a-f-]{36})\/cancel$/i);
     if (cancelMatch && request.method === "POST") {
       let user: AuthUser | null;
       try { user = await getAuthenticatedUser(request, env); } catch {
@@ -450,7 +450,7 @@ export default {
       } catch { return response({ error: { code: "ORDER_CANCEL_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
     }
 
-    const merchantStatusMatch = url.pathname.match(/^\\/api\\/v1\\/merchant\\/orders\\/([0-9a-f-]{36})\\/status$/i);
+    const merchantStatusMatch = url.pathname.match(/^\/api\/v1\/merchant\/orders\/([0-9a-f-]{36})\/status$/i);
     if (merchantStatusMatch && request.method === "PATCH") {
       let user: AuthUser | null;
       try { user = await getAuthenticatedUser(request, env); } catch {
