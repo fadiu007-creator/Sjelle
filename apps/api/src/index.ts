@@ -709,16 +709,16 @@ export default {
         if (body.online && profile.review_status !== "approved") return response({ error: { code: "DRIVER_NOT_APPROVED", request_id: requestId } }, 409, requestId, origin, env);
         if (body.online) {
           const [docsResponse, vehicleResponse, cityResponse] = await Promise.all([
-            databaseRequest(env, "sjelle_driver_documents?driver_id=eq." + encodeURIComponent(user.id) + "&review_status=eq.approved&select=document_type"),
+            databaseRequest(env, "sjelle_driver_documents?driver_id=eq." + encodeURIComponent(user.id) + "&review_status=eq.approved&select=document_type,expires_at"),
             databaseRequest(env, "sjelle_vehicles?driver_id=eq." + encodeURIComponent(user.id) + "&review_status=eq.approved&select=id&limit=1"),
             databaseRequest(env, "sjelle_cities?id=eq." + encodeURIComponent(profile.city_id) + "&select=active,rides_enabled,food_enabled&limit=1"),
           ]);
-          const docs = await parseJson(docsResponse) as Array<{ document_type: string }>;
+          const docs = await parseJson(docsResponse) as Array<{ document_type: string; expires_at: string | null }>;
           const vehicles = await parseJson(vehicleResponse) as unknown[];
           const cities = await parseJson(cityResponse) as Array<{ active: boolean; rides_enabled: boolean; food_enabled: boolean }>;
           const required = ["identity","driving_licence","vehicle_registration","insurance"];
           if (!docsResponse.ok || !vehicleResponse.ok || !cityResponse.ok) return response({ error: { code: "DRIVER_READINESS_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env);
-          if (!required.every(type => docs.some(doc => doc.document_type === type)) || !vehicles.length) {
+          if (!required.every(type => docs.some(doc => doc.document_type === type && (!doc.expires_at || doc.expires_at >= new Date().toISOString().slice(0,10)))) || !vehicles.length) {
             return response({ error: { code: "DRIVER_DOCUMENTS_NOT_APPROVED", message: "Identity, driving licence, vehicle registration and insurance must be approved, with at least one approved vehicle.", request_id: requestId } }, 409, requestId, origin, env);
           }
           const city = cities[0];
@@ -785,7 +785,7 @@ export default {
           const docs = await parseJson(docsResponse) as Array<{ document_type: string }>;
           const vehicles = await parseJson(vehicleResponse) as unknown[];
           if (!docsResponse.ok || !vehicleResponse.ok) return response({ error: { code: "DRIVER_READINESS_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env);
-          if (!["identity","driving_licence","vehicle_registration","insurance"].every(type => docs.some(doc => doc.document_type === type)) || !vehicles.length) {
+          if (!["identity","driving_licence","vehicle_registration","insurance"].every(type => docs.some(doc => doc.document_type === type && (!doc.expires_at || doc.expires_at >= new Date().toISOString().slice(0,10)))) || !vehicles.length) {
             return response({ error: { code: "DRIVER_DOCUMENTS_NOT_APPROVED", request_id: requestId } }, 409, requestId, origin, env);
           }
         }
