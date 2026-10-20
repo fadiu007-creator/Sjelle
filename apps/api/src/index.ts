@@ -7,6 +7,8 @@ export interface Env {
   SUPABASE_SERVICE_ROLE_KEY?: string;
   ROUTING_API_URL?: string;
   ROUTING_API_KEY?: string;
+  GEOCODING_API_URL?: string;
+  GEOCODING_API_KEY?: string;
   ASSETS?: Fetcher;
 }
 
@@ -378,6 +380,42 @@ export default {
       }
     }
 
+
+
+    if (url.pathname === "/api/v1/geocode" && request.method === "POST") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      if (!env.GEOCODING_API_URL) return response({ error: { code: "GEOCODING_NOT_CONFIGURED", request_id: requestId } }, 503, requestId, origin, env);
+      let body: unknown;
+      try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
+      if (!isRecord(body) || typeof body.city !== "string" || typeof body.query !== "string" || body.query.trim().length < 3 || body.query.length > 160) {
+        return response({ error: { code: "INVALID_GEOCODE_QUERY", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      try {
+        const cityResponse = await databaseRequest(env, "sjelle_cities?slug=eq." + encodeURIComponent(body.city.trim().toLowerCase()) + "&select=id,name,active&limit=1");
+        const cities = await parseJson(cityResponse) as Array<{ id: string; name: string; active: boolean }>;
+        if (!cityResponse.ok) return response({ error: { code: "CITY_LOOKUP_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        if (!cities.length) return response({ error: { code: "CITY_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+        const geocodeUrl = new URL(env.GEOCODING_API_URL.replace(/\/+$/,"") + "/search");
+        geocodeUrl.searchParams.set("format","jsonv2");
+        geocodeUrl.searchParams.set("limit","5");
+        geocodeUrl.searchParams.set("countrycodes","xk");
+        geocodeUrl.searchParams.set("q",body.query.trim()+", "+cities[0].name+", Kosovo");
+        const headers = new Headers({ accept:"application/json", "accept-language":"sq,en;q=0.8" });
+        if (env.GEOCODING_API_KEY) headers.set("authorization","Bearer "+env.GEOCODING_API_KEY);
+        const geoResponse = await fetch(geocodeUrl.toString(),{headers});
+        const raw = await parseJson(geoResponse);
+        if (!geoResponse.ok || !Array.isArray(raw)) return response({ error: { code: "GEOCODING_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const suggestions = raw.filter(isRecord).map(item => ({
+          label: typeof item.display_name === "string" ? item.display_name.slice(0,220) : "",
+          lat: typeof item.lat === "string" || typeof item.lat === "number" ? Number(item.lat) : NaN,
+          lon: typeof item.lon === "string" || typeof item.lon === "number" ? Number(item.lon) : NaN,
+        })).filter(item => item.label && Number.isFinite(item.lat) && Number.isFinite(item.lon)
+          && item.lat >= 41.7 && item.lat <= 43.4 && item.lon >= 19.7 && item.lon <= 22.0);
+        return response({ data: suggestions }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "GEOCODING_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
 
     if (url.pathname === "/api/v1/ride-quotes" && request.method === "POST") {
       let user: AuthUser | null;
