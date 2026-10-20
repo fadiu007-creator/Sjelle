@@ -541,6 +541,319 @@ export default {
       } catch { return response({ error: { code: "RIDES_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
     }
 
+
+    if (url.pathname === "/api/v1/driver/apply" && request.method === "POST") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch {
+        return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+      }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      let body: unknown;
+      try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
+      if (!isRecord(body) || typeof body.city !== "string" || !["ride","delivery"].includes(String(body.mode))) {
+        return response({ error: { code: "INVALID_DRIVER_APPLICATION", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      try {
+        const cityResponse = await databaseRequest(env, "sjelle_cities?slug=eq." + encodeURIComponent(body.city.trim().toLowerCase()) + "&select=id,slug&limit=1");
+        if (!cityResponse.ok) return response({ error: { code: "CITY_LOOKUP_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const cities = await parseJson(cityResponse) as Array<{ id: string; slug: string }>;
+        if (!cities.length) return response({ error: { code: "CITY_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+        const profileResponse = await databaseRequest(env, "sjelle_driver_profiles?on_conflict=user_id", {
+          method: "POST", headers: { prefer: "resolution=merge-duplicates,return=representation" },
+          body: JSON.stringify({ user_id: user.id, city_id: cities[0].id, selected_mode: body.mode, online: false }),
+        });
+        if (!profileResponse.ok) return response({ error: { code: "DRIVER_APPLICATION_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const roleResponse = await databaseRequest(env, "sjelle_user_roles?on_conflict=user_id,role", {
+          method: "POST", headers: { prefer: "resolution=ignore-duplicates,return=minimal" },
+          body: JSON.stringify({ user_id: user.id, role: "driver" }),
+        });
+        if (!roleResponse.ok) return response({ error: { code: "DRIVER_ROLE_SETUP_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        return response({ data: { application_status: "pending", city: cities[0].slug, mode: body.mode, online: false } }, 201, requestId, origin, env);
+      } catch { return response({ error: { code: "DRIVER_APPLICATION_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
+    if (url.pathname === "/api/v1/driver/me" && request.method === "GET") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch {
+        return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+      }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try {
+        const [profileResponse, vehicleResponse, documentResponse] = await Promise.all([
+          databaseRequest(env, "sjelle_driver_profiles?user_id=eq." + encodeURIComponent(user.id) + "&select=user_id,review_status,online,selected_mode,city_id,approved_at,created_at,updated_at&limit=1"),
+          databaseRequest(env, "sjelle_vehicles?driver_id=eq." + encodeURIComponent(user.id) + "&select=id,vehicle_type,make,model,color,registration_number,capacity,review_status,document_expires_at,verified_at,created_at&order=created_at.desc"),
+          databaseRequest(env, "sjelle_driver_documents?driver_id=eq." + encodeURIComponent(user.id) + "&select=id,document_type,document_number_last4,expires_at,review_status,reviewed_at,rejection_reason,created_at&order=created_at.desc"),
+        ]);
+        if (!profileResponse.ok || !vehicleResponse.ok || !documentResponse.ok) return response({ error: { code: "DRIVER_PROFILE_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const [profiles, vehicles, documents] = await Promise.all([parseJson(profileResponse), parseJson(vehicleResponse), parseJson(documentResponse)]);
+        return response({ data: { profile: Array.isArray(profiles) ? profiles[0] || null : null, vehicles: Array.isArray(vehicles) ? vehicles : [], documents: Array.isArray(documents) ? documents : [] } }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "DRIVER_PROFILE_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
+    if (url.pathname === "/api/v1/driver/vehicles" && request.method === "POST") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch {
+        return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+      }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      let body: unknown;
+      try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
+      if (!isRecord(body) || !["standard","comfort","van","motorcycle","bicycle"].includes(String(body.vehicle_type))
+        || typeof body.registration_number !== "string" || body.registration_number.trim().length < 2 || body.registration_number.trim().length > 24
+        || (body.capacity !== undefined && (!Number.isInteger(body.capacity) || Number(body.capacity) < 1 || Number(body.capacity) > 20))) {
+        return response({ error: { code: "INVALID_VEHICLE", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      try {
+        const driver = await databaseRequest(env, "sjelle_driver_profiles?user_id=eq." + encodeURIComponent(user.id) + "&select=user_id&limit=1");
+        const driverRows = await parseJson(driver) as unknown[];
+        if (!driver.ok) return response({ error: { code: "DRIVER_PROFILE_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        if (!Array.isArray(driverRows) || !driverRows.length) return response({ error: { code: "DRIVER_APPLICATION_REQUIRED", request_id: requestId } }, 409, requestId, origin, env);
+        const result = await databaseRequest(env, "sjelle_vehicles", {
+          method: "POST", headers: { prefer: "return=representation" },
+          body: JSON.stringify({
+            driver_id: user.id, vehicle_type: body.vehicle_type, registration_number: body.registration_number.trim().toUpperCase(),
+            make: typeof body.make === "string" ? body.make.trim().slice(0,60) || null : null,
+            model: typeof body.model === "string" ? body.model.trim().slice(0,60) || null : null,
+            color: typeof body.color === "string" ? body.color.trim().slice(0,40) || null : null,
+            capacity: body.capacity === undefined ? 4 : body.capacity,
+            review_status: "pending",
+          }),
+        });
+        const payload = await parseJson(result);
+        if (!result.ok) return response({ error: { code: "VEHICLE_SAVE_FAILED", request_id: requestId } }, result.status === 409 ? 409 : 503, requestId, origin, env);
+        return response({ data: Array.isArray(payload) ? payload[0] : payload }, 201, requestId, origin, env);
+      } catch { return response({ error: { code: "VEHICLE_SAVE_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
+    if (url.pathname === "/api/v1/driver/documents" && request.method === "POST") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch {
+        return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+      }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      if (!configured(env)) return response({ error: { code: "BACKEND_NOT_CONFIGURED", request_id: requestId } }, 503, requestId, origin, env);
+      let form: FormData;
+      try { form = await request.formData(); } catch { return response({ error: { code: "INVALID_DOCUMENT_UPLOAD", request_id: requestId } }, 400, requestId, origin, env); }
+      const file = form.get("file");
+      const documentType = form.get("document_type");
+      const last4 = form.get("document_number_last4");
+      const expiresAt = form.get("expires_at");
+      if (!(file instanceof File) || !["identity","driving_licence","vehicle_registration","insurance","other_required"].includes(String(documentType))
+        || file.size < 1 || file.size > 10 * 1024 * 1024
+        || !["application/pdf","image/jpeg","image/png"].includes(file.type)) {
+        return response({ error: { code: "INVALID_DOCUMENT_UPLOAD", message: "Upload a PDF, JPG or PNG document up to 10 MB.", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      if (last4 !== null && (typeof last4 !== "string" || (last4.trim() && !/^[0-9A-Za-z]{4}$/.test(last4.trim())))) {
+        return response({ error: { code: "INVALID_DOCUMENT_NUMBER", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      if (expiresAt !== null && (typeof expiresAt !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(expiresAt))) {
+        return response({ error: { code: "INVALID_DOCUMENT_EXPIRY", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      const driverCheck = await databaseRequest(env, "sjelle_driver_profiles?user_id=eq." + encodeURIComponent(user.id) + "&select=user_id&limit=1");
+      const driverRows = await parseJson(driverCheck) as unknown[];
+      if (!driverCheck.ok) return response({ error: { code: "DRIVER_PROFILE_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+      if (!Array.isArray(driverRows) || !driverRows.length) return response({ error: { code: "DRIVER_APPLICATION_REQUIRED", request_id: requestId } }, 409, requestId, origin, env);
+      try {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const isPdf = file.type === "application/pdf" && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
+        const isJpeg = file.type === "image/jpeg" && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+        const isPng = file.type === "image/png" && bytes.slice(0,8).join(",") === "137,80,78,71,13,10,26,10";
+        if (!isPdf && !isJpeg && !isPng) return response({ error: { code: "DOCUMENT_CONTENT_MISMATCH", request_id: requestId } }, 400, requestId, origin, env);
+        const extension = isPdf ? "pdf" : isJpeg ? "jpg" : "png";
+        const storagePath = user.id + "/" + crypto.randomUUID() + "." + extension;
+        const upload = await fetch(supabaseUrl(env, "/storage/v1/object/sjelle-driver-documents/" + storagePath), {
+          method: "POST",
+          headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY!, authorization: "Bearer " + env.SUPABASE_SERVICE_ROLE_KEY!, "content-type": file.type, "x-upsert": "false" },
+          body: bytes,
+        });
+        if (!upload.ok) return response({ error: { code: "DOCUMENT_STORAGE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const insert = await databaseRequest(env, "sjelle_driver_documents", {
+          method: "POST", headers: { prefer: "return=representation" },
+          body: JSON.stringify({
+            driver_id: user.id, document_type: documentType, storage_path: storagePath,
+            document_number_last4: typeof last4 === "string" && last4.trim() ? last4.trim() : null,
+            expires_at: typeof expiresAt === "string" && expiresAt ? expiresAt : null,
+            review_status: "pending",
+          }),
+        });
+        const inserted = await parseJson(insert);
+        if (!insert.ok) {
+          await fetch(supabaseUrl(env, "/storage/v1/object/sjelle-driver-documents/" + storagePath), {
+            method: "DELETE", headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY!, authorization: "Bearer " + env.SUPABASE_SERVICE_ROLE_KEY! },
+          });
+          return response({ error: { code: "DOCUMENT_METADATA_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        }
+        const row = Array.isArray(inserted) ? inserted[0] : null;
+        return response({ data: row && isRecord(row) ? { id: row.id, document_type: row.document_type, review_status: row.review_status, expires_at: row.expires_at } : null }, 201, requestId, origin, env);
+      } catch { return response({ error: { code: "DOCUMENT_UPLOAD_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
+    if (url.pathname === "/api/v1/driver/availability" && request.method === "PATCH") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch {
+        return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+      }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      let body: unknown;
+      try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
+      if (!isRecord(body) || typeof body.online !== "boolean" || (body.mode !== undefined && !["ride","delivery"].includes(String(body.mode)))) {
+        return response({ error: { code: "INVALID_AVAILABILITY", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      try {
+        const profileResponse = await databaseRequest(env, "sjelle_driver_profiles?user_id=eq." + encodeURIComponent(user.id) + "&select=user_id,review_status,city_id,selected_mode&limit=1");
+        const profiles = await parseJson(profileResponse) as Array<{ user_id: string; review_status: string; city_id: string; selected_mode: string | null }>;
+        const profile = profiles[0];
+        if (!profileResponse.ok) return response({ error: { code: "DRIVER_PROFILE_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        if (!profile) return response({ error: { code: "DRIVER_APPLICATION_REQUIRED", request_id: requestId } }, 409, requestId, origin, env);
+        const mode = body.mode === undefined ? profile.selected_mode : String(body.mode);
+        if (body.online && profile.review_status !== "approved") return response({ error: { code: "DRIVER_NOT_APPROVED", request_id: requestId } }, 409, requestId, origin, env);
+        if (body.online) {
+          const [docsResponse, vehicleResponse, cityResponse] = await Promise.all([
+            databaseRequest(env, "sjelle_driver_documents?driver_id=eq." + encodeURIComponent(user.id) + "&review_status=eq.approved&select=document_type"),
+            databaseRequest(env, "sjelle_vehicles?driver_id=eq." + encodeURIComponent(user.id) + "&review_status=eq.approved&select=id&limit=1"),
+            databaseRequest(env, "sjelle_cities?id=eq." + encodeURIComponent(profile.city_id) + "&select=active,rides_enabled,food_enabled&limit=1"),
+          ]);
+          const docs = await parseJson(docsResponse) as Array<{ document_type: string }>;
+          const vehicles = await parseJson(vehicleResponse) as unknown[];
+          const cities = await parseJson(cityResponse) as Array<{ active: boolean; rides_enabled: boolean; food_enabled: boolean }>;
+          const required = ["identity","driving_licence","vehicle_registration","insurance"];
+          if (!docsResponse.ok || !vehicleResponse.ok || !cityResponse.ok) return response({ error: { code: "DRIVER_READINESS_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+          if (!required.every(type => docs.some(doc => doc.document_type === type)) || !vehicles.length) {
+            return response({ error: { code: "DRIVER_DOCUMENTS_NOT_APPROVED", message: "Identity, driving licence, vehicle registration and insurance must be approved, with at least one approved vehicle.", request_id: requestId } }, 409, requestId, origin, env);
+          }
+          const city = cities[0];
+          if (!city || !city.active || (mode === "ride" && !city.rides_enabled) || (mode === "delivery" && !city.food_enabled)) {
+            return response({ error: { code: "CITY_SERVICE_UNAVAILABLE", request_id: requestId } }, 409, requestId, origin, env);
+          }
+        }
+        const update = await databaseRequest(env, "sjelle_driver_profiles?user_id=eq." + encodeURIComponent(user.id), {
+          method: "PATCH", headers: { prefer: "return=representation" },
+          body: JSON.stringify({ online: body.online, selected_mode: mode, updated_at: new Date().toISOString() }),
+        });
+        const payload = await parseJson(update);
+        if (!update.ok) return response({ error: { code: "AVAILABILITY_UPDATE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        return response({ data: Array.isArray(payload) ? payload[0] : payload }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "AVAILABILITY_UPDATE_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
+    if (url.pathname === "/api/v1/driver/location" && request.method === "POST") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch {
+        return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+      }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      let body: unknown;
+      try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
+      if (!isRecord(body) || typeof body.latitude !== "number" || typeof body.longitude !== "number"
+        || body.latitude < -90 || body.latitude > 90 || body.longitude < -180 || body.longitude > 180
+        || (body.accuracy_m !== undefined && (typeof body.accuracy_m !== "number" || body.accuracy_m < 0 || body.accuracy_m > 10000))) {
+        return response({ error: { code: "INVALID_LOCATION", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      try {
+        const driver = await databaseRequest(env, "sjelle_driver_profiles?user_id=eq." + encodeURIComponent(user.id) + "&select=online,review_status&limit=1");
+        const profiles = await parseJson(driver) as Array<{ online: boolean; review_status: string }>;
+        if (!driver.ok) return response({ error: { code: "DRIVER_PROFILE_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        if (!profiles[0] || !profiles[0].online || profiles[0].review_status !== "approved") return response({ error: { code: "DRIVER_NOT_ONLINE", request_id: requestId } }, 409, requestId, origin, env);
+        const result = await databaseRequest(env, "sjelle_driver_locations?on_conflict=driver_id", {
+          method: "POST", headers: { prefer: "resolution=merge-duplicates,return=minimal" },
+          body: JSON.stringify({ driver_id: user.id, latitude: body.latitude, longitude: body.longitude,
+            accuracy_m: body.accuracy_m ?? null, heading_degrees: body.heading_degrees ?? null, recorded_at: new Date().toISOString(), updated_at: new Date().toISOString() }),
+        });
+        if (!result.ok) return response({ error: { code: "LOCATION_UPDATE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        return response({ data: { recorded: true } }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "LOCATION_UPDATE_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
+    const driverReviewMatch = url.pathname.match(/^\/api\/v1\/admin\/drivers\/([0-9a-f-]{36})\/review$/i);
+    if (driverReviewMatch && request.method === "PATCH") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch {
+        return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+      }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try { if (!await hasSjelleRole(env, user.id, "admin")) return response({ error: { code: "FORBIDDEN", request_id: requestId } }, 403, requestId, origin, env); }
+      catch { return response({ error: { code: "ROLE_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+      let body: unknown;
+      try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
+      if (!isRecord(body) || !["approved","rejected","suspended"].includes(String(body.review_status))) return response({ error: { code: "INVALID_REVIEW_STATUS", request_id: requestId } }, 400, requestId, origin, env);
+      try {
+        if (body.review_status === "approved") {
+          const [docsResponse, vehicleResponse] = await Promise.all([
+            databaseRequest(env, "sjelle_driver_documents?driver_id=eq." + encodeURIComponent(driverReviewMatch[1]) + "&review_status=eq.approved&select=document_type"),
+            databaseRequest(env, "sjelle_vehicles?driver_id=eq." + encodeURIComponent(driverReviewMatch[1]) + "&review_status=eq.approved&select=id&limit=1"),
+          ]);
+          const docs = await parseJson(docsResponse) as Array<{ document_type: string }>;
+          const vehicles = await parseJson(vehicleResponse) as unknown[];
+          if (!docsResponse.ok || !vehicleResponse.ok) return response({ error: { code: "DRIVER_READINESS_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+          if (!["identity","driving_licence","vehicle_registration","insurance"].every(type => docs.some(doc => doc.document_type === type)) || !vehicles.length) {
+            return response({ error: { code: "DRIVER_DOCUMENTS_NOT_APPROVED", request_id: requestId } }, 409, requestId, origin, env);
+          }
+        }
+        const result = await databaseRequest(env, "sjelle_driver_profiles?user_id=eq." + encodeURIComponent(driverReviewMatch[1]), {
+          method: "PATCH", headers: { prefer: "return=representation" },
+          body: JSON.stringify({ review_status: body.review_status, approved_at: body.review_status === "approved" ? new Date().toISOString() : null,
+            approved_by: body.review_status === "approved" ? user.id : null, online: false, updated_at: new Date().toISOString() }),
+        });
+        const payload = await parseJson(result);
+        if (!result.ok) return response({ error: { code: "DRIVER_REVIEW_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        if (!Array.isArray(payload) || !payload.length) return response({ error: { code: "DRIVER_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+        await databaseRequest(env, "sjelle_audit_logs", { method: "POST", body: JSON.stringify({ actor_id: user.id, action: "driver.reviewed", target_type: "driver", target_id: driverReviewMatch[1], metadata: { review_status: body.review_status } }) });
+        return response({ data: { user_id: driverReviewMatch[1], review_status: body.review_status, online: false } }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "DRIVER_REVIEW_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
+    const documentReviewMatch = url.pathname.match(/^\/api\/v1\/admin\/driver-documents\/([0-9a-f-]{36})\/review$/i);
+    if (documentReviewMatch && request.method === "PATCH") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try { if (!await hasSjelleRole(env, user.id, "admin")) return response({ error: { code: "FORBIDDEN", request_id: requestId } }, 403, requestId, origin, env); }
+      catch { return response({ error: { code: "ROLE_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+      let body: unknown;
+      try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
+      if (!isRecord(body) || !["approved","rejected"].includes(String(body.review_status)) || (body.rejection_reason !== undefined && typeof body.rejection_reason !== "string")) {
+        return response({ error: { code: "INVALID_REVIEW_STATUS", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      try {
+        const result = await databaseRequest(env, "sjelle_driver_documents?id=eq." + encodeURIComponent(documentReviewMatch[1]), {
+          method: "PATCH", headers: { prefer: "return=representation" },
+          body: JSON.stringify({ review_status: body.review_status, reviewed_at: new Date().toISOString(), reviewed_by: user.id,
+            rejection_reason: body.review_status === "rejected" ? String(body.rejection_reason || "Document rejected").slice(0,300) : null }),
+        });
+        const payload = await parseJson(result);
+        if (!result.ok) return response({ error: { code: "DOCUMENT_REVIEW_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        if (!Array.isArray(payload) || !payload.length) return response({ error: { code: "DOCUMENT_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+        await databaseRequest(env, "sjelle_audit_logs", { method: "POST", body: JSON.stringify({ actor_id: user.id, action: "driver_document.reviewed", target_type: "driver_document", target_id: documentReviewMatch[1], metadata: { review_status: body.review_status } }) });
+        return response({ data: { id: payload[0].id, document_type: payload[0].document_type, review_status: payload[0].review_status } }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "DOCUMENT_REVIEW_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
+    const vehicleReviewMatch = url.pathname.match(/^\/api\/v1\/admin\/vehicles\/([0-9a-f-]{36})\/review$/i);
+    if (vehicleReviewMatch && request.method === "PATCH") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try { if (!await hasSjelleRole(env, user.id, "admin")) return response({ error: { code: "FORBIDDEN", request_id: requestId } }, 403, requestId, origin, env); }
+      catch { return response({ error: { code: "ROLE_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+      let body: unknown;
+      try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
+      if (!isRecord(body) || !["approved","rejected"].includes(String(body.review_status)) || (body.document_expires_at !== undefined && body.document_expires_at !== null && (typeof body.document_expires_at !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(body.document_expires_at)))) {
+        return response({ error: { code: "INVALID_REVIEW_STATUS", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      try {
+        const result = await databaseRequest(env, "sjelle_vehicles?id=eq." + encodeURIComponent(vehicleReviewMatch[1]), {
+          method: "PATCH", headers: { prefer: "return=representation" },
+          body: JSON.stringify({ review_status: body.review_status, verified_at: body.review_status === "approved" ? new Date().toISOString() : null,
+            verified_by: body.review_status === "approved" ? user.id : null, document_expires_at: body.document_expires_at ?? null }),
+        });
+        const payload = await parseJson(result);
+        if (!result.ok) return response({ error: { code: "VEHICLE_REVIEW_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        if (!Array.isArray(payload) || !payload.length) return response({ error: { code: "VEHICLE_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+        await databaseRequest(env, "sjelle_audit_logs", { method: "POST", body: JSON.stringify({ actor_id: user.id, action: "vehicle.reviewed", target_type: "vehicle", target_id: vehicleReviewMatch[1], metadata: { review_status: body.review_status } }) });
+        return response({ data: { id: payload[0].id, review_status: payload[0].review_status } }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "VEHICLE_REVIEW_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
     if (url.pathname === "/api/v1/me" && (request.method === "GET" || request.method === "PUT")) {
       let user: AuthUser | null;
       try {
