@@ -2,6 +2,7 @@ export interface Env {
   APP_ENV?: "development" | "staging" | "production";
   ALLOWED_ORIGIN?: string;
   SUPABASE_URL?: string;
+  SUPABASE_PUBLISHABLE_KEY?: string;
   SUPABASE_SERVICE_ROLE_KEY?: string;
   ASSETS?: Fetcher;
 }
@@ -55,14 +56,14 @@ function supabaseUrl(env: Env, path: string): string {
 }
 
 async function getAuthenticatedUser(request: Request, env: Env): Promise<AuthUser | null> {
-  if (!configured(env)) throw new Error("SUPABASE_NOT_CONFIGURED");
+  if (!configured(env) || !env.SUPABASE_PUBLISHABLE_KEY) throw new Error("SUPABASE_NOT_CONFIGURED");
   const authorization = request.headers.get("authorization");
   if (!authorization || !/^Bearer\s+\S+$/i.test(authorization)) return null;
 
   const result = await fetch(supabaseUrl(env, "/auth/v1/user"), {
     method: "GET",
     headers: {
-      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      apikey: env.SUPABASE_PUBLISHABLE_KEY,
       authorization,
     },
   });
