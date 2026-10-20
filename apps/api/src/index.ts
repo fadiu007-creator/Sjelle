@@ -1372,6 +1372,47 @@ export default {
       } catch { return response({ error: { code: "ROUTE_UPDATE_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
     }
 
+
+    const adminServiceAreasMatch = url.pathname.match(/^\/api\/v1\/admin\/cities\/([a-z0-9-]{2,60})\/service-areas$/i);
+    if (adminServiceAreasMatch && request.method === "POST") {
+      let user:AuthUser|null;try{user=await requireUser(request,env);}catch{return response({error:{code:"AUTH_PROVIDER_UNAVAILABLE",request_id:requestId}},503,requestId,origin,env);}
+      if(!user)return response({error:{code:"UNAUTHENTICATED",request_id:requestId}},401,requestId,origin,env);
+      try{if(!await hasSjelleRole(env,user.id,"admin"))return response({error:{code:"FORBIDDEN",request_id:requestId}},403,requestId,origin,env);}catch{return response({error:{code:"ROLE_CHECK_FAILED",request_id:requestId}},503,requestId,origin,env);}
+      let body:unknown;try{body=await request.json();}catch{return response({error:{code:"INVALID_JSON",request_id:requestId}},400,requestId,origin,env);}
+      if(!isRecord(body)||typeof body.name!=="string"||body.name.trim().length<2||body.name.length>120||!isPolygonGeoJSON(body.boundary_geojson))return response({error:{code:"INVALID_SERVICE_AREA",message:"Provide a named, closed GeoJSON Polygon within the Kosovo launch bounds.",request_id:requestId}},400,requestId,origin,env);
+      try{
+        const cityResponse=await databaseRequest(env,"sjelle_cities?slug=eq."+encodeURIComponent(adminServiceAreasMatch[1].toLowerCase())+"&select=id&limit=1");
+        const cities=await parseJson(cityResponse) as Array<{id:string}>;
+        if(!cityResponse.ok)return response({error:{code:"CITY_LOOKUP_FAILED",request_id:requestId}},503,requestId,origin,env);
+        if(!cities.length)return response({error:{code:"CITY_NOT_FOUND",request_id:requestId}},404,requestId,origin,env);
+        const result=await databaseRequest(env,"sjelle_service_areas",{method:"POST",headers:{prefer:"return=representation"},body:JSON.stringify({city_id:cities[0].id,name:body.name.trim(),boundary_geojson:body.boundary_geojson,active:false})});
+        const payload=await parseJson(result);if(!result.ok)return response({error:{code:"SERVICE_AREA_SAVE_FAILED",request_id:requestId}},503,requestId,origin,env);
+        const area=Array.isArray(payload)?payload[0]:payload;
+        await databaseRequest(env,"sjelle_audit_logs",{method:"POST",body:JSON.stringify({actor_id:user.id,action:"service_area.created",target_type:"service_area",target_id:isRecord(area)&&typeof area.id==="string"?area.id:"",metadata:{city_id:cities[0].id,name:body.name.trim()}})});
+        return response({data:area},201,requestId,origin,env);
+      }catch{return response({error:{code:"SERVICE_AREA_SAVE_FAILED",request_id:requestId}},503,requestId,origin,env);}
+    }
+
+    const adminServiceAreaMatch=url.pathname.match(/^\/api\/v1\/admin\/service-areas\/([0-9a-f-]{36})$/i);
+    if(adminServiceAreaMatch&&request.method==="PATCH"){
+      let user:AuthUser|null;try{user=await requireUser(request,env);}catch{return response({error:{code:"AUTH_PROVIDER_UNAVAILABLE",request_id:requestId}},503,requestId,origin,env);}
+      if(!user)return response({error:{code:"UNAUTHENTICATED",request_id:requestId}},401,requestId,origin,env);
+      try{if(!await hasSjelleRole(env,user.id,"admin"))return response({error:{code:"FORBIDDEN",request_id:requestId}},403,requestId,origin,env);}catch{return response({error:{code:"ROLE_CHECK_FAILED",request_id:requestId}},503,requestId,origin,env);}
+      let body:unknown;try{body=await request.json();}catch{return response({error:{code:"INVALID_JSON",request_id:requestId}},400,requestId,origin,env);}
+      if(!isRecord(body)||typeof body.active!=="boolean")return response({error:{code:"INVALID_SERVICE_AREA_STATUS",request_id:requestId}},400,requestId,origin,env);
+      try{
+        const areaResponse=await databaseRequest(env,"sjelle_service_areas?id=eq."+encodeURIComponent(adminServiceAreaMatch[1])+"&select=id,city_id,name,boundary_geojson&limit=1");
+        const areas=await parseJson(areaResponse) as Array<{id:string;city_id:string;name:string;boundary_geojson:unknown}>;
+        if(!areaResponse.ok)return response({error:{code:"SERVICE_AREA_READ_FAILED",request_id:requestId}},503,requestId,origin,env);
+        if(!areas.length)return response({error:{code:"SERVICE_AREA_NOT_FOUND",request_id:requestId}},404,requestId,origin,env);
+        if(body.active&&!isPolygonGeoJSON(areas[0].boundary_geojson))return response({error:{code:"INVALID_SERVICE_AREA",request_id:requestId}},409,requestId,origin,env);
+        const result=await databaseRequest(env,"sjelle_service_areas?id=eq."+encodeURIComponent(adminServiceAreaMatch[1]),{method:"PATCH",headers:{prefer:"return=representation"},body:JSON.stringify({active:body.active})});
+        const payload=await parseJson(result);if(!result.ok)return response({error:{code:"SERVICE_AREA_UPDATE_FAILED",request_id:requestId}},503,requestId,origin,env);
+        await databaseRequest(env,"sjelle_audit_logs",{method:"POST",body:JSON.stringify({actor_id:user.id,action:"service_area.activation_changed",target_type:"service_area",target_id:adminServiceAreaMatch[1],metadata:{active:body.active}})});
+        return response({data:Array.isArray(payload)?payload[0]:payload},200,requestId,origin,env);
+      }catch{return response({error:{code:"SERVICE_AREA_UPDATE_FAILED",request_id:requestId}},503,requestId,origin,env);}
+    }
+
     const adminCityServicesMatch = url.pathname.match(/^\/api\/v1\/admin\/cities\/([a-z0-9-]{2,60})\/services$/i);
     if (adminCityServicesMatch && request.method === "PATCH") {
       let user: AuthUser | null;
