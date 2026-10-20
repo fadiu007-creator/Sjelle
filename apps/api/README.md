@@ -7,10 +7,12 @@ Cloudflare Worker API backed by the existing Supabase project `zikos`. Sjelle ta
 - `GET /api/v1/health` — liveness response and request ID; does not require the database.
 - `GET /api/v1/ready` — checks that the configured Supabase REST endpoint can read Sjelle's city table.
 - `GET /api/v1/cities` — returns the six configured cities and their service-enabled/active flags from the database. Inactive cities are shown as planned, not bookable.
+- `GET /api/v1/restaurants?city=<slug>` — lists approved, open, delivery-enabled restaurants only when that city is active for food delivery.
+- `GET /api/v1/restaurants/:slug/menu` — returns public restaurant details, active menu categories, and available menu items only for an approved/open restaurant in an active food city.
 - `GET /api/v1/me` — verifies the bearer token through Supabase Auth and returns only the caller's Sjelle profile.
 - `PUT /api/v1/me` — validates and saves the caller's profile and assigns only the `customer` role if missing. The caller cannot supply a user ID or choose a role.
 
-Unknown routes return 404; unavailable backend/configuration returns 503. No ride booking, restaurant order, pricing quote, payment, or dispatch endpoint is exposed until the routing, idempotency and transactional rules are implemented.
+Unknown routes return 404; unavailable backend/configuration returns 503. No ride booking, food order placement, pricing quote, payment, or dispatch endpoint is exposed until the routing, idempotency and transactional rules are implemented.
 
 ## Local setup
 
