@@ -1438,17 +1438,22 @@ export default {
         if (!cities.length) return response({ error: { code: "CITY_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
         const cityId = cities[0].id;
         if (body.active) {
+          const areaResponse = await databaseRequest(env, "sjelle_service_areas?city_id=eq." + encodeURIComponent(cityId) + "&active=eq.true&select=boundary_geojson");
+          const areaRows = await parseJson(areaResponse) as Array<{ boundary_geojson: unknown }>;
+          const serviceAreas = (Array.isArray(areaRows) ? areaRows : []).filter(area => isPolygonGeoJSON(area.boundary_geojson));
+          if (!areaResponse.ok || !serviceAreas.length) return response({ error: { code: "NO_ACTIVE_SERVICE_AREA", message: "Create and activate a valid service-area polygon before enabling a city.", request_id: requestId } }, 409, requestId, origin, env);
           const pricingResponse = await databaseRequest(env, "sjelle_city_pricing?city_id=eq." + encodeURIComponent(cityId) + "&active=eq.true&select=city_id&limit=1");
           const pricing = await parseJson(pricingResponse) as unknown[];
           if (!pricingResponse.ok || !pricing.length) return response({ error: { code: "CITY_PRICING_NOT_CONFIGURED", request_id: requestId } }, 409, requestId, origin, env);
           if (body.food_enabled) {
-            const restaurantResponse = await databaseRequest(env, "sjelle_restaurants?city_id=eq." + encodeURIComponent(cityId) + "&approval_status=eq.approved&select=id&limit=100");
-            const restaurants = await parseJson(restaurantResponse) as Array<{ id: string }>;
-            if (!restaurantResponse.ok || !restaurants.length) return response({ error: { code: "NO_READY_RESTAURANTS", request_id: requestId } }, 409, requestId, origin, env);
-            const restaurantIds = "in.(" + restaurants.map(item => item.id).join(",") + ")";
+            const restaurantResponse = await databaseRequest(env, "sjelle_restaurants?city_id=eq." + encodeURIComponent(cityId) + "&approval_status=eq.approved&select=id,latitude,longitude&limit=100");
+            const restaurants = await parseJson(restaurantResponse) as Array<{ id: string; latitude: number; longitude: number }>;
+            const inAreaRestaurants = (Array.isArray(restaurants) ? restaurants : []).filter(item => serviceAreas.some(area => pointInServiceArea(item.latitude,item.longitude,area.boundary_geojson)));
+            if (!restaurantResponse.ok || !inAreaRestaurants.length) return response({ error: { code: "NO_READY_RESTAURANTS", request_id: requestId } }, 409, requestId, origin, env);
+            const restaurantIds = "in.(" + inAreaRestaurants.map(item => item.id).join(",") + ")";
             const menuResponse = await databaseRequest(env, "sjelle_menu_items?restaurant_id=" + restaurantIds + "&available=eq.true&select=id&limit=1");
             const menuItems = await parseJson(menuResponse) as unknown[];
-            if (!menuResponse.ok || !menuItems.length) return response({ error: { code: "NO_READY_RESTAURANTS", message: "At least one approved restaurant must have an available menu item. The restaurant can be opened after the city is activated.", request_id: requestId } }, 409, requestId, origin, env);
+            if (!menuResponse.ok || !menuItems.length) return response({ error: { code: "NO_READY_RESTAURANTS", message: "At least one approved restaurant inside the service area must have an available menu item.", request_id: requestId } }, 409, requestId, origin, env);
           }
           if (body.rides_enabled) {
             const [routeResponse, driverResponse] = await Promise.all([
