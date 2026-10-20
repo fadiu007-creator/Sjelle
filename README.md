@@ -62,7 +62,7 @@ npm run typecheck
 npm run dev
 ```
 
-Cloudflare requires the `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and `ALLOWED_ORIGIN` bindings/secrets to be configured per environment before database-backed endpoints work. The URL is the existing `zikos` project. No secret is committed.
+Cloudflare requires the `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY` and `ALLOWED_ORIGIN` bindings/secrets to be configured per environment before database-backed endpoints work. The URL is the existing `zikos` project. No secret is committed.
 
 ## Key files
 
