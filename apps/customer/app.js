@@ -585,3 +585,5 @@ async function loadMyOrders() {
     myOrders.replaceChildren(node("p", "menu-empty", "Porositë nuk mund të ngarkohen tani. Provo përsëri."));
   }
 }
+
+if (new URLSearchParams(window.location.search).get("account") === "login") openAccount("login");
