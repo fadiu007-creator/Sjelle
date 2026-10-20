@@ -39,7 +39,7 @@ test("oversized API bodies are rejected before parsing or backend access", async
     headers: { "content-type": "application/json", "content-length": String(body.byteLength) },
     body,
   });
-  const result = await worker.fetch(request, env, {} as never);
+  const result = await worker.fetch(request, env);
   assert.equal(result.status, 413);
   const payload = await result.json() as { error?: { code?: string } };
   assert.equal(payload.error?.code, "REQUEST_TOO_LARGE");
