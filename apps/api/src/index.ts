@@ -1438,6 +1438,195 @@ export default {
       } catch { return response({ error: { code: "SIGNED_URL_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
     }
 
+
+    if (url.pathname === "/api/v1/merchant/restaurants" && request.method === "GET") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try {
+        const [ownedResponse, staffResponse] = await Promise.all([
+          databaseRequest(env, "sjelle_restaurants?owner_id=eq." + encodeURIComponent(user.id) + "&select=id,owner_id,city_id,name,slug,description,phone,address_text,latitude,longitude,approval_status,is_open,delivery_enabled,prep_time_minutes&order=name.asc"),
+          databaseRequest(env, "sjelle_restaurant_staff?user_id=eq." + encodeURIComponent(user.id) + "&select=restaurant_id,can_manage_menu,can_manage_orders"),
+        ]);
+        if (!ownedResponse.ok || !staffResponse.ok) return response({ error: { code: "MERCHANT_RESTAURANTS_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const owned = await parseJson(ownedResponse) as Array<Record<string, unknown>>;
+        const staff = await parseJson(staffResponse) as Array<{ restaurant_id: string; can_manage_menu: boolean; can_manage_orders: boolean }>;
+        const restaurants = [...(Array.isArray(owned) ? owned : [])].map(r => ({ ...r, can_manage_menu: true, can_manage_orders: true }));
+        const ids = new Set(restaurants.map(r => String(r.id)));
+        for (const item of Array.isArray(staff) ? staff : []) {
+          if (ids.has(item.restaurant_id)) continue;
+          const foundResponse = await databaseRequest(env, "sjelle_restaurants?id=eq." + encodeURIComponent(item.restaurant_id) + "&select=id,owner_id,city_id,name,slug,description,phone,address_text,latitude,longitude,approval_status,is_open,delivery_enabled,prep_time_minutes&limit=1");
+          const found = await parseJson(foundResponse) as Array<Record<string, unknown>>;
+          if (foundResponse.ok && found[0]) restaurants.push({ ...found[0], can_manage_menu: item.can_manage_menu, can_manage_orders: item.can_manage_orders });
+        }
+        const data = await Promise.all(restaurants.map(async restaurant => {
+          const id = String(restaurant.id);
+          const [categoriesResponse, itemsResponse] = await Promise.all([
+            databaseRequest(env, "sjelle_menu_categories?restaurant_id=eq." + encodeURIComponent(id) + "&select=id,name,sort_order,active&order=sort_order.asc"),
+            databaseRequest(env, "sjelle_menu_items?restaurant_id=eq." + encodeURIComponent(id) + "&select=id,category_id,name,description,price_cents,available&order=name.asc"),
+          ]);
+          return { ...restaurant, categories: categoriesResponse.ok ? await parseJson(categoriesResponse) : [], menu_items: itemsResponse.ok ? await parseJson(itemsResponse) : [] };
+        }));
+        return response({ data }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "MERCHANT_RESTAURANTS_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
+    if (url.pathname === "/api/v1/merchant/restaurants" && request.method === "POST") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      let body: unknown;
+      try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
+      if (!isRecord(body) || typeof body.city !== "string" || typeof body.name !== "string" || body.name.trim().length < 2 || body.name.length > 120
+        || typeof body.slug !== "string" || !/^[a-z0-9-]{2,80}$/.test(body.slug)
+        || typeof body.address_text !== "string" || body.address_text.trim().length < 4 || body.address_text.length > 300
+        || typeof body.latitude !== "number" || body.latitude < -90 || body.latitude > 90
+        || typeof body.longitude !== "number" || body.longitude < -180 || body.longitude > 180
+        || (body.phone !== undefined && body.phone !== null && (typeof body.phone !== "string" || body.phone.length > 32))
+        || (body.description !== undefined && body.description !== null && (typeof body.description !== "string" || body.description.length > 1000))) {
+        return response({ error: { code: "INVALID_RESTAURANT_APPLICATION", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      try {
+        const cityResponse = await databaseRequest(env, "sjelle_cities?slug=eq." + encodeURIComponent(body.city.trim().toLowerCase()) + "&select=id&limit=1");
+        const cities = await parseJson(cityResponse) as Array<{ id: string }>;
+        if (!cityResponse.ok) return response({ error: { code: "CITY_LOOKUP_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        if (!cities.length) return response({ error: { code: "CITY_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+        const result = await databaseRequest(env, "sjelle_restaurants", {
+          method: "POST", headers: { prefer: "return=representation" },
+          body: JSON.stringify({ owner_id:user.id,city_id:cities[0].id,name:body.name.trim(),slug:body.slug,
+            description:typeof body.description==="string"?body.description.trim():null,phone:typeof body.phone==="string"?body.phone.trim():null,
+            address_text:body.address_text.trim(),latitude:body.latitude,longitude:body.longitude,
+            approval_status:"pending",is_open:false,delivery_enabled:false }),
+        });
+        const payload = await parseJson(result);
+        if (!result.ok) return response({ error: { code: "RESTAURANT_APPLICATION_FAILED", request_id: requestId } }, result.status === 409 ? 409 : 503, requestId, origin, env);
+        const restaurant = Array.isArray(payload) ? payload[0] : null;
+        if (!restaurant || !isRecord(restaurant)) return response({ error: { code: "RESTAURANT_APPLICATION_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        await databaseRequest(env, "sjelle_user_roles?on_conflict=user_id,role", { method:"POST",headers:{prefer:"resolution=ignore-duplicates,return=minimal"},body:JSON.stringify({user_id:user.id,role:"merchant_staff"}) });
+        await databaseRequest(env, "sjelle_restaurant_staff?on_conflict=restaurant_id,user_id", { method:"POST",headers:{prefer:"resolution=merge-duplicates,return=minimal"},body:JSON.stringify({restaurant_id:restaurant.id,user_id:user.id,can_manage_menu:true,can_manage_orders:true}) });
+        await databaseRequest(env, "sjelle_audit_logs", { method:"POST",body:JSON.stringify({actor_id:user.id,action:"restaurant.applied",target_type:"restaurant",target_id:String(restaurant.id)}) });
+        return response({ data: { id:restaurant.id,name:restaurant.name,slug:restaurant.slug,approval_status:restaurant.approval_status,is_open:false,delivery_enabled:false } },201,requestId,origin,env);
+      } catch { return response({ error: { code: "RESTAURANT_APPLICATION_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
+    const merchantSettingsMatch = url.pathname.match(/^\/api\/v1\/merchant\/restaurants\/([0-9a-f-]{36})\/settings$/i);
+    if (merchantSettingsMatch && request.method === "PATCH") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      let body: unknown;
+      try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
+      if (!isRecord(body) || (body.is_open !== undefined && typeof body.is_open !== "boolean") || (body.delivery_enabled !== undefined && typeof body.delivery_enabled !== "boolean")) {
+        return response({ error: { code: "INVALID_RESTAURANT_SETTINGS", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      try {
+        const restaurantResponse = await databaseRequest(env, "sjelle_restaurants?id=eq." + encodeURIComponent(merchantSettingsMatch[1]) + "&owner_id=eq." + encodeURIComponent(user.id) + "&select=id,city_id,approval_status&limit=1");
+        const restaurants = await parseJson(restaurantResponse) as Array<{ id:string;city_id:string;approval_status:string }>;
+        if (!restaurantResponse.ok) return response({ error: { code: "RESTAURANT_READ_FAILED", request_id: requestId } },503,requestId,origin,env);
+        if (!restaurants.length) return response({ error: { code: "FORBIDDEN", request_id: requestId } },403,requestId,origin,env);
+        const restaurant = restaurants[0];
+        const nextOpen = body.is_open === undefined ? undefined : body.is_open;
+        const nextDelivery = body.delivery_enabled === undefined ? undefined : body.delivery_enabled;
+        if ((nextOpen === true || nextDelivery === true) && restaurant.approval_status !== "approved") return response({ error: { code: "RESTAURANT_NOT_APPROVED", request_id: requestId } },409,requestId,origin,env);
+        if (nextOpen === true || nextDelivery === true) {
+          const [cityResponse,pricingResponse,itemsResponse] = await Promise.all([
+            databaseRequest(env,"sjelle_cities?id=eq."+encodeURIComponent(restaurant.city_id)+"&select=active,food_enabled&limit=1"),
+            databaseRequest(env,"sjelle_city_pricing?city_id=eq."+encodeURIComponent(restaurant.city_id)+"&active=eq.true&select=city_id&limit=1"),
+            databaseRequest(env,"sjelle_menu_items?restaurant_id=eq."+encodeURIComponent(restaurant.id)+"&available=eq.true&select=id&limit=1"),
+          ]);
+          const [cities,pricing,items] = await Promise.all([parseJson(cityResponse),parseJson(pricingResponse),parseJson(itemsResponse)]);
+          const city = Array.isArray(cities)?cities[0]:null;
+          if (!city || !city.active || !city.food_enabled) return response({ error: { code: "CITY_UNAVAILABLE", request_id: requestId } },409,requestId,origin,env);
+          if (!pricingResponse.ok || !Array.isArray(pricing) || !pricing.length) return response({ error: { code: "FOOD_PRICING_NOT_CONFIGURED", request_id: requestId } },409,requestId,origin,env);
+          if ((nextDelivery===true || nextOpen===true) && (!Array.isArray(items)||!items.length)) return response({ error: { code: "MENU_REQUIRED", request_id: requestId } },409,requestId,origin,env);
+        }
+        const patch:Record<string,unknown>={updated_at:new Date().toISOString()};
+        if(nextOpen!==undefined) patch.is_open=nextOpen;
+        if(nextDelivery!==undefined) patch.delivery_enabled=nextDelivery;
+        const result=await databaseRequest(env,"sjelle_restaurants?id=eq."+encodeURIComponent(restaurant.id)+"&owner_id=eq."+encodeURIComponent(user.id),{method:"PATCH",headers:{prefer:"return=representation"},body:JSON.stringify(patch)});
+        const payload=await parseJson(result);
+        if(!result.ok) return response({error:{code:"RESTAURANT_SETTINGS_SAVE_FAILED",request_id:requestId}},503,requestId,origin,env);
+        await databaseRequest(env,"sjelle_audit_logs",{method:"POST",body:JSON.stringify({actor_id:user.id,action:"restaurant.settings.updated",target_type:"restaurant",target_id:restaurant.id,metadata:patch})});
+        return response({data:Array.isArray(payload)?payload[0]:payload},200,requestId,origin,env);
+      } catch { return response({error:{code:"RESTAURANT_SETTINGS_SAVE_FAILED",request_id:requestId}},503,requestId,origin,env); }
+    }
+
+    const categoryMatch = url.pathname.match(/^\/api\/v1\/merchant\/restaurants\/([0-9a-f-]{36})\/categories$/i);
+    if (categoryMatch && request.method === "POST") {
+      let user:AuthUser|null;
+      try{user=await requireUser(request,env);}catch{return response({error:{code:"AUTH_PROVIDER_UNAVAILABLE",request_id:requestId}},503,requestId,origin,env);}
+      if(!user)return response({error:{code:"UNAUTHENTICATED",request_id:requestId}},401,requestId,origin,env);
+      let body:unknown;try{body=await request.json();}catch{return response({error:{code:"INVALID_JSON",request_id:requestId}},400,requestId,origin,env);}
+      if(!isRecord(body)||typeof body.name!=="string"||body.name.trim().length<1||body.name.length>80||(body.sort_order!==undefined&&(!Number.isInteger(body.sort_order)||Number(body.sort_order)<0||Number(body.sort_order)>10000)))return response({error:{code:"INVALID_MENU_CATEGORY",request_id:requestId}},400,requestId,origin,env);
+      try{
+        if(!await hasRestaurantPermission(env,user.id,categoryMatch[1],"can_manage_menu"))return response({error:{code:"FORBIDDEN",request_id:requestId}},403,requestId,origin,env);
+        const result=await databaseRequest(env,"sjelle_menu_categories",{method:"POST",headers:{prefer:"return=representation"},body:JSON.stringify({restaurant_id:categoryMatch[1],name:body.name.trim(),sort_order:body.sort_order??0,active:true})});
+        const payload=await parseJson(result);if(!result.ok)return response({error:{code:"MENU_CATEGORY_SAVE_FAILED",request_id:requestId}},503,requestId,origin,env);
+        return response({data:Array.isArray(payload)?payload[0]:payload},201,requestId,origin,env);
+      }catch{return response({error:{code:"MENU_CATEGORY_SAVE_FAILED",request_id:requestId}},503,requestId,origin,env);}
+    }
+
+    const menuItemCreateMatch = url.pathname.match(/^\/api\/v1\/merchant\/restaurants\/([0-9a-f-]{36})\/menu-items$/i);
+    if (menuItemCreateMatch && request.method === "POST") {
+      let user:AuthUser|null;try{user=await requireUser(request,env);}catch{return response({error:{code:"AUTH_PROVIDER_UNAVAILABLE",request_id:requestId}},503,requestId,origin,env);}
+      if(!user)return response({error:{code:"UNAUTHENTICATED",request_id:requestId}},401,requestId,origin,env);
+      let body:unknown;try{body=await request.json();}catch{return response({error:{code:"INVALID_JSON",request_id:requestId}},400,requestId,origin,env);}
+      if(!isRecord(body)||typeof body.name!=="string"||body.name.trim().length<1||body.name.length>120||!Number.isSafeInteger(body.price_cents)||Number(body.price_cents)<0||Number(body.price_cents)>2000000000||(body.description!==undefined&&body.description!==null&&(typeof body.description!=="string"||body.description.length>1000))||(body.category_id!==undefined&&body.category_id!==null&&(typeof body.category_id!=="string"||!/^[0-9a-f-]{36}$/i.test(body.category_id))))return response({error:{code:"INVALID_MENU_ITEM",request_id:requestId}},400,requestId,origin,env);
+      try{
+        if(!await hasRestaurantPermission(env,user.id,menuItemCreateMatch[1],"can_manage_menu"))return response({error:{code:"FORBIDDEN",request_id:requestId}},403,requestId,origin,env);
+        if(typeof body.category_id==="string"){
+          const cat=await databaseRequest(env,"sjelle_menu_categories?id=eq."+encodeURIComponent(body.category_id)+"&restaurant_id=eq."+encodeURIComponent(menuItemCreateMatch[1])+"&select=id&limit=1");
+          const cats=await parseJson(cat) as unknown[];if(!cat.ok)return response({error:{code:"CATEGORY_LOOKUP_FAILED",request_id:requestId}},503,requestId,origin,env);if(!cats.length)return response({error:{code:"CATEGORY_NOT_FOUND",request_id:requestId}},404,requestId,origin,env);
+        }
+        const result=await databaseRequest(env,"sjelle_menu_items",{method:"POST",headers:{prefer:"return=representation"},body:JSON.stringify({restaurant_id:menuItemCreateMatch[1],category_id:body.category_id??null,name:body.name.trim(),description:typeof body.description==="string"?body.description.trim():null,price_cents:body.price_cents,available:body.available===true})});
+        const payload=await parseJson(result);if(!result.ok)return response({error:{code:"MENU_ITEM_SAVE_FAILED",request_id:requestId}},503,requestId,origin,env);
+        return response({data:Array.isArray(payload)?payload[0]:payload},201,requestId,origin,env);
+      }catch{return response({error:{code:"MENU_ITEM_SAVE_FAILED",request_id:requestId}},503,requestId,origin,env);}
+    }
+
+    const menuItemUpdateMatch = url.pathname.match(/^\/api\/v1\/merchant\/menu-items\/([0-9a-f-]{36})$/i);
+    if(menuItemUpdateMatch&&request.method==="PATCH"){
+      let user:AuthUser|null;try{user=await requireUser(request,env);}catch{return response({error:{code:"AUTH_PROVIDER_UNAVAILABLE",request_id:requestId}},503,requestId,origin,env);}
+      if(!user)return response({error:{code:"UNAUTHENTICATED",request_id:requestId}},401,requestId,origin,env);
+      let body:unknown;try{body=await request.json();}catch{return response({error:{code:"INVALID_JSON",request_id:requestId}},400,requestId,origin,env);}
+      if(!isRecord(body)||Object.keys(body).some(k=>!["name","description","price_cents","available","category_id"].includes(k))||(body.name!==undefined&&(typeof body.name!=="string"||!body.name.trim()||body.name.length>120))||(body.description!==undefined&&body.description!==null&&(typeof body.description!=="string"||body.description.length>1000))||(body.price_cents!==undefined&&(!Number.isSafeInteger(body.price_cents)||Number(body.price_cents)<0||Number(body.price_cents)>2000000000))||(body.available!==undefined&&typeof body.available!=="boolean"))return response({error:{code:"INVALID_MENU_ITEM",request_id:requestId}},400,requestId,origin,env);
+      try{
+        const itemResponse=await databaseRequest(env,"sjelle_menu_items?id=eq."+encodeURIComponent(menuItemUpdateMatch[1])+"&select=id,restaurant_id&limit=1");
+        const items=await parseJson(itemResponse) as Array<{id:string;restaurant_id:string}>;
+        if(!itemResponse.ok)return response({error:{code:"MENU_ITEM_READ_FAILED",request_id:requestId}},503,requestId,origin,env);
+        if(!items.length)return response({error:{code:"MENU_ITEM_NOT_FOUND",request_id:requestId}},404,requestId,origin,env);
+        if(!await hasRestaurantPermission(env,user.id,items[0].restaurant_id,"can_manage_menu"))return response({error:{code:"FORBIDDEN",request_id:requestId}},403,requestId,origin,env);
+        const patch:Record<string,unknown>={updated_at:new Date().toISOString()};
+        for(const key of ["name","description","price_cents","available","category_id"])if(body[key]!==undefined)patch[key]=key==="name"&&typeof body[key]==="string"?body[key].trim():body[key];
+        const result=await databaseRequest(env,"sjelle_menu_items?id=eq."+encodeURIComponent(menuItemUpdateMatch[1]),{method:"PATCH",headers:{prefer:"return=representation"},body:JSON.stringify(patch)});
+        const payload=await parseJson(result);if(!result.ok)return response({error:{code:"MENU_ITEM_UPDATE_FAILED",request_id:requestId}},503,requestId,origin,env);
+        return response({data:Array.isArray(payload)?payload[0]:payload},200,requestId,origin,env);
+      }catch{return response({error:{code:"MENU_ITEM_UPDATE_FAILED",request_id:requestId}},503,requestId,origin,env);}
+    }
+
+    if(url.pathname==="/api/v1/admin/restaurants"&&request.method==="GET"){
+      let user:AuthUser|null;try{user=await requireUser(request,env);}catch{return response({error:{code:"AUTH_PROVIDER_UNAVAILABLE",request_id:requestId}},503,requestId,origin,env);}
+      if(!user)return response({error:{code:"UNAUTHENTICATED",request_id:requestId}},401,requestId,origin,env);
+      try{if(!await hasSjelleRole(env,user.id,"admin"))return response({error:{code:"FORBIDDEN",request_id:requestId}},403,requestId,origin,env);}catch{return response({error:{code:"ROLE_CHECK_FAILED",request_id:requestId}},503,requestId,origin,env);}
+      try{const result=await databaseRequest(env,"sjelle_restaurants?approval_status=eq.pending&select=id,owner_id,city_id,name,slug,description,phone,address_text,latitude,longitude,created_at&order=created_at.asc&limit=100");if(!result.ok)return response({error:{code:"ADMIN_RESTAURANTS_READ_FAILED",request_id:requestId}},503,requestId,origin,env);const rows=await parseJson(result);return response({data:Array.isArray(rows)?rows:[]},200,requestId,origin,env);}catch{return response({error:{code:"ADMIN_RESTAURANTS_READ_FAILED",request_id:requestId}},503,requestId,origin,env);}
+    }
+
+    const restaurantReviewMatch=url.pathname.match(/^\/api\/v1\/admin\/restaurants\/([0-9a-f-]{36})\/review$/i);
+    if(restaurantReviewMatch&&request.method==="PATCH"){
+      let user:AuthUser|null;try{user=await requireUser(request,env);}catch{return response({error:{code:"AUTH_PROVIDER_UNAVAILABLE",request_id:requestId}},503,requestId,origin,env);}
+      if(!user)return response({error:{code:"UNAUTHENTICATED",request_id:requestId}},401,requestId,origin,env);
+      try{if(!await hasSjelleRole(env,user.id,"admin"))return response({error:{code:"FORBIDDEN",request_id:requestId}},403,requestId,origin,env);}catch{return response({error:{code:"ROLE_CHECK_FAILED",request_id:requestId}},503,requestId,origin,env);}
+      let body:unknown;try{body=await request.json();}catch{return response({error:{code:"INVALID_JSON",request_id:requestId}},400,requestId,origin,env);}
+      if(!isRecord(body)||!["approved","rejected","suspended"].includes(String(body.approval_status)))return response({error:{code:"INVALID_REVIEW_STATUS",request_id:requestId}},400,requestId,origin,env);
+      try{
+        const result=await databaseRequest(env,"sjelle_restaurants?id=eq."+encodeURIComponent(restaurantReviewMatch[1]),{method:"PATCH",headers:{prefer:"return=representation"},body:JSON.stringify({approval_status:body.approval_status,is_open:false,delivery_enabled:false,updated_at:new Date().toISOString()})});
+        const payload=await parseJson(result);if(!result.ok)return response({error:{code:"RESTAURANT_REVIEW_FAILED",request_id:requestId}},503,requestId,origin,env);
+        if(!Array.isArray(payload)||!payload.length)return response({error:{code:"RESTAURANT_NOT_FOUND",request_id:requestId}},404,requestId,origin,env);
+        await databaseRequest(env,"sjelle_audit_logs",{method:"POST",body:JSON.stringify({actor_id:user.id,action:"restaurant.reviewed",target_type:"restaurant",target_id:restaurantReviewMatch[1],metadata:{approval_status:body.approval_status}})});
+        return response({data:{id:restaurantReviewMatch[1],approval_status:body.approval_status,is_open:false,delivery_enabled:false}},200,requestId,origin,env);
+      }catch{return response({error:{code:"RESTAURANT_REVIEW_FAILED",request_id:requestId}},503,requestId,origin,env);}
+    }
+
     if (url.pathname === "/api/v1/me" && (request.method === "GET" || request.method === "PUT")) {
       let user: AuthUser | null;
       try {
