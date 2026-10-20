@@ -1011,6 +1011,27 @@ export default {
       } catch { return response({ error: { code: "CITY_PRICING_SAVE_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
     }
 
+
+    if (url.pathname === "/api/v1/admin/routes" && request.method === "GET") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try { if (!await hasSjelleRole(env, user.id, "admin")) return response({ error: { code: "FORBIDDEN", request_id: requestId } }, 403, requestId, origin, env); }
+      catch { return response({ error: { code: "ROLE_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+      const citySlug = (url.searchParams.get("city") || "").trim().toLowerCase();
+      if (!/^[a-z0-9-]{2,60}$/.test(citySlug)) return response({ error: { code: "CITY_REQUIRED", request_id: requestId } }, 400, requestId, origin, env);
+      try {
+        const cityResponse = await databaseRequest(env, "sjelle_cities?slug=eq." + encodeURIComponent(citySlug) + "&select=id&limit=1");
+        const cities = await parseJson(cityResponse) as Array<{ id: string }>;
+        if (!cityResponse.ok) return response({ error: { code: "CITY_LOOKUP_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        if (!cities.length) return response({ error: { code: "CITY_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+        const result = await databaseRequest(env, "sjelle_fixed_route_prices?city_id=eq." + encodeURIComponent(cities[0].id) + "&select=id,route_key,origin_label,destination_label,vehicle_type,amount_cents,version,active,origin_lat,origin_lon,destination_lat,destination_lon,effective_from,effective_until&order=created_at.desc");
+        if (!result.ok) return response({ error: { code: "ROUTES_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const rows = await parseJson(result);
+        return response({ data: Array.isArray(rows) ? rows : [] }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "ROUTES_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
     if (url.pathname === "/api/v1/admin/routes" && request.method === "POST") {
       let user: AuthUser | null;
       try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
@@ -1231,7 +1252,7 @@ export default {
         const payload = await parseJson(signed);
         if (!signed.ok || !isRecord(payload) || typeof payload.signedURL !== "string") return response({ error: { code: "SIGNED_URL_FAILED", request_id: requestId } }, 503, requestId, origin, env);
         const base = env.SUPABASE_URL!.replace(/\/+$/, "");
-        const relative = payload.signedURL.startsWith("/") ? payload.signedURL : "/storage/v1/" + payload.signedURL.replace(/^\/+/, "");
+        const relative = payload.signedURL.startsWith("http") ? payload.signedURL : (payload.signedURL.startsWith("/storage/v1/") ? base + payload.signedURL : base + "/storage/v1" + (payload.signedURL.startsWith("/") ? payload.signedURL : "/" + payload.signedURL));
         await databaseRequest(env, "sjelle_audit_logs", { method: "POST", body: JSON.stringify({ actor_id: user.id, action: "driver_document.view_url_issued", target_type: "driver_document", target_id: signedDocumentMatch[1] }) });
         return response({ data: { url: base + relative, expires_in_seconds: 300 } }, 200, requestId, origin, env);
       } catch { return response({ error: { code: "SIGNED_URL_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
