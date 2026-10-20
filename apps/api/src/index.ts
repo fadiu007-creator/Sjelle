@@ -1224,14 +1224,16 @@ export default {
       try { if (!await hasSjelleRole(env, user.id, "admin")) return response({ error: { code: "FORBIDDEN", request_id: requestId } }, 403, requestId, origin, env); }
       catch { return response({ error: { code: "ROLE_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
       try {
-        const [citiesResponse, pricingResponse] = await Promise.all([
+        const [citiesResponse, pricingResponse, areasResponse] = await Promise.all([
           databaseRequest(env, "sjelle_cities?select=id,slug,name,active,rides_enabled,food_enabled&order=name.asc"),
           databaseRequest(env, "sjelle_city_pricing?select=city_id,version,food_delivery_fee_cents,food_service_fee_cents,food_minimum_subtotal_cents,ride_base_fare_cents,ride_minimum_fare_cents,ride_per_km_cents,ride_per_minute_cents,active,updated_at"),
+          databaseRequest(env, "sjelle_service_areas?select=id,city_id,name,active,boundary_geojson,created_at&order=created_at.desc"),
         ]);
-        if (!citiesResponse.ok || !pricingResponse.ok) return response({ error: { code: "ADMIN_CITY_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
-        const [cities, pricing] = await Promise.all([parseJson(citiesResponse), parseJson(pricingResponse)]);
+        if (!citiesResponse.ok || !pricingResponse.ok || !areasResponse.ok) return response({ error: { code: "ADMIN_CITY_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const [cities, pricing, areas] = await Promise.all([parseJson(citiesResponse), parseJson(pricingResponse), parseJson(areasResponse)]);
         return response({ data: Array.isArray(cities) ? cities.map(city => ({
           ...city, pricing: Array.isArray(pricing) ? pricing.find(p => p.city_id === city.id) || null : null,
+          service_areas: Array.isArray(areas) ? areas.filter(area => area.city_id === city.id) : [],
         })) : [] }, 200, requestId, origin, env);
       } catch { return response({ error: { code: "ADMIN_CITY_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
     }
