@@ -779,10 +779,10 @@ export default {
       try {
         if (body.review_status === "approved") {
           const [docsResponse, vehicleResponse] = await Promise.all([
-            databaseRequest(env, "sjelle_driver_documents?driver_id=eq." + encodeURIComponent(driverReviewMatch[1]) + "&review_status=eq.approved&select=document_type"),
+            databaseRequest(env, "sjelle_driver_documents?driver_id=eq." + encodeURIComponent(driverReviewMatch[1]) + "&review_status=eq.approved&select=document_type,expires_at"),
             databaseRequest(env, "sjelle_vehicles?driver_id=eq." + encodeURIComponent(driverReviewMatch[1]) + "&review_status=eq.approved&select=id&limit=1"),
           ]);
-          const docs = await parseJson(docsResponse) as Array<{ document_type: string }>;
+          const docs = await parseJson(docsResponse) as Array<{ document_type: string; expires_at: string | null }>;
           const vehicles = await parseJson(vehicleResponse) as unknown[];
           if (!docsResponse.ok || !vehicleResponse.ok) return response({ error: { code: "DRIVER_READINESS_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env);
           if (!["identity","driving_licence","vehicle_registration","insurance"].every(type => docs.some(doc => doc.document_type === type && (!doc.expires_at || doc.expires_at >= new Date().toISOString().slice(0,10)))) || !vehicles.length) {
