@@ -1,46 +1,68 @@
 # Sjelle
 
-Sjelle is a Kosovo-first ride-hailing and food-delivery platform. One customer app supports rides and restaurant orders; drivers use one app with separate Ride and Delivery modes. The initial target cities are Prishtina, Ferizaj, Prizren, Gjilan, Mitrovica, and Peja.
+Sjelle is a Kosovo-first ride-hailing and food-delivery platform. One customer experience will support rides and restaurant orders; drivers will use a shared app with separate Ride and Delivery modes. Launch cities: Prishtina, Ferizaj, Prizren, Gjilan, Mitrovica and Peja.
 
 ## Product decisions
 
 - **Brand:** Sjelle
-- **Launch market:** six candidate cities in Kosovo, activated city-by-city only after supply, support, coverage, and compliance checks
+- **Launch market:** six candidate cities in Kosovo, activated one by one after supply, coverage, support and compliance checks
 - **Services:** ride-hailing and restaurant food delivery
-- **Driver model:** shared driver app; a driver cannot switch modes while an incompatible job is active
 - **Ride pricing:** fixed prices for configured popular routes; server-calculated estimates elsewhere
-- **Payments:** cash for rides and food initially; online payments only after a supported Kosovo provider and reconciliation flow are verified
-- **Food dispatch:** platform assigns a courier after restaurant acceptance, using preparation time to reduce waiting
-- **Driver onboarding:** identity, driving licence, vehicle documents, expiry and eligibility verified by an authorized administrator before activation
-- **Hosting:** Cloudflare Pages/Workers
-- **Backend:** existing Supabase project `zikos` (`saavqlbwffrwxingbnri`), with every Sjelle database object namespaced `sjelle_` to avoid collisions
+- **Payments:** cash initially; online payments only after a supported provider and reconciliation flow are verified
+- **Food dispatch:** courier assignment begins after restaurant acceptance
+- **Driver onboarding:** identity, driving licence and vehicle documents verified before activation
+- **Hosting:** Cloudflare Workers with static customer assets
+- **Backend:** existing Supabase project `zikos` (`saavqlbwffrwxingbnri`), using additive `sjelle_*` database objects to protect unrelated apps
 - **No Vercel**
 
 ## Repository structure
 
-- `docs/IMPLEMENTATION_SPEC.md` — scope, roles, stories, workflows, security, acceptance criteria and roadmap
-- `docs/API_CONTRACTS.md` — proposed API contracts and status models
-- `supabase/migrations/` — versioned PostgreSQL schema migrations
-- `apps/customer/` — customer mobile app (planned)
-- `apps/driver/` — driver mobile app (planned)
-- `apps/merchant-web/` — merchant portal (planned)
-- `apps/admin-web/` — operations dashboard (planned)
-- `apps/api/` — Cloudflare Worker API (planned)
+- `docs/IMPLEMENTATION_SPEC.md` — scope, roles, workflows, security and acceptance criteria
+- `docs/API_CONTRACTS.md` — planned API contracts and status models
+- `supabase/migrations/` — versioned schema migrations, aligned to applied Supabase migration history
+- `apps/customer/` — mobile-first customer web app served as Cloudflare Worker static assets
+- `apps/api/` — Cloudflare Worker API, tests and deployment configuration
+- `apps/driver/` — driver app, planned
+- `apps/merchant-web/` — merchant portal, planned
+- `apps/admin-web/` — operations dashboard, planned
 
-## Development principles
+## Current implementation
 
-1. Build and verify in a development Supabase project before production.
-2. Never connect Sjelle to the existing `zikos` project or mutate unrelated applications.
-3. Never expose Supabase service-role keys or other secrets in browser/mobile bundles.
-4. Server-side logic is authoritative for pricing, role checks, dispatch, job state and financial records.
-5. Use integer euro cents, immutable ledger entries, idempotency keys and auditable administrative actions.
-6. Do not use fake driver GPS, fake payments, or demo success states in production paths.
-7. No city is considered live until licensing, operating coverage, support, and driver/merchant supply are verified.
+- Applied 25 namespaced Sjelle tables to `zikos`; RLS is enabled on all 25.
+- Added least-privilege client grants and indexes for foreign-key relationships. No existing app tables were targeted.
+- Seeded the six candidate cities as inactive with rides and food delivery disabled.
+- Cloudflare Worker endpoints currently include health/readiness checks, city discovery, restaurant/menu discovery and authenticated customer profile read/write.
+- Customer web interface reads real API data and clearly indicates when services are not active; it does not simulate bookings or orders.
+- Ride booking, trusted route pricing, food-order placement, dispatch, driver onboarding workflows, notifications, payment processing and deployment are not yet complete.
+- Tests are committed, but a successful CI run has not yet been confirmed.
 
-## Current status
+## Security and operating principles
 
-This repository starts with the product blueprint and database design. No Supabase project, Cloudflare deployment, payment provider, or production service has been provisioned by this commit.
+1. Keep every Sjelle database object namespaced; do not run broad schema or grant changes in the shared project.
+2. Never expose Supabase service-role keys in browser/mobile bundles or commit real secrets.
+3. Server-side logic must be authoritative for pricing, role checks, dispatch, job state and financial records.
+4. Use integer euro cents, idempotency keys, immutable ledger entries and auditable administrative actions.
+5. Do not use fake driver GPS, fake payments or fake success states.
+6. Do not activate a city until licensing, operating coverage, support and driver/merchant supply are verified.
 
-## Next steps
+## Local API development
 
-See [implementation specification](docs/IMPLEMENTATION_SPEC.md), [API contracts](docs/API_CONTRACTS.md), and [database migration](supabase/migrations/202610200001_initial_schema.sql).
+From `apps/api`, use Node.js 22:
+
+```sh
+npm install
+cp .dev.vars.example .dev.vars
+# Add the real SUPABASE_SERVICE_ROLE_KEY to .dev.vars locally only.
+npm test
+npm run typecheck
+npm run dev
+```
+
+Cloudflare requires the `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and `ALLOWED_ORIGIN` bindings/secrets to be configured per environment before database-backed endpoints work. The URL is the existing `zikos` project. No secret is committed.
+
+## Key files
+
+- [Implementation specification](docs/IMPLEMENTATION_SPEC.md)
+- [API contracts](docs/API_CONTRACTS.md)
+- [Initial schema](supabase/migrations/20261020203959_sjelle_initial_namespaced_schema.sql)
+- [Least-privilege grants](supabase/migrations/20261020204056_sjelle_least_privilege_grants.sql)
