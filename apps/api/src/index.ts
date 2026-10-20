@@ -994,7 +994,7 @@ export default {
       try {
         if (body.review_status === "approved") {
           const [docsResponse, vehicleResponse] = await Promise.all([
-            databaseRequest(env, "sjelle_driver_documents?driver_id=eq." + encodeURIComponent(driverReviewMatch[1]) + "&review_status=eq.approved&select=document_type,expires_at"),
+            databaseRequest(env, "sjelle_driver_documents?driver_id=eq." + encodeURIComponent(driverReviewMatch[1]) + "&select=document_type,review_status,expires_at,created_at&order=created_at.desc"),
             databaseRequest(env, "sjelle_vehicles?driver_id=eq." + encodeURIComponent(driverReviewMatch[1]) + "&review_status=eq.approved&select=id&limit=1"),
           ]);
           const docs = await parseJson(docsResponse) as Array<{ document_type: string; expires_at: string | null }>;
