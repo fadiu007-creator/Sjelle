@@ -206,3 +206,15 @@ select { width: 100%; min-width: 0; height: 50px; padding: 0 25px 0 0; appearanc
 .ride-route-card .route-price{font-weight:850;white-space:nowrap}
 .ride-route-card button{margin-top:9px;border:0;border-radius:9px;padding:9px 12px;background:var(--green);color:#fff;font-weight:750;cursor:pointer}
 @media(max-width:560px){.topbar-right{gap:8px}.country-pill{display:none}.account-button{padding:9px 10px}.menu-dialog,.account-dialog{padding:17px}.ride-route-card{align-items:flex-start;flex-direction:column}.coordinates-row{grid-template-columns:1fr 1fr}}
+
+
+.my-orders{display:grid;gap:10px}
+.my-order-card{border:1px solid var(--line);border-radius:13px;background:#fff;padding:13px;display:grid;gap:7px}
+.my-order-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.my-order-heading b{font-size:14px}
+.order-status{font-size:11px;font-weight:800;border-radius:999px;background:var(--lime-soft);padding:5px 8px;white-space:nowrap}
+.my-order-card p{margin:0;font-size:12px;color:var(--ink-soft);line-height:1.5}
+.order-items-summary{overflow-wrap:anywhere}
+.my-order-card .secondary-button{justify-self:start;padding:8px 10px;font-size:12px}
+.menu-add{padding:7px 10px;font-size:12px;align-self:center}
+.menu-item{gap:10px}
