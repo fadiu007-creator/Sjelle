@@ -148,3 +148,38 @@ test("ride routes require a city slug", async () => {
   assert.equal(response.status, 400);
   assert.equal(body.error.code, "CITY_REQUIRED");
 });
+
+
+test("ride quote endpoint requires authentication before routing-provider access", async () => {
+  const response = await callWorker(new Request("https://sjelle.test/api/v1/ride-quotes", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}),
+  }), {});
+  const body = await response.json() as { error: { code: string } };
+  assert.equal(response.status, 401);
+  assert.equal(body.error.code, "UNAUTHENTICATED");
+});
+
+test("driver document uploads require authentication before reading multipart files", async () => {
+  const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/documents", { method: "POST" }), {});
+  const body = await response.json() as { error: { code: string } };
+  assert.equal(response.status, 401);
+  assert.equal(body.error.code, "UNAUTHENTICATED");
+});
+
+test("restaurant applications require authentication", async () => {
+  const response = await callWorker(new Request("https://sjelle.test/api/v1/merchant/restaurants", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}),
+  }), {});
+  const body = await response.json() as { error: { code: string } };
+  assert.equal(response.status, 401);
+  assert.equal(body.error.code, "UNAUTHENTICATED");
+});
+
+test("admin route configuration requires an authenticated admin", async () => {
+  const response = await callWorker(new Request("https://sjelle.test/api/v1/admin/routes", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}),
+  }), {});
+  const body = await response.json() as { error: { code: string } };
+  assert.equal(response.status, 401);
+  assert.equal(body.error.code, "UNAUTHENTICATED");
+});
