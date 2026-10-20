@@ -1410,6 +1410,16 @@ export default {
         if(!areaResponse.ok)return response({error:{code:"SERVICE_AREA_READ_FAILED",request_id:requestId}},503,requestId,origin,env);
         if(!areas.length)return response({error:{code:"SERVICE_AREA_NOT_FOUND",request_id:requestId}},404,requestId,origin,env);
         if(body.active&&!isPolygonGeoJSON(areas[0].boundary_geojson))return response({error:{code:"INVALID_SERVICE_AREA",request_id:requestId}},409,requestId,origin,env);
+        if(!body.active){
+          const [cityResponse,activeAreasResponse]=await Promise.all([
+            databaseRequest(env,"sjelle_cities?id=eq."+encodeURIComponent(areas[0].city_id)+"&select=active&limit=1"),
+            databaseRequest(env,"sjelle_service_areas?city_id=eq."+encodeURIComponent(areas[0].city_id)+"&active=eq.true&select=id"),
+          ]);
+          const [cityRows,activeAreas]=await Promise.all([parseJson(cityResponse),parseJson(activeAreasResponse)]);
+          const city=Array.isArray(cityRows)?cityRows[0]:null;
+          if(!cityResponse.ok||!activeAreasResponse.ok)return response({error:{code:"SERVICE_AREA_READ_FAILED",request_id:requestId}},503,requestId,origin,env);
+          if(city?.active&&Array.isArray(activeAreas)&&activeAreas.length<=1)return response({error:{code:"CITY_ACTIVE",message:"Disable the city before deactivating its last service area.",request_id:requestId}},409,requestId,origin,env);
+        }
         const result=await databaseRequest(env,"sjelle_service_areas?id=eq."+encodeURIComponent(adminServiceAreaMatch[1]),{method:"PATCH",headers:{prefer:"return=representation"},body:JSON.stringify({active:body.active})});
         const payload=await parseJson(result);if(!result.ok)return response({error:{code:"SERVICE_AREA_UPDATE_FAILED",request_id:requestId}},503,requestId,origin,env);
         await databaseRequest(env,"sjelle_audit_logs",{method:"POST",body:JSON.stringify({actor_id:user.id,action:"service_area.activation_changed",target_type:"service_area",target_id:adminServiceAreaMatch[1],metadata:{active:body.active}})});
