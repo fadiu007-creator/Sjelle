@@ -921,6 +921,7 @@ export default {
         if (!profileResponse.ok) return response({ error: { code: "DRIVER_PROFILE_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
         if (!profile) return response({ error: { code: "DRIVER_APPLICATION_REQUIRED", request_id: requestId } }, 409, requestId, origin, env);
         const mode = body.mode === undefined ? profile.selected_mode : String(body.mode);
+        if (mode !== "ride" && mode !== "delivery") return response({ error: { code: "INVALID_AVAILABILITY", request_id: requestId } }, 400, requestId, origin, env);
         if (body.online && profile.review_status !== "approved") return response({ error: { code: "DRIVER_NOT_APPROVED", request_id: requestId } }, 409, requestId, origin, env);
         if (body.online) {
           const [docsResponse, vehicleResponse, cityResponse] = await Promise.all([
@@ -961,7 +962,8 @@ export default {
       try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
       if (!isRecord(body) || typeof body.latitude !== "number" || typeof body.longitude !== "number"
         || body.latitude < -90 || body.latitude > 90 || body.longitude < -180 || body.longitude > 180
-        || (body.accuracy_m !== undefined && (typeof body.accuracy_m !== "number" || body.accuracy_m < 0 || body.accuracy_m > 10000))) {
+        || (body.accuracy_m !== undefined && (typeof body.accuracy_m !== "number" || body.accuracy_m < 0 || body.accuracy_m > 10000))
+        || (body.heading_degrees !== undefined && (typeof body.heading_degrees !== "number" || body.heading_degrees < 0 || body.heading_degrees >= 360))) {
         return response({ error: { code: "INVALID_LOCATION", request_id: requestId } }, 400, requestId, origin, env);
       }
       try {
