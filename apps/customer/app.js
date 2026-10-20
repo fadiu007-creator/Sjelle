@@ -368,12 +368,6 @@ accountForm.addEventListener("submit", async event => {
     }
     persistSession(session);
     accountDialog.close();
-    try {
-      await apiRequest("/me", { method: "PUT", body: JSON.stringify({
-        display_name: payload.display_name || session.user?.user_metadata?.display_name || (session.user?.email || "Klient").split("@")[0],
-        phone: null, preferred_language: "sq",
-      }) });
-    } catch { /* session remains valid; profile can be completed later */ }
     showMessage(checkoutMessage, "Je kyçur. Mund të dërgosh porosinë.", "success");
   } catch (error) {
     showMessage(authMessage, error.message || "Nuk mundëm të kyçemi. Kontrollo të dhënat dhe provo përsëri.", "error");
