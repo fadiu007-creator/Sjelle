@@ -308,7 +308,7 @@ export default {
       }
       const email = body.email.trim().toLowerCase();
       const password = body.password;
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || password.length < 8 || password.length > 128) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || password.length < 8 || password.length > 128 || (url.pathname.endsWith("/signup") && (typeof body.display_name !== "string" || !body.display_name.trim() || body.display_name.trim().length > 80))) {
         return response({ error: { code: "INVALID_CREDENTIALS", message: "Enter a valid email and a password between 8 and 128 characters.", request_id: requestId } }, 400, requestId, origin, env);
       }
       const signup = url.pathname.endsWith("/signup");
