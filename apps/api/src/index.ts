@@ -102,6 +102,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+type UploadedFile = { arrayBuffer(): Promise<ArrayBuffer>; size: number; type: string; name: string };
+
+function isUploadedFile(value: unknown): value is UploadedFile {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as { arrayBuffer?: unknown; size?: unknown; type?: unknown; name?: unknown };
+  return typeof candidate.arrayBuffer === "function" && typeof candidate.size === "number"
+    && typeof candidate.type === "string" && typeof candidate.name === "string";
+}
+
 function isLanguage(value: unknown): value is "sq" | "en" | "sr" {
   return value === "sq" || value === "en" || value === "sr";
 }
@@ -853,7 +862,7 @@ export default {
       const documentType = form.get("document_type");
       const last4 = form.get("document_number_last4");
       const expiresAt = form.get("expires_at");
-      if (!(file instanceof File) || !["identity","driving_licence","vehicle_registration","insurance","other_required"].includes(String(documentType))
+      if (!isUploadedFile(file) || !["identity","driving_licence","vehicle_registration","insurance","other_required"].includes(String(documentType))
         || file.size < 1 || file.size > 10 * 1024 * 1024
         || !["application/pdf","image/jpeg","image/png"].includes(file.type)) {
         return response({ error: { code: "INVALID_DOCUMENT_UPLOAD", message: "Upload a PDF, JPG or PNG document up to 10 MB.", request_id: requestId } }, 400, requestId, origin, env);
@@ -999,7 +1008,7 @@ export default {
             databaseRequest(env, "sjelle_driver_documents?driver_id=eq." + encodeURIComponent(driverReviewMatch[1]) + "&select=document_type,review_status,expires_at,created_at&order=created_at.desc"),
             databaseRequest(env, "sjelle_vehicles?driver_id=eq." + encodeURIComponent(driverReviewMatch[1]) + "&review_status=eq.approved&select=id&limit=1"),
           ]);
-          const docs = await parseJson(docsResponse) as Array<{ document_type: string; expires_at: string | null }>;
+          const docs = await parseJson(docsResponse) as Array<{ document_type: string; review_status: string; expires_at: string | null; created_at: string }>;
           const vehicles = await parseJson(vehicleResponse) as unknown[];
           if (!docsResponse.ok || !vehicleResponse.ok) return response({ error: { code: "DRIVER_READINESS_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env);
           if (!requiredDriverDocsApproved(docs) || !vehicles.length) {
