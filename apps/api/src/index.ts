@@ -432,17 +432,33 @@ export default {
           + haversine(body.destination_lat as number,body.destination_lon as number,route.destination_lat as number,route.destination_lon as number) }))
           .filter(x => x.deviation <= 1000).sort((a,b) => a.deviation-b.deviation)[0];
 
-        let distanceMeters: number, durationSeconds: number, pricingKind: "fixed_route" | "estimated", pricingVersion: string, amountCents: number, fixedRouteId: string | null = null;
+        if (!env.ROUTING_API_URL) return response({ error: { code: "ROUTING_NOT_CONFIGURED", message: "A routing provider is required to calculate accurate distance and duration.", request_id: requestId } }, 503, requestId, origin, env);
+        const routeBase = env.ROUTING_API_URL.replace(/\/+$/,"");
+        const routeUrl = routeBase + "/route/v1/driving/" + body.pickup_lon + "," + body.pickup_lat + ";" + body.destination_lon + "," + body.destination_lat + "?overview=false&alternatives=false&steps=false";
+        const routeHeaders = new Headers({ accept: "application/json" });
+        if (env.ROUTING_API_KEY) routeHeaders.set("authorization","Bearer "+env.ROUTING_API_KEY);
+        const routed = await fetch(routeUrl,{headers:routeHeaders});
+        const routeData = await parseJson(routed);
+        const routedRecord = isRecord(routeData) ? routeData : {};
+        const routedRows = Array.isArray(routedRecord.routes) ? routedRecord.routes : [];
+        const best = routedRows[0];
+        if (!routed.ok || routedRecord.code !== "Ok" || !isRecord(best) || typeof best.distance !== "number" || typeof best.duration !== "number"
+          || !Number.isFinite(best.distance) || !Number.isFinite(best.duration) || best.distance < 1 || best.distance > 150000 || best.duration < 1 || best.duration > 14400) {
+          return response({ error: { code: "ROUTE_CALCULATION_FAILED", message: "The routing provider did not return a valid route. No quote was created.", request_id: requestId } }, 503, requestId, origin, env);
+        }
+        const distanceMeters = Math.round(best.distance);
+        const durationSeconds = Math.round(best.duration);
+        let pricingKind: "fixed_route" | "estimated";
+        let pricingVersion: string;
+        let amountCents: number;
+        let fixedRouteId: string | null = null;
         if (matching) {
           const route = matching.route;
-          distanceMeters = Math.max(1, Math.round(haversine(route.origin_lat as number,route.origin_lon as number,route.destination_lat as number,route.destination_lon as number)));
-          durationSeconds = Math.max(60, Math.round(distanceMeters / 8.3));
           pricingKind = "fixed_route";
           pricingVersion = String(route.version);
           amountCents = Number(route.amount_cents);
           fixedRouteId = String(route.id);
         } else {
-          if (!env.ROUTING_API_URL) return response({ error: { code: "ROUTING_NOT_CONFIGURED", message: "The routing provider has not been configured; an estimate cannot be calculated safely.", request_id: requestId } }, 503, requestId, origin, env);
           const pricingResponse = await databaseRequest(env, "sjelle_city_pricing?city_id=eq." + encodeURIComponent(city.id) + "&active=eq.true&select=version,ride_base_fare_cents,ride_minimum_fare_cents,ride_per_km_cents,ride_per_minute_cents&limit=1");
           const pricingRows = await parseJson(pricingResponse) as Array<{ version: string; ride_base_fare_cents: number | null; ride_minimum_fare_cents: number | null; ride_per_km_cents: number | null; ride_per_minute_cents: number | null }>;
           if (!pricingResponse.ok) return response({ error: { code: "CITY_PRICING_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
@@ -450,21 +466,6 @@ export default {
           if (!pricing || [pricing.ride_base_fare_cents,pricing.ride_minimum_fare_cents,pricing.ride_per_km_cents,pricing.ride_per_minute_cents].some(x => x === null || !Number.isSafeInteger(x) || Number(x)<0)) {
             return response({ error: { code: "RIDE_PRICING_NOT_CONFIGURED", request_id: requestId } }, 409, requestId, origin, env);
           }
-          const base = env.ROUTING_API_URL.replace(/\/+$/,"");
-          const routeUrl = base + "/route/v1/driving/" + body.pickup_lon + "," + body.pickup_lat + ";" + body.destination_lon + "," + body.destination_lat + "?overview=false&alternatives=false&steps=false";
-          const routeHeaders = new Headers({ accept: "application/json" });
-          if (env.ROUTING_API_KEY) routeHeaders.set("authorization","Bearer "+env.ROUTING_API_KEY);
-          const routed = await fetch(routeUrl,{headers:routeHeaders});
-          const routeData = await parseJson(routed);
-          const routedRecord = isRecord(routeData) ? routeData : {};
-          const routedRows = Array.isArray(routedRecord.routes) ? routedRecord.routes : [];
-          const best = routedRows[0];
-          if (!routed.ok || routedRecord.code !== "Ok" || !isRecord(best) || typeof best.distance !== "number" || typeof best.duration !== "number"
-            || !Number.isFinite(best.distance) || !Number.isFinite(best.duration) || best.distance < 1 || best.distance > 150000 || best.duration < 1 || best.duration > 14400) {
-            return response({ error: { code: "ROUTE_CALCULATION_FAILED", message: "The routing provider did not return a valid route. No quote was created.", request_id: requestId } }, 503, requestId, origin, env);
-          }
-          distanceMeters = Math.round(best.distance);
-          durationSeconds = Math.round(best.duration);
           pricingKind = "estimated";
           pricingVersion = pricing.version;
           const quote = calculateRideQuote({
