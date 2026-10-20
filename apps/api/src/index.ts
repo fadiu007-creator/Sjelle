@@ -254,6 +254,45 @@ export default {
     }
 
 
+
+    if ((url.pathname === "/api/v1/auth/refresh" || url.pathname === "/api/v1/auth/logout") && request.method === "POST") {
+      if (!env.SUPABASE_URL || !env.SUPABASE_PUBLISHABLE_KEY) {
+        return response({ error: { code: "AUTH_NOT_CONFIGURED", request_id: requestId } }, 503, requestId, origin, env);
+      }
+      let authBody: unknown = {};
+      if (url.pathname.endsWith("/refresh")) {
+        try { authBody = await request.json(); } catch {
+          return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env);
+        }
+        if (!isRecord(authBody) || typeof authBody.refresh_token !== "string" || authBody.refresh_token.length < 10 || authBody.refresh_token.length > 4096) {
+          return response({ error: { code: "INVALID_REFRESH_TOKEN", request_id: requestId } }, 400, requestId, origin, env);
+        }
+      }
+      const isRefresh = url.pathname.endsWith("/refresh");
+      const authorization = request.headers.get("authorization");
+      if (!isRefresh && (!authorization || !/^Bearer\s+\S+$/i.test(authorization))) {
+        return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      }
+      try {
+        const authResponse = await fetch(supabaseUrl(env, isRefresh ? "/auth/v1/token?grant_type=refresh_token" : "/auth/v1/logout"), {
+          method: "POST",
+          headers: {
+            apikey: env.SUPABASE_PUBLISHABLE_KEY,
+            "content-type": "application/json",
+            ...(authorization && !isRefresh ? { authorization } : {}),
+          },
+          ...(isRefresh ? { body: JSON.stringify({ refresh_token: (authBody as Record<string, unknown>).refresh_token }) } : {}),
+        });
+        if (!authResponse.ok) {
+          return response({ error: { code: isRefresh ? "SESSION_REFRESH_FAILED" : "SIGN_OUT_FAILED", request_id: requestId } }, authResponse.status === 401 ? 401 : 503, requestId, origin, env);
+        }
+        if (!isRefresh) return response({ data: { signed_out: true } }, 200, requestId, origin, env);
+        return response({ data: await parseJson(authResponse) }, 200, requestId, origin, env);
+      } catch {
+        return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+      }
+    }
+
     // Supabase Auth proxy: the publishable key is used only for Auth; the service-role key never leaves this Worker.
     if ((url.pathname === "/api/v1/auth/signup" && request.method === "POST")
       || (url.pathname === "/api/v1/auth/login" && request.method === "POST")) {
