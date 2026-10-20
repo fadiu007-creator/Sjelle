@@ -30,6 +30,6 @@ For Cloudflare, configure `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `ALLO
 
 - Supabase Auth validates bearer tokens; missing/invalid tokens receive 401.
 - The service-role key is used only inside the Worker, not mobile/web clients.
-- Direct client privileges on Sjelle tables are explicitly allowlisted in migration `202610200003_sjelle_least_privilege_grants.sql`.
+- Direct client privileges on Sjelle tables are explicitly allowlisted in migration `20261020204056_sjelle_least_privilege_grants.sql`.
 - Customer role assignment is hard-coded server-side; driver, merchant, support and admin roles require a separate reviewed workflow.
 - Ride and food state machines and fare calculation are pure domain functions with unit tests.
