@@ -33,10 +33,10 @@ test("CORS preflight is empty and only reflects the configured origin", async ()
 });
 
 test("oversized API bodies are rejected before parsing or backend access", async () => {
-  const body = new Uint8Array(2 * 1024 * 1024 + 1);
+  const body = "x".repeat(2 * 1024 * 1024 + 1);
   const request = new Request("https://api.example/api/v1/auth/signup", {
     method: "POST",
-    headers: { "content-type": "application/json", "content-length": String(body.byteLength) },
+    headers: { "content-type": "application/json", "content-length": String(body.length) },
     body,
   });
   const result = await worker.fetch(request, env);
