@@ -446,7 +446,7 @@ export default {
       if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
       try {
         const result = await databaseRequest(env,
-          `sjelle_food_orders?customer_id=eq.${encodeURIComponent(user.id)}&select=id,restaurant_id,status,payment_method,sjelle_cash_status,item_subtotal_cents,delivery_fee_cents,service_fee_cents,total_cents,currency,delivery_address_text,created_at,updated_at,sjelle_food_order_items(id,item_name_snapshot,unit_price_cents,quantity,line_total_cents)&order=created_at.desc&limit=50`);
+          `sjelle_food_orders?customer_id=eq.${encodeURIComponent(user.id)}&select=id,restaurant_id,restaurant:sjelle_restaurants(name),status,payment_method,sjelle_cash_status,item_subtotal_cents,delivery_fee_cents,service_fee_cents,total_cents,currency,delivery_address_text,created_at,updated_at,sjelle_food_order_items(id,item_name_snapshot,unit_price_cents,quantity,line_total_cents)&order=created_at.desc&limit=50`);
         if (!result.ok) return response({ error: { code: "ORDERS_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
         const rows = await parseJson(result);
         return response({ data: Array.isArray(rows) ? rows : [] }, 200, requestId, origin, env);
@@ -462,7 +462,7 @@ export default {
       if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
       try {
         const result = await databaseRequest(env,
-          `sjelle_food_orders?id=eq.${encodeURIComponent(orderMatch[1])}&customer_id=eq.${encodeURIComponent(user.id)}&select=id,restaurant_id,status,payment_method,sjelle_cash_status,item_subtotal_cents,delivery_fee_cents,service_fee_cents,total_cents,currency,delivery_address_text,created_at,updated_at,sjelle_food_order_items(id,item_name_snapshot,unit_price_cents,quantity,line_total_cents)&limit=1`);
+          `sjelle_food_orders?id=eq.${encodeURIComponent(orderMatch[1])}&customer_id=eq.${encodeURIComponent(user.id)}&select=id,restaurant_id,restaurant:sjelle_restaurants(name),status,payment_method,sjelle_cash_status,item_subtotal_cents,delivery_fee_cents,service_fee_cents,total_cents,currency,delivery_address_text,created_at,updated_at,sjelle_food_order_items(id,item_name_snapshot,unit_price_cents,quantity,line_total_cents)&limit=1`);
         if (!result.ok) return response({ error: { code: "ORDER_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
         const rows = await parseJson(result) as unknown[];
         if (!Array.isArray(rows) || !rows.length) return response({ error: { code: "ORDER_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
