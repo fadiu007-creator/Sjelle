@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import worker from "../src/index.ts";
 
 const callWorker = (request: Request, env: Parameters<typeof worker.fetch>[1]) =>
-  worker.fetch(request, env, {} as ExecutionContext);
+  worker.fetch(request, env);
 
 test("health is available without database configuration", async () => {
   const response = await callWorker(new Request("https://sjelle.test/api/v1/health"), {});
