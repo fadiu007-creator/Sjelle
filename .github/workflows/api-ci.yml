@@ -27,3 +27,11 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npm test
       - run: npm run typecheck
+      - name: Check customer and portal JavaScript syntax
+        run: |
+          node --check ../customer/app.js
+          node --check ../customer/driver/driver.js
+          node --check ../customer/merchant/merchant.js
+          node --check ../customer/admin/admin.js
+      - name: Validate Worker bundle and Wrangler configuration
+        run: npx wrangler deploy --dry-run --outdir /tmp/sjelle-worker-dry-run
