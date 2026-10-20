@@ -759,3 +759,5 @@ async function loadMyRides(){
     }
   }catch(error){myRides.replaceChildren(node("p","menu-empty","Udhëtimet nuk mund të ngarkohen: "+error.message));}
 }
+
+setInterval(()=>{if(document.visibilityState==='visible'&&state.session?.access_token&&document.querySelector('#account-dialog')?.open){loadMyOrders();loadMyRides();}},20000);
