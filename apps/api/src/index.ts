@@ -115,6 +115,19 @@ async function hasSjelleRole(env: Env, userId: string, role: string): Promise<bo
   return Array.isArray(rows) && rows.length > 0;
 }
 
+
+async function hasRestaurantPermission(env: Env, userId: string, restaurantId: string, permission: "can_manage_menu" | "can_manage_orders"): Promise<boolean> {
+  const restaurant = await databaseRequest(env, "sjelle_restaurants?id=eq." + encodeURIComponent(restaurantId) + "&select=owner_id&limit=1");
+  if (!restaurant.ok) throw new Error("RESTAURANT_PERMISSION_CHECK_FAILED");
+  const owners = await parseJson(restaurant) as Array<{ owner_id: string }>;
+  if (owners[0]?.owner_id === userId) return true;
+  const staff = await databaseRequest(env, "sjelle_restaurant_staff?restaurant_id=eq." + encodeURIComponent(restaurantId)
+    + "&user_id=eq." + encodeURIComponent(userId) + "&" + permission + "=eq.true&select=user_id&limit=1");
+  if (!staff.ok) throw new Error("RESTAURANT_PERMISSION_CHECK_FAILED");
+  const rows = await parseJson(staff);
+  return Array.isArray(rows) && rows.length > 0;
+}
+
 async function requireUser(request: Request, env: Env): Promise<AuthUser | null> {
   return getAuthenticatedUser(request, env);
 }
