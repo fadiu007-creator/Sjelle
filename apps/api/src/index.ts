@@ -676,11 +676,20 @@ export default {
         return response({ error: { code: "INVALID_ORDER", message: "Provide a restaurant, delivery address, valid coordinates, and 1–50 item/quantity pairs.", request_id: requestId } }, 400, requestId, origin, env);
       }
       if (body.delivery_address_text.trim().length < 4 || body.delivery_address_text.length > 500
-        || body.delivery_lat < -90 || body.delivery_lat > 90 || body.delivery_lon < -180 || body.delivery_lon > 180
+        || body.delivery_lat < 41.7 || body.delivery_lat > 43.4 || body.delivery_lon < 19.7 || body.delivery_lon > 22.0
         || (body.delivery_instructions !== undefined && body.delivery_instructions !== null && (typeof body.delivery_instructions !== "string" || body.delivery_instructions.length > 500))) {
         return response({ error: { code: "INVALID_DELIVERY_ADDRESS", request_id: requestId } }, 400, requestId, origin, env);
       }
       try {
+        const restaurantResponse = await databaseRequest(env,"sjelle_restaurants?id=eq."+encodeURIComponent(body.restaurant_id)+"&select=id,city_id,latitude,longitude&limit=1");
+        const restaurantRows = await parseJson(restaurantResponse) as Array<{id:string;city_id:string;latitude:number;longitude:number}>;
+        if(!restaurantResponse.ok)return response({error:{code:"RESTAURANT_READ_FAILED",request_id:requestId}},503,requestId,origin,env);
+        if(!restaurantRows.length)return response({error:{code:"RESTAURANT_UNAVAILABLE",request_id:requestId}},409,requestId,origin,env);
+        const restaurant = restaurantRows[0];
+        const areaResponse = await databaseRequest(env,"sjelle_service_areas?city_id=eq."+encodeURIComponent(restaurant.city_id)+"&active=eq.true&select=boundary_geojson");
+        const areas = await parseJson(areaResponse) as Array<{boundary_geojson:unknown}>;
+        if(!areaResponse.ok)return response({error:{code:"SERVICE_AREA_READ_FAILED",request_id:requestId}},503,requestId,origin,env);
+        if(!areas.some(area=>pointInServiceArea(body.delivery_lat as number,body.delivery_lon as number,area.boundary_geojson)))return response({error:{code:"DELIVERY_OUTSIDE_SERVICE_AREA",message:"Delivery address must be inside an active service area for the restaurant city.",request_id:requestId}},400,requestId,origin,env);
         const result = await databaseRequest(env, "rpc/sjelle_create_food_order", {
           method: "POST",
           body: JSON.stringify({
@@ -694,7 +703,7 @@ export default {
         if (!result.ok) {
           const code = isRecord(payload) && typeof payload.message === "string" ? payload.message : "ORDER_CREATE_FAILED";
           const status = ["CITY_UNAVAILABLE","RESTAURANT_UNAVAILABLE","MENU_ITEM_UNAVAILABLE","FOOD_PRICING_NOT_CONFIGURED","MINIMUM_ORDER_NOT_MET"].includes(code) ? 409
-            : ["INVALID_ORDER","INVALID_IDEMPOTENCY_KEY","INVALID_DELIVERY_ADDRESS","INVALID_DELIVERY_COORDINATES","INVALID_ORDER_ITEMS","ORDER_TOTAL_TOO_LARGE"].includes(code) ? 400 : 503;
+            : ["INVALID_ORDER","INVALID_IDEMPOTENCY_KEY","INVALID_DELIVERY_ADDRESS","INVALID_DELIVERY_COORDINATES","INVALID_ORDER_ITEMS","ORDER_TOTAL_TOO_LARGE","DELIVERY_OUTSIDE_SERVICE_AREA"].includes(code) ? 400 : 503;
           return response({ error: { code, request_id: requestId } }, status, requestId, origin, env);
         }
         return response({ data: payload }, 201, requestId, origin, env);
