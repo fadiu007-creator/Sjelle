@@ -227,7 +227,7 @@ export default {
         if (!cityResponse.ok) return response({ error: { code: "MENU_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
         const cityRows = await parseJson(cityResponse) as Array<{ active: boolean; food_enabled: boolean }>;
         const city = Array.isArray(cityRows) ? cityRows[0] : undefined;
-        if (!city?.active || !city.food_enabled) return response({ error: { code: "RESTAURANT_UNAVAILABLE", request_id: requestId } }, 404, requestId, origin, env);
+        if (!city || !city.active || !city.food_enabled) return response({ error: { code: "RESTAURANT_UNAVAILABLE", request_id: requestId } }, 404, requestId, origin, env);
 
         const [categoriesResponse, itemsResponse] = await Promise.all([
           databaseRequest(env, `sjelle_menu_categories?restaurant_id=eq.${encodeURIComponent(restaurant.id)}&active=eq.true&select=id,name,sort_order&order=sort_order.asc`),
