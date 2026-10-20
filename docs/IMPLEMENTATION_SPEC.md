@@ -72,7 +72,7 @@ Checkout revalidates menu availability and price server-side, snapshots item lab
 - React Native + Expo for customer and driver apps.
 - React/TypeScript merchant and admin portals.
 - Cloudflare Pages for static web apps; Cloudflare Workers for secure API.
-- Dedicated Supabase PostgreSQL/Auth/Realtime/Storage.
+- Existing Supabase project `zikos` for PostgreSQL/Auth/Realtime/Storage, using additive `sjelle_*` objects only.
 - Map/routing provider chosen after Kosovo address coverage, route quality, background GPS and cost testing.
 - Push notification provider chosen before device pilot.
 - Keep domain modules separate: identity, cities, rides, food, dispatch, pricing, payments/ledger, notifications, support/safety.
@@ -101,7 +101,7 @@ Checkout revalidates menu availability and price server-side, snapshots item lab
 
 ## 12. Milestones
 M0 — repository/tooling and architecture: pinned dependencies, environment templates, CI, code ownership, threat model.
-M1 — dedicated Supabase development project: migrations, RLS tests, storage policies, generated types, seed cities inactive.
+M1 — namespaced schema and RLS in existing `zikos`: migrations, private storage bucket, generated types, seed cities inactive.
 M2 — identity/admin foundation: profiles, roles, merchant/driver applications, document review, city activation.
 M3 — food vertical: menus, cart/checkout, cash order, merchant accept/reject, courier dispatch, delivery tracking.
 M4 — ride vertical: route quote, fixed-route rules, ride matching, GPS, trip lifecycle, cash accounting.
@@ -112,7 +112,7 @@ M7 — controlled pilot: launch only operationally ready cities; review metrics 
 Indicative duration: several months for a small team; estimates depend on staffing, provider selection and compliance. No schedule is a guarantee.
 
 ## 13. Launch checklist
-- [ ] Dedicated dev and production Supabase projects in chosen organization/region; do not reuse existing `zikos`.
+- [x] Use existing `zikos` project by owner instruction; keep all database changes additive and namespaced, and do not modify unrelated app objects.
 - [ ] Cloudflare environments and secret bindings; no Vercel.
 - [ ] Migration replay and RLS tests pass.
 - [ ] Verified driver, vehicle and merchant onboarding.
