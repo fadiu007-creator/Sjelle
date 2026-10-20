@@ -24,3 +24,6 @@ function renderJobs(){const root=$("#driver-jobs");root.replaceChildren();const 
 $("#offers-refresh").addEventListener("click",loadOffers);$("#jobs-refresh").addEventListener("click",loadJobs);
 loadCities().catch(()=>showAlert("Qytetet nuk mund të ngarkohen. Provo përsëri.","error"));
 refreshProfile();
+
+setInterval(()=>{if(document.visibilityState==='visible'&&token()&&state.profile){loadOffers();loadJobs();}},10000);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&token()&&state.profile){loadOffers();loadJobs();}});
