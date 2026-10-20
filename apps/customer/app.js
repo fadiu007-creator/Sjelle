@@ -768,3 +768,35 @@ async function loadMyRides(){
 }
 
 setInterval(()=>{if(document.visibilityState==='visible'&&state.session?.access_token&&document.querySelector('#account-dialog')?.open){loadMyOrders();loadMyRides();}},20000);
+
+
+const deliveryAddressInput = document.querySelector('#checkout-form [name="address"]');
+const deliveryAddressSuggestions = document.querySelector("#delivery-address-suggestions");
+document.querySelector("#find-delivery-address").addEventListener("click",async()=>{
+ if(!state.session?.access_token){openAccount("login");return;}
+ const query=String(deliveryAddressInput.value||"").trim();
+ if(query.length<3){showMessage(checkoutMessage,"Shkruaj të paktën 3 karaktere për adresën.");return;}
+ deliveryAddressSuggestions.replaceChildren(node("p","menu-empty","Po kërkojmë adresën…"));
+ try{
+  const result=await apiRequest("/geocode",{method:"POST",body:JSON.stringify({city:state.selectedCity,query})});
+  deliveryAddressSuggestions.replaceChildren();
+  const suggestions=Array.isArray(result.data)?result.data:[];
+  if(!suggestions.length){deliveryAddressSuggestions.append(node("p","menu-empty","Nuk u gjet adresë në Kosovë. Provo një adresë më të saktë."));return;}
+  for(const item of suggestions){
+   const choice=node("button","",item.label);choice.type="button";
+   choice.addEventListener("click",()=>{
+    deliveryAddressInput.value=item.label;
+    checkoutForm.elements.lat.value=String(item.lat);
+    checkoutForm.elements.lon.value=String(item.lon);
+    deliveryAddressSuggestions.replaceChildren(node("p","menu-empty","Adresa u zgjodh."));
+    showMessage(checkoutMessage,"Adresa u zgjodh. Kontrollo koordinatat para se të porositësh.","success");
+   });
+   deliveryAddressSuggestions.append(choice);
+  }
+ }catch(error){showMessage(checkoutMessage,error.code==="GEOCODING_NOT_CONFIGURED"?"Kërkimi i adresave nuk është konfiguruar ende.":error.message||"Nuk mundëm të kërkojmë adresën.","error");deliveryAddressSuggestions.replaceChildren();}
+});
+deliveryAddressInput.addEventListener("input",()=>{
+ checkoutForm.elements.lat.value="";
+ checkoutForm.elements.lon.value="";
+ deliveryAddressSuggestions.replaceChildren();
+});
