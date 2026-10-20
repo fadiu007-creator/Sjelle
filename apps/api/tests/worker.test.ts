@@ -8,7 +8,7 @@ const env = {
 } as never;
 
 test("health endpoint is available without database secrets", async () => {
-  const result = await worker.fetch(new Request("https://api.example/api/v1/health"), env, {} as never);
+  const result = await worker.fetch(new Request("https://api.example/api/v1/health"), env);
   assert.equal(result.status, 200);
   const body = await result.json() as { ok?: boolean; service?: string };
   assert.equal(body.ok, true);
