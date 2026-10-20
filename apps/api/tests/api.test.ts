@@ -35,3 +35,23 @@ test("unknown endpoints never pretend to succeed", async () => {
   assert.equal(response.status, 404);
   assert.equal(body.error.code, "NOT_FOUND");
 });
+
+test("restaurant list requires an explicit city slug", async () => {
+  const response = await worker.fetch(
+    new Request("https://sjelle.test/api/v1/restaurants"),
+    {},
+  );
+  const body = await response.json() as { error: { code: string } };
+  assert.equal(response.status, 400);
+  assert.equal(body.error.code, "CITY_REQUIRED");
+});
+
+test("menu route rejects malformed restaurant slugs", async () => {
+  const response = await worker.fetch(
+    new Request("https://sjelle.test/api/v1/restaurants/!!/menu"),
+    {},
+  );
+  const body = await response.json() as { error: { code: string } };
+  assert.equal(response.status, 400);
+  assert.equal(body.error.code, "INVALID_RESTAURANT_SLUG");
+});
