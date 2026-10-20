@@ -128,6 +128,19 @@ async function hasRestaurantPermission(env: Env, userId: string, restaurantId: s
   return Array.isArray(rows) && rows.length > 0;
 }
 
+
+function requiredDriverDocsApproved(docs: Array<{ document_type: string; review_status: string; expires_at: string | null; created_at: string }>): boolean {
+  const latest = new Map<string, { review_status: string; expires_at: string | null; created_at: string }>();
+  for (const doc of [...docs].sort((a,b) => Date.parse(b.created_at)-Date.parse(a.created_at))) {
+    if (!latest.has(doc.document_type)) latest.set(doc.document_type, doc);
+  }
+  const today = new Date().toISOString().slice(0,10);
+  return ["identity","driving_licence","vehicle_registration","insurance"].every(type => {
+    const doc = latest.get(type);
+    return Boolean(doc && doc.review_status === "approved" && (!doc.expires_at || doc.expires_at >= today));
+  });
+}
+
 async function requireUser(request: Request, env: Env): Promise<AuthUser | null> {
   return getAuthenticatedUser(request, env);
 }
@@ -756,6 +769,10 @@ export default {
         if (!cityResponse.ok) return response({ error: { code: "CITY_LOOKUP_FAILED", request_id: requestId } }, 503, requestId, origin, env);
         const cities = await parseJson(cityResponse) as Array<{ id: string; slug: string }>;
         if (!cities.length) return response({ error: { code: "CITY_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+        const existingResponse = await databaseRequest(env, "sjelle_driver_profiles?user_id=eq." + encodeURIComponent(user.id) + "&select=user_id,review_status,city_id,selected_mode&limit=1");
+        const existingProfiles = await parseJson(existingResponse) as Array<{ user_id: string; review_status: string; city_id: string; selected_mode: string | null }>;
+        if (!existingResponse.ok) return response({ error: { code: "DRIVER_APPLICATION_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        if (existingProfiles.length) return response({ error: { code: "DRIVER_APPLICATION_EXISTS", message: "A driver application already exists for this account. Contact Sjelle support if your city or mode needs to change.", request_id: requestId } }, 409, requestId, origin, env);
         const profileResponse = await databaseRequest(env, "sjelle_driver_profiles?on_conflict=user_id", {
           method: "POST", headers: { prefer: "resolution=merge-duplicates,return=representation" },
           body: JSON.stringify({ user_id: user.id, city_id: cities[0].id, selected_mode: body.mode, online: false }),
@@ -907,16 +924,16 @@ export default {
         if (body.online && profile.review_status !== "approved") return response({ error: { code: "DRIVER_NOT_APPROVED", request_id: requestId } }, 409, requestId, origin, env);
         if (body.online) {
           const [docsResponse, vehicleResponse, cityResponse] = await Promise.all([
-            databaseRequest(env, "sjelle_driver_documents?driver_id=eq." + encodeURIComponent(user.id) + "&review_status=eq.approved&select=document_type,expires_at"),
+            databaseRequest(env, "sjelle_driver_documents?driver_id=eq." + encodeURIComponent(user.id) + "&select=document_type,review_status,expires_at,created_at&order=created_at.desc"),
             databaseRequest(env, "sjelle_vehicles?driver_id=eq." + encodeURIComponent(user.id) + "&review_status=eq.approved&select=id&limit=1"),
             databaseRequest(env, "sjelle_cities?id=eq." + encodeURIComponent(profile.city_id) + "&select=active,rides_enabled,food_enabled&limit=1"),
           ]);
-          const docs = await parseJson(docsResponse) as Array<{ document_type: string; expires_at: string | null }>;
+          const docs = await parseJson(docsResponse) as Array<{ document_type: string; review_status: string; expires_at: string | null; created_at: string }>;
           const vehicles = await parseJson(vehicleResponse) as unknown[];
           const cities = await parseJson(cityResponse) as Array<{ active: boolean; rides_enabled: boolean; food_enabled: boolean }>;
           const required = ["identity","driving_licence","vehicle_registration","insurance"];
           if (!docsResponse.ok || !vehicleResponse.ok || !cityResponse.ok) return response({ error: { code: "DRIVER_READINESS_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env);
-          if (!required.every(type => docs.some(doc => doc.document_type === type && (!doc.expires_at || doc.expires_at >= new Date().toISOString().slice(0,10)))) || !vehicles.length) {
+          if (!requiredDriverDocsApproved(docs) || !vehicles.length) {
             return response({ error: { code: "DRIVER_DOCUMENTS_NOT_APPROVED", message: "Identity, driving licence, vehicle registration and insurance must be approved, with at least one approved vehicle.", request_id: requestId } }, 409, requestId, origin, env);
           }
           const city = cities[0];
@@ -983,7 +1000,7 @@ export default {
           const docs = await parseJson(docsResponse) as Array<{ document_type: string; expires_at: string | null }>;
           const vehicles = await parseJson(vehicleResponse) as unknown[];
           if (!docsResponse.ok || !vehicleResponse.ok) return response({ error: { code: "DRIVER_READINESS_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env);
-          if (!["identity","driving_licence","vehicle_registration","insurance"].every(type => docs.some(doc => doc.document_type === type && (!doc.expires_at || doc.expires_at >= new Date().toISOString().slice(0,10)))) || !vehicles.length) {
+          if (!requiredDriverDocsApproved(docs) || !vehicles.length) {
             return response({ error: { code: "DRIVER_DOCUMENTS_NOT_APPROVED", request_id: requestId } }, 409, requestId, origin, env);
           }
         }
