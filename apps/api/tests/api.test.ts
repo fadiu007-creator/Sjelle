@@ -33,7 +33,7 @@ test("unauthenticated profile requests are rejected before database access", asy
 });
 
 test("unknown endpoints never pretend to succeed", async () => {
-  const response = await callWorker(new Request("https://sjelle.test/api/v1/rides"), {});
+  const response = await callWorker(new Request("https://sjelle.test/api/v1/not-a-real-endpoint"), {});
   const body = await response.json() as { error: { code: string } };
   assert.equal(response.status, 404);
   assert.equal(body.error.code, "NOT_FOUND");
