@@ -1,9 +1,12 @@
+import { calculateRideQuote } from "./domain/pricing.ts";
 export interface Env {
   APP_ENV?: "development" | "staging" | "production";
   ALLOWED_ORIGIN?: string;
   SUPABASE_URL?: string;
   SUPABASE_PUBLISHABLE_KEY?: string;
   SUPABASE_SERVICE_ROLE_KEY?: string;
+  ROUTING_API_URL?: string;
+  ROUTING_API_KEY?: string;
   ASSETS?: Fetcher;
 }
 
@@ -375,6 +378,124 @@ export default {
       }
     }
 
+
+    if (url.pathname === "/api/v1/ride-quotes" && request.method === "POST") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      let body: unknown;
+      try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
+      const vehicleType = isRecord(body) && typeof body.vehicle_type === "string" ? body.vehicle_type : "standard";
+      if (!isRecord(body) || typeof body.city !== "string"
+        || typeof body.pickup_label !== "string" || body.pickup_label.trim().length < 2 || body.pickup_label.length > 160
+        || typeof body.destination_label !== "string" || body.destination_label.trim().length < 2 || body.destination_label.length > 160
+        || typeof body.pickup_lat !== "number" || typeof body.pickup_lon !== "number"
+        || typeof body.destination_lat !== "number" || typeof body.destination_lon !== "number"
+        || !["standard","comfort","van"].includes(vehicleType)
+        || body.pickup_lat < -90 || body.pickup_lat > 90 || body.destination_lat < -90 || body.destination_lat > 90
+        || body.pickup_lon < -180 || body.pickup_lon > 180 || body.destination_lon < -180 || body.destination_lon > 180) {
+        return response({ error: { code: "INVALID_RIDE_QUOTE", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      const withinKosovo = (lat: number, lon: number) => lat >= 41.7 && lat <= 43.4 && lon >= 19.7 && lon <= 22.0;
+      if (!withinKosovo(body.pickup_lat, body.pickup_lon) || !withinKosovo(body.destination_lat, body.destination_lon)) {
+        return response({ error: { code: "OUTSIDE_LAUNCH_AREA", message: "Both endpoints must be within the initial Kosovo service area.", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      if (!configured(env)) return response({ error: { code: "BACKEND_NOT_CONFIGURED", request_id: requestId } }, 503, requestId, origin, env);
+      try {
+        const cityResponse = await databaseRequest(env, "sjelle_cities?slug=eq." + encodeURIComponent(body.city.trim().toLowerCase()) + "&select=id,slug,active,rides_enabled&limit=1");
+        const cities = await parseJson(cityResponse) as Array<{ id: string; slug: string; active: boolean; rides_enabled: boolean }>;
+        if (!cityResponse.ok) return response({ error: { code: "CITY_LOOKUP_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const city = cities[0];
+        if (!city) return response({ error: { code: "CITY_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+        if (!city.active || !city.rides_enabled) return response({ error: { code: "CITY_UNAVAILABLE", request_id: requestId } }, 409, requestId, origin, env);
+
+        const haversine = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+          const rad = (n: number) => n * Math.PI / 180;
+          const dLat = rad(lat2-lat1), dLon = rad(lon2-lon1);
+          const a = Math.sin(dLat/2)**2 + Math.cos(rad(lat1))*Math.cos(rad(lat2))*Math.sin(dLon/2)**2;
+          return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0,1-a)));
+        };
+        const now = new Date();
+        const routeResponse = await databaseRequest(env, "sjelle_fixed_route_prices?city_id=eq." + encodeURIComponent(city.id)
+          + "&active=eq.true&vehicle_type=eq." + encodeURIComponent(vehicleType)
+          + "&select=id,route_key,origin_label,destination_label,vehicle_type,amount_cents,version,origin_lat,origin_lon,destination_lat,destination_lon,effective_from,effective_until&limit=100");
+        if (!routeResponse.ok) return response({ error: { code: "FIXED_ROUTES_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const routeRows = await parseJson(routeResponse) as Array<Record<string, unknown>>;
+        const eligibleRoutes = (Array.isArray(routeRows) ? routeRows : []).filter(route =>
+          typeof route.origin_lat === "number" && typeof route.origin_lon === "number"
+          && typeof route.destination_lat === "number" && typeof route.destination_lon === "number"
+          && typeof route.amount_cents === "number" && route.amount_cents > 0
+          && (!route.effective_from || Date.parse(String(route.effective_from)) <= now.getTime())
+          && (!route.effective_until || Date.parse(String(route.effective_until)) > now.getTime()));
+        const matching = eligibleRoutes.map(route => ({ route, deviation:
+          haversine(body.pickup_lat as number,body.pickup_lon as number,route.origin_lat as number,route.origin_lon as number)
+          + haversine(body.destination_lat as number,body.destination_lon as number,route.destination_lat as number,route.destination_lon as number) }))
+          .filter(x => x.deviation <= 1000).sort((a,b) => a.deviation-b.deviation)[0];
+
+        let distanceMeters: number, durationSeconds: number, pricingKind: "fixed_route" | "estimated", pricingVersion: string, amountCents: number, fixedRouteId: string | null = null;
+        if (matching) {
+          const route = matching.route;
+          distanceMeters = Math.max(1, Math.round(haversine(route.origin_lat as number,route.origin_lon as number,route.destination_lat as number,route.destination_lon as number)));
+          durationSeconds = Math.max(60, Math.round(distanceMeters / 8.3));
+          pricingKind = "fixed_route";
+          pricingVersion = String(route.version);
+          amountCents = Number(route.amount_cents);
+          fixedRouteId = String(route.id);
+        } else {
+          if (!env.ROUTING_API_URL) return response({ error: { code: "ROUTING_NOT_CONFIGURED", message: "The routing provider has not been configured; an estimate cannot be calculated safely.", request_id: requestId } }, 503, requestId, origin, env);
+          const pricingResponse = await databaseRequest(env, "sjelle_city_pricing?city_id=eq." + encodeURIComponent(city.id) + "&active=eq.true&select=version,ride_base_fare_cents,ride_minimum_fare_cents,ride_per_km_cents,ride_per_minute_cents&limit=1");
+          const pricingRows = await parseJson(pricingResponse) as Array<{ version: string; ride_base_fare_cents: number | null; ride_minimum_fare_cents: number | null; ride_per_km_cents: number | null; ride_per_minute_cents: number | null }>;
+          if (!pricingResponse.ok) return response({ error: { code: "CITY_PRICING_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+          const pricing = pricingRows[0];
+          if (!pricing || [pricing.ride_base_fare_cents,pricing.ride_minimum_fare_cents,pricing.ride_per_km_cents,pricing.ride_per_minute_cents].some(x => x === null || !Number.isSafeInteger(x) || Number(x)<0)) {
+            return response({ error: { code: "RIDE_PRICING_NOT_CONFIGURED", request_id: requestId } }, 409, requestId, origin, env);
+          }
+          const base = env.ROUTING_API_URL.replace(/\/+$/,"");
+          const routeUrl = base + "/route/v1/driving/" + body.pickup_lon + "," + body.pickup_lat + ";" + body.destination_lon + "," + body.destination_lat + "?overview=false&alternatives=false&steps=false";
+          const routeHeaders = new Headers({ accept: "application/json" });
+          if (env.ROUTING_API_KEY) routeHeaders.set("authorization","Bearer "+env.ROUTING_API_KEY);
+          const routed = await fetch(routeUrl,{headers:routeHeaders});
+          const routeData = await parseJson(routed);
+          const routedRecord = isRecord(routeData) ? routeData : {};
+          const routedRows = Array.isArray(routedRecord.routes) ? routedRecord.routes : [];
+          const best = routedRows[0];
+          if (!routed.ok || routedRecord.code !== "Ok" || !isRecord(best) || typeof best.distance !== "number" || typeof best.duration !== "number"
+            || !Number.isFinite(best.distance) || !Number.isFinite(best.duration) || best.distance < 1 || best.distance > 150000 || best.duration < 1 || best.duration > 14400) {
+            return response({ error: { code: "ROUTE_CALCULATION_FAILED", message: "The routing provider did not return a valid route. No quote was created.", request_id: requestId } }, 503, requestId, origin, env);
+          }
+          distanceMeters = Math.round(best.distance);
+          durationSeconds = Math.round(best.duration);
+          pricingKind = "estimated";
+          pricingVersion = pricing.version;
+          const quote = calculateRideQuote({
+            routeKey: city.slug + ":estimated",
+            distanceMeters,
+            durationSeconds,
+            estimateRule: { kind: "estimated", baseFareCents: Number(pricing.ride_base_fare_cents), minimumFareCents: Number(pricing.ride_minimum_fare_cents),
+              perKmCents: Number(pricing.ride_per_km_cents), perMinuteCents: Number(pricing.ride_per_minute_cents), version: pricing.version, active: true },
+          });
+          amountCents = quote.amountCents;
+        }
+        if (!Number.isSafeInteger(amountCents) || amountCents <= 0) return response({ error: { code: "INVALID_RIDE_PRICE", request_id: requestId } }, 503, requestId, origin, env);
+        const expiresAt = new Date(Date.now()+5*60*1000).toISOString();
+        const saved = await databaseRequest(env,"sjelle_ride_quotes",{
+          method:"POST",headers:{prefer:"return=representation"},
+          body:JSON.stringify({
+            customer_id:user.id,city_id:city.id,vehicle_type:vehicleType,
+            pickup_label:body.pickup_label.trim(),pickup_lat:body.pickup_lat,pickup_lon:body.pickup_lon,
+            destination_label:body.destination_label.trim(),destination_lat:body.destination_lat,destination_lon:body.destination_lon,
+            pricing_kind:pricingKind,pricing_version:pricingVersion,quoted_amount_cents:amountCents,
+            distance_m:distanceMeters,duration_s:durationSeconds,fixed_route_price_id:fixedRouteId,expires_at:expiresAt,
+          }),
+        });
+        const savedRows = await parseJson(saved) as Array<{ id: string; expires_at: string }>;
+        if (!saved.ok || !savedRows.length) return response({ error: { code: "RIDE_QUOTE_SAVE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        return response({ data: { quote_id:savedRows[0].id, city:city.slug, vehicle_type:vehicleType, pickup_label:body.pickup_label.trim(),
+          destination_label:body.destination_label.trim(), pricing_kind:pricingKind, pricing_version:pricingVersion,
+          amount_cents:amountCents,currency:"EUR",distance_m:distanceMeters,duration_s:durationSeconds,expires_at:savedRows[0].expires_at } }, 201, requestId, origin, env);
+      } catch { return response({ error: { code: "RIDE_QUOTE_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
     if (url.pathname === "/api/v1/rides" && request.method === "POST") {
       let user: AuthUser | null;
       try { user = await getAuthenticatedUser(request, env); } catch {
@@ -383,24 +504,31 @@ export default {
       if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
       const routeId = request.headers.get("x-route-id");
       const idempotencyKey = request.headers.get("idempotency-key");
-      if (!routeId || !/^[0-9a-f-]{36}$/i.test(routeId) || !idempotencyKey || idempotencyKey.length < 12 || idempotencyKey.length > 128) {
-        return response({ error: { code: "INVALID_RIDE_REQUEST", message: "Provide x-route-id and a unique Idempotency-Key.", request_id: requestId } }, 400, requestId, origin, env);
+      let quoteId: string | null = null;
+      if (!routeId) {
+        let body: unknown;
+        try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
+        if (isRecord(body) && typeof body.quote_id === "string" && /^[0-9a-f-]{36}$/i.test(body.quote_id)) quoteId = body.quote_id;
+      }
+      if ((!routeId && !quoteId) || (routeId && !/^[0-9a-f-]{36}$/i.test(routeId))
+        || !idempotencyKey || idempotencyKey.length < 12 || idempotencyKey.length > 128) {
+        return response({ error: { code: "INVALID_RIDE_REQUEST", message: "Provide a valid route or quote ID and a unique Idempotency-Key.", request_id: requestId } }, 400, requestId, origin, env);
       }
       try {
-        const result = await databaseRequest(env, "rpc/sjelle_book_fixed_route_ride", {
-          method: "POST", body: JSON.stringify({ p_customer_id: user.id, p_route_id: routeId, p_idempotency_key: idempotencyKey }),
-        });
+        const rpc = routeId ? "rpc/sjelle_book_fixed_route_ride" : "rpc/sjelle_book_ride_quote";
+        const rpcBody = routeId
+          ? { p_customer_id: user.id, p_route_id: routeId, p_idempotency_key: idempotencyKey }
+          : { p_customer_id: user.id, p_quote_id: quoteId, p_idempotency_key: idempotencyKey };
+        const result = await databaseRequest(env, rpc, { method: "POST", body: JSON.stringify(rpcBody) });
         const payload = await parseJson(result);
         if (!result.ok) {
           const code = isRecord(payload) && typeof payload.message === "string" ? payload.message : "RIDE_BOOKING_FAILED";
-          const status = ["CITY_UNAVAILABLE","ROUTE_NOT_AVAILABLE","CITY_PRICING_NOT_CONFIGURED"].includes(code) ? 409
-            : ["INVALID_RIDE_REQUEST"].includes(code) ? 400 : 503;
+          const status = ["CITY_UNAVAILABLE","ROUTE_NOT_AVAILABLE","CITY_PRICING_NOT_CONFIGURED","RIDE_QUOTE_EXPIRED","RIDE_QUOTE_ALREADY_USED"].includes(code) ? 409
+            : ["INVALID_RIDE_REQUEST"].includes(code) ? 400 : code === "RIDE_QUOTE_NOT_FOUND" ? 404 : 503;
           return response({ error: { code, request_id: requestId } }, status, requestId, origin, env);
         }
         return response({ data: payload }, 201, requestId, origin, env);
-      } catch {
-        return response({ error: { code: "RIDE_BOOKING_FAILED", request_id: requestId } }, 503, requestId, origin, env);
-      }
+      } catch { return response({ error: { code: "RIDE_BOOKING_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
     }
 
     if (url.pathname === "/api/v1/food-orders" && request.method === "POST") {
