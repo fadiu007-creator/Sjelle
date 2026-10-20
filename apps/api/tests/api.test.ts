@@ -2,8 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import worker from "../src/index.ts";
 
+const callWorker = (request: Request, env: Parameters<typeof worker.fetch>[1]) =>
+  worker.fetch(request, env, {} as ExecutionContext);
+
 test("health is available without database configuration", async () => {
-  const response = await worker.fetch(new Request("https://sjelle.test/api/v1/health"), {});
+  const response = await callWorker(new Request("https://sjelle.test/api/v1/health"), {});
   const body = await response.json() as { ok: boolean; service: string; request_id: string };
   assert.equal(response.status, 200);
   assert.equal(body.ok, true);
@@ -12,7 +15,7 @@ test("health is available without database configuration", async () => {
 });
 
 test("readiness fails clearly when backend secrets are missing", async () => {
-  const response = await worker.fetch(new Request("https://sjelle.test/api/v1/ready"), {});
+  const response = await callWorker(new Request("https://sjelle.test/api/v1/ready"), {});
   const body = await response.json() as { ok: boolean; error: { code: string } };
   assert.equal(response.status, 503);
   assert.equal(body.ok, false);
@@ -20,7 +23,7 @@ test("readiness fails clearly when backend secrets are missing", async () => {
 });
 
 test("unauthenticated profile requests are rejected before database access", async () => {
-  const response = await worker.fetch(
+  const response = await callWorker(
     new Request("https://sjelle.test/api/v1/me", { method: "GET" }),
     { SUPABASE_URL: "https://example.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "test-only" },
   );
@@ -30,14 +33,14 @@ test("unauthenticated profile requests are rejected before database access", asy
 });
 
 test("unknown endpoints never pretend to succeed", async () => {
-  const response = await worker.fetch(new Request("https://sjelle.test/api/v1/rides"), {});
+  const response = await callWorker(new Request("https://sjelle.test/api/v1/rides"), {});
   const body = await response.json() as { error: { code: string } };
   assert.equal(response.status, 404);
   assert.equal(body.error.code, "NOT_FOUND");
 });
 
 test("restaurant list requires an explicit city slug", async () => {
-  const response = await worker.fetch(
+  const response = await callWorker(
     new Request("https://sjelle.test/api/v1/restaurants"),
     {},
   );
@@ -47,7 +50,7 @@ test("restaurant list requires an explicit city slug", async () => {
 });
 
 test("menu route rejects malformed restaurant slugs", async () => {
-  const response = await worker.fetch(
+  const response = await callWorker(
     new Request("https://sjelle.test/api/v1/restaurants/!!/menu"),
     {},
   );
