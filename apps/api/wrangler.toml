@@ -1,0 +1,19 @@
+name = "sjelle-api"
+main = "src/index.ts"
+compatibility_date = "2026-10-20"
+workers_dev = true
+
+[observability]
+enabled = true
+
+[env.staging]
+name = "sjelle-api-staging"
+workers_dev = true
+
+[env.production]
+name = "sjelle-api-production"
+workers_dev = true
+
+# Add secrets with Wrangler secrets or Cloudflare dashboard bindings.
+# Never commit Supabase service-role keys or provider secrets.
+# Configure ALLOWED_ORIGIN separately for each environment.
