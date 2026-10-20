@@ -327,6 +327,7 @@ function openAccount(mode = "login") {
 function updateAuthMode() {
   const signup = state.authMode === "signup";
   authNameWrap.hidden = !signup;
+  accountForm.elements.display_name.required = signup;
   accountForm.elements.password.autocomplete = signup ? "new-password" : "current-password";
   authSubmit.textContent = signup ? "Krijo llogari" : "Hyr";
   document.querySelectorAll("[data-auth-mode]").forEach(button => {
