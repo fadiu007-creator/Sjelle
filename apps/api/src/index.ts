@@ -1216,10 +1216,11 @@ export default {
         return response({ error: { code: "INVALID_CITY_PRICING", message: "Provide a version and non-negative integer fees/rates in euro cents.", request_id: requestId } }, 400, requestId, origin, env);
       }
       try {
-        const cityResponse = await databaseRequest(env, "sjelle_cities?slug=eq." + encodeURIComponent(adminPricingMatch[1].toLowerCase()) + "&select=id&limit=1");
-        const cities = await parseJson(cityResponse) as Array<{ id: string }>;
+        const cityResponse = await databaseRequest(env, "sjelle_cities?slug=eq." + encodeURIComponent(adminPricingMatch[1].toLowerCase()) + "&select=id,active&limit=1");
+        const cities = await parseJson(cityResponse) as Array<{ id: string; active: boolean }>;
         if (!cityResponse.ok) return response({ error: { code: "CITY_LOOKUP_FAILED", request_id: requestId } }, 503, requestId, origin, env);
         if (!cities.length) return response({ error: { code: "CITY_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+        if (body.active !== true && cities[0].active) return response({ error: { code: "CITY_ACTIVE", message: "Disable the city before deactivating its pricing configuration.", request_id: requestId } }, 409, requestId, origin, env);
         const result = await databaseRequest(env, "sjelle_city_pricing?on_conflict=city_id", {
           method: "POST", headers: { prefer: "resolution=merge-duplicates,return=representation" },
           body: JSON.stringify({
