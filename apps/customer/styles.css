@@ -166,3 +166,43 @@ select { width: 100%; min-width: 0; height: 50px; padding: 0 25px 0 0; appearanc
   .menu-content { padding: 16px 18px 22px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+
+
+.account-button,.secondary-button{border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer}
+.account-button{font-size:13px;white-space:nowrap}
+.primary-button{display:block;width:100%;border:0;border-radius:13px;background:var(--green);color:#fff;padding:13px 16px;font-weight:800;cursor:pointer}
+.primary-button:disabled{opacity:.45;cursor:not-allowed}
+.auth-tabs{display:flex;gap:8px;margin:4px 0 20px}
+.auth-tab{flex:1;border:1px solid var(--line);background:#fff;border-radius:10px;padding:10px;font-weight:700;cursor:pointer}
+.auth-tab.is-active{background:var(--lime-soft);border-color:var(--green)}
+.auth-form,.checkout-form{display:grid;gap:13px}
+.auth-form label,.checkout-form label{display:grid;gap:6px;font-size:13px;font-weight:750;color:var(--ink-soft)}
+.auth-form input,.checkout-form input,.checkout-form textarea{width:100%;min-width:0;border:1px solid var(--line);border-radius:10px;background:#fff;padding:12px;color:var(--ink);font:inherit;font-weight:450}
+.checkout-form textarea{resize:vertical}
+.account-dialog,.menu-dialog{width:min(620px,calc(100vw - 28px));max-height:88vh;overflow:auto;border:1px solid var(--line);border-radius:22px;padding:22px;background:var(--paper);color:var(--ink);box-shadow:0 24px 80px #102f2825}
+.account-dialog{width:min(440px,calc(100vw - 28px))}
+.account-dialog::backdrop,.menu-dialog::backdrop{background:#102f2880;backdrop-filter:blur(3px)}
+.form-message{font-size:13px;line-height:1.5;color:var(--ink-soft);margin:0;min-height:0}
+.form-message:empty{display:none}
+.form-message[data-kind="error"]{color:#9d3022}
+.form-message[data-kind="success"]{color:#245b3e}
+.account-signed-in{display:grid;gap:14px}
+.checkout-box{border-top:1px solid var(--line);margin-top:18px;padding-top:18px}
+.checkout-heading{display:flex;align-items:center;justify-content:space-between}
+.checkout-heading h3{margin:0;font-size:18px}
+.checkout-heading span,.checkout-disclaimer{font-size:12px;color:var(--muted)}
+.cart-lines{display:grid;gap:8px;margin:12px 0}
+.cart-line{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px}
+.cart-line-copy{min-width:0;flex:1}
+.cart-line-copy b{display:block}
+.cart-line-controls{display:flex;align-items:center;gap:7px}
+.cart-line-controls button{width:28px;height:28px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer}
+.cart-total{display:flex;justify-content:space-between;padding:10px 0;font-weight:800}
+.coordinates-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ride-routes{display:grid;gap:10px;margin-bottom:18px}
+.ride-route-card{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px;border:1px solid var(--line);border-radius:16px;background:#fff}
+.ride-route-card h4{margin:0 0 5px}
+.ride-route-card p{margin:0;font-size:13px;color:var(--muted)}
+.ride-route-card .route-price{font-weight:850;white-space:nowrap}
+.ride-route-card button{margin-top:9px;border:0;border-radius:9px;padding:9px 12px;background:var(--green);color:#fff;font-weight:750;cursor:pointer}
+@media(max-width:560px){.topbar-right{gap:8px}.country-pill{display:none}.account-button{padding:9px 10px}.menu-dialog,.account-dialog{padding:17px}.ride-route-card{align-items:flex-start;flex-direction:column}.coordinates-row{grid-template-columns:1fr 1fr}}
