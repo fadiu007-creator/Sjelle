@@ -101,6 +101,19 @@ function isLanguage(value: unknown): value is "sq" | "en" | "sr" {
   return value === "sq" || value === "en" || value === "sr";
 }
 
+
+async function hasSjelleRole(env: Env, userId: string, role: string): Promise<boolean> {
+  const result = await databaseRequest(env,
+    "sjelle_user_roles?user_id=eq." + encodeURIComponent(userId) + "&role=eq." + encodeURIComponent(role) + "&select=role&limit=1");
+  if (!result.ok) throw new Error("ROLE_CHECK_FAILED");
+  const rows = await parseJson(result);
+  return Array.isArray(rows) && rows.length > 0;
+}
+
+async function requireUser(request: Request, env: Env): Promise<AuthUser | null> {
+  return getAuthenticatedUser(request, env);
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const requestId = crypto.randomUUID();
