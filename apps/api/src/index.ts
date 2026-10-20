@@ -1737,4 +1737,24 @@ export default {
       },
     }, 404, requestId, origin, env);
   },
+
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    if (!configured(env)) return;
+    ctx.waitUntil((async () => {
+      try {
+        const result = await fetch(supabaseUrl(env, "/rest/v1/rpc/sjelle_dispatch_waiting_jobs"), {
+          method: "POST",
+          headers: {
+            apikey: env.SUPABASE_SERVICE_ROLE_KEY!,
+            authorization: "Bearer " + env.SUPABASE_SERVICE_ROLE_KEY!,
+            "content-type": "application/json",
+          },
+          body: "{}",
+        });
+        if (!result.ok) console.error("Sjelle dispatch recovery failed with status", result.status);
+      } catch {
+        console.error("Sjelle dispatch recovery request failed");
+      }
+    })());
+  },
 } satisfies ExportedHandler<Env>;
