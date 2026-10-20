@@ -8,6 +8,9 @@ directory = "../customer"
 binding = "ASSETS"
 run_worker_first = ["/api/*"]
 
+[triggers]
+crons = ["* * * * *"]
+
 [observability]
 enabled = true
 
@@ -22,3 +25,8 @@ workers_dev = true
 # Add secrets with Wrangler secrets or Cloudflare dashboard bindings.
 # Never commit Supabase service-role keys or provider secrets.
 # Configure ALLOWED_ORIGIN separately for each environment.
+[env.staging.triggers]
+crons = ["* * * * *"]
+
+[env.production.triggers]
+crons = ["* * * * *"]
