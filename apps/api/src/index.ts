@@ -210,6 +210,25 @@ export default {
       return new Response(null, { status: 204, headers });
     }
 
+    // Bound request bodies before parsing multipart uploads or JSON into memory.
+    // Driver documents have a separate 10 MiB file limit plus multipart overhead.
+    if (url.pathname.startsWith("/api/") && !["GET", "HEAD"].includes(request.method)) {
+      const declaredLength = Number(request.headers.get("content-length") || 0);
+      const isDocumentUpload = url.pathname === "/api/v1/driver/documents" && request.method === "POST";
+      const maxBytes = isDocumentUpload ? 11 * 1024 * 1024 : 2 * 1024 * 1024;
+      if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+        return response({
+          error: {
+            code: "REQUEST_TOO_LARGE",
+            message: isDocumentUpload
+              ? "Document uploads must be at most 10 MB, plus multipart overhead."
+              : "The request body exceeds the allowed size.",
+            request_id: requestId,
+          },
+        }, 413, requestId, origin, env);
+      }
+    }
+
     if (url.pathname === "/api/v1/health" && request.method === "GET") {
       return response({
         ok: true,
