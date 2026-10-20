@@ -629,6 +629,16 @@ export default {
         return response({ error: { code: "INVALID_RIDE_REQUEST", message: "Provide a valid route or quote ID and a unique Idempotency-Key.", request_id: requestId } }, 400, requestId, origin, env);
       }
       try {
+        if (routeId) {
+          const routeResponse = await databaseRequest(env, "sjelle_fixed_route_prices?id=eq." + encodeURIComponent(routeId) + "&active=eq.true&select=id,city_id,origin_lat,origin_lon&limit=1");
+          const routeRows = await parseJson(routeResponse) as Array<{ id:string;city_id:string;origin_lat:number|null;origin_lon:number|null }>;
+          if (!routeResponse.ok) return response({ error: { code: "ROUTE_READ_FAILED", request_id: requestId } },503,requestId,origin,env);
+          if (!routeRows.length) return response({ error: { code: "ROUTE_NOT_AVAILABLE", request_id: requestId } },409,requestId,origin,env);
+          const route = routeRows[0];
+          const areaResponse = await databaseRequest(env,"sjelle_service_areas?city_id=eq."+encodeURIComponent(route.city_id)+"&active=eq.true&select=boundary_geojson");
+          const areas = await parseJson(areaResponse) as Array<{boundary_geojson:unknown}>;
+          if (!areaResponse.ok || route.origin_lat===null || route.origin_lon===null || !areas.some(area=>pointInServiceArea(route.origin_lat as number,route.origin_lon as number,area.boundary_geojson))) return response({error:{code:"ROUTE_ORIGIN_OUTSIDE_SERVICE_AREA",request_id:requestId}},409,requestId,origin,env);
+        }
         const rpc = routeId ? "rpc/sjelle_book_fixed_route_ride" : "rpc/sjelle_book_ride_quote";
         const rpcBody = routeId
           ? { p_customer_id: user.id, p_route_id: routeId, p_idempotency_key: idempotencyKey }
