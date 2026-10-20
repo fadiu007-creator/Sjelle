@@ -2,7 +2,7 @@
 
 ## 1. Product definition
 
-Sjelle is a single-brand Kosovo ride-hailing and restaurant-delivery platform. Customer uses one app for rides and food. Drivers use one app and explicitly select Ride or Delivery mode. Merchant and admin web portals share a dedicated backend.
+Sjelle is a single-brand Kosovo ride-hailing and restaurant-delivery platform. Customer uses one app for rides and food. Drivers use one app and explicitly select Ride or Delivery mode. Merchant and admin web portals share the Sjelle API and an isolated `sjelle_*` data namespace in the existing `zikos` Supabase project.
 
 ### Locked decisions
 - Cities: Prishtina, Ferizaj, Prizren, Gjilan, Mitrovica, Peja. Seeded as planned/inactive; activate independently after readiness checks.
