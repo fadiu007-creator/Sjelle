@@ -24,7 +24,7 @@ Unknown routes return 404; unavailable backend/configuration returns 503. No rid
 6. Run `npm run typecheck`.
 7. Run `npm run dev`.
 
-For Cloudflare, configure `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and `ALLOWED_ORIGIN` as environment-specific Worker bindings/secrets. The service-role key must remain server-side. The Worker selects only explicit public city, restaurant/menu and caller-profile fields, and derives identity from the verified Supabase user, never from a client-supplied user ID.
+For Cloudflare, configure `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and `ALLOWED_ORIGIN` as environment-specific Worker bindings/secrets. For address-based ride quotes, configure an OSRM-compatible `ROUTING_API_URL`; for address lookup, configure a Nominatim-compatible `GEOCODING_API_URL`. Add provider keys only as secrets. The service-role key must remain server-side. The Worker selects only explicit public city, restaurant/menu and caller-profile fields, and derives identity from the verified Supabase user, never from a client-supplied user ID.
 
 ## Security boundaries
 
