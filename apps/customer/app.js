@@ -587,3 +587,138 @@ async function loadMyOrders() {
 }
 
 if (new URLSearchParams(window.location.search).get("account") === "login") openAccount("login");
+
+
+const rideQuoteForm = document.querySelector("#ride-quote-form");
+const rideQuoteMessage = document.querySelector("#ride-quote-message");
+const rideQuoteResult = document.querySelector("#ride-quote-result");
+
+function clearAddressSelection(which) {
+  const form = rideQuoteForm;
+  form.elements[which + "_label"].value = "";
+  form.elements[which + "_lat"].value = "";
+  form.elements[which + "_lon"].value = "";
+  document.querySelector("#" + which + "-suggestions").replaceChildren();
+}
+
+async function findRideAddress(which) {
+  if (!state.session?.access_token) { openAccount("login"); return; }
+  const query = String(rideQuoteForm.elements[which + "_query"].value || "").trim();
+  const root = document.querySelector("#" + which + "-suggestions");
+  if (query.length < 3) { showMessage(rideQuoteMessage, "Shkruaj të paktën 3 karaktere për adresën."); return; }
+  if (!state.selectedCity) { showMessage(rideQuoteMessage, "Zgjedh qytetin fillimisht.", "error"); return; }
+  root.replaceChildren(node("p", "menu-empty", "Po kërkojmë adresën…"));
+  try {
+    const result = await apiRequest("/geocode", { method: "POST", body: JSON.stringify({ city: state.selectedCity, query }) });
+    const suggestions = Array.isArray(result.data) ? result.data : [];
+    root.replaceChildren();
+    if (!suggestions.length) { root.append(node("p", "menu-empty", "Nuk u gjet adresë në Kosovë. Provo një emër rruge ose pikë reference më të saktë.")); return; }
+    for (const item of suggestions) {
+      const choice = node("button", "", item.label);
+      choice.type = "button";
+      choice.addEventListener("click", () => {
+        rideQuoteForm.elements[which + "_label"].value = item.label;
+        rideQuoteForm.elements[which + "_lat"].value = String(item.lat);
+        rideQuoteForm.elements[which + "_lon"].value = String(item.lon);
+        rideQuoteForm.elements[which + "_query"].value = item.label;
+        root.replaceChildren(node("p", "menu-empty", "Adresa u zgjodh."));
+        showMessage(rideQuoteMessage, "Adresa " + (which === "pickup" ? "e nisjes" : "e destinacionit") + " u zgjodh.", "success");
+      });
+      root.append(choice);
+    }
+  } catch (error) {
+    const message = error.code === "GEOCODING_NOT_CONFIGURED"
+      ? "Shërbimi i kërkimit të adresave nuk është konfiguruar ende."
+      : "Nuk mundëm të kërkojmë adresën. " + (error.message || "");
+    root.replaceChildren(node("p", "menu-empty", message));
+    showMessage(rideQuoteMessage, message, "error");
+  }
+}
+
+document.querySelector("#find-pickup").addEventListener("click", () => findRideAddress("pickup"));
+document.querySelector("#find-destination").addEventListener("click", () => findRideAddress("destination"));
+for (const which of ["pickup","destination"]) {
+  rideQuoteForm.elements[which + "_query"].addEventListener("input", () => clearAddressSelection(which));
+}
+
+const locatePickup = node("button", "secondary-button", "Përdor vendndodhjen time për nisjen");
+locatePickup.type = "button";
+locatePickup.addEventListener("click", () => {
+  if (!navigator.geolocation) { showMessage(rideQuoteMessage, "Shfletuesi nuk mbështet vendndodhjen.", "error"); return; }
+  showMessage(rideQuoteMessage, "Po marrim vendndodhjen…");
+  navigator.geolocation.getCurrentPosition(position => {
+    rideQuoteForm.elements.pickup_query.value = "Vendndodhja ime";
+    rideQuoteForm.elements.pickup_label.value = "Vendndodhja ime";
+    rideQuoteForm.elements.pickup_lat.value = String(position.coords.latitude);
+    rideQuoteForm.elements.pickup_lon.value = String(position.coords.longitude);
+    document.querySelector("#pickup-suggestions").replaceChildren(node("p", "menu-empty", "Vendndodhja u plotësua. Kontrollo që je në qytetin e zgjedhur."));
+    showMessage(rideQuoteMessage, "Vendndodhja e nisjes u plotësua.", "success");
+  }, () => showMessage(rideQuoteMessage, "Nuk mundëm të marrim vendndodhjen. Kërko adresën manualisht.", "error"), { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
+});
+rideQuoteForm.querySelector("#find-pickup").insertAdjacentElement("afterend", locatePickup);
+
+rideQuoteForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  if (!state.session?.access_token) { openAccount("login"); return; }
+  const form = rideQuoteForm.elements;
+  if (!form.pickup_label.value || !form.pickup_lat.value || !form.destination_label.value || !form.destination_lat.value) {
+    showMessage(rideQuoteMessage, "Zgjedh një adresë të sugjeruar për nisjen dhe destinacionin para llogaritjes.", "error");
+    return;
+  }
+  const submit = rideQuoteForm.querySelector('button[type="submit"]');
+  submit.disabled = true;
+  rideQuoteResult.replaceChildren();
+  showMessage(rideQuoteMessage, "Po llogarisim rrugën dhe çmimin në server…");
+  try {
+    const result = await apiRequest("/ride-quotes", {
+      method: "POST",
+      body: JSON.stringify({
+        city: state.selectedCity,
+        pickup_label: form.pickup_label.value,
+        pickup_lat: Number(form.pickup_lat.value),
+        pickup_lon: Number(form.pickup_lon.value),
+        destination_label: form.destination_label.value,
+        destination_lat: Number(form.destination_lat.value),
+        destination_lon: Number(form.destination_lon.value),
+        vehicle_type: form.vehicle_type.value,
+      }),
+    });
+    const quote = result.data;
+    const heading = node("h4", "", quote.pricing_kind === "fixed_route" ? "Çmim fiks i konfiguruar" : "Çmim i vlerësuar");
+    rideQuoteResult.append(heading, node("strong", "", euro(quote.amount_cents)));
+    rideQuoteResult.append(node("p", "", (quote.distance_m / 1000).toFixed(1) + " km · rreth " + Math.max(1, Math.round(quote.duration_s / 60)) + " min"));
+    rideQuoteResult.append(node("p", "", "Pagesa: me para në dorë · Çmimi ruhet për 5 minuta. Versioni: " + quote.pricing_version));
+    const book = node("button", "primary-button", "Konfirmo rezervimin");
+    book.type = "button";
+    book.addEventListener("click", async () => {
+      book.disabled = true;
+      book.textContent = "Po krijojmë rezervimin…";
+      try {
+        const booked = await apiRequest("/rides", {
+          method: "POST",
+          headers: { "idempotency-key": crypto.randomUUID() },
+          body: JSON.stringify({ quote_id: quote.quote_id }),
+        });
+        rideQuoteResult.replaceChildren(node("h4", "", "Kërkesa për udhëtim u regjistrua"), node("p", "", "Statusi: " + (booked.data?.status || "searching") + ". Çmimi: " + euro(booked.data?.quoted_amount_cents) + "."));
+        rideQuoteResult.append(node("p", "", booked.data?.driver_offer_sent ? "Oferta iu dërgua një shoferi të përshtatshëm; prit konfirmimin e tij." : "Rezervimi u ruajt, por nuk u gjet shofer i lirë për momentin."));
+        showMessage(rideQuoteMessage, "Rezervimi u krijua në sistem.", "success");
+      } catch (error) {
+        book.disabled = false;
+        book.textContent = "Provo përsëri";
+        showMessage(rideQuoteMessage, "Rezervimi nuk u krijua: " + (error.message || ""), "error");
+      }
+    });
+    rideQuoteResult.append(book);
+    showMessage(rideQuoteMessage, "Çmimi u llogarit nga distanca dhe koha e rrugës në server.", "success");
+  } catch (error) {
+    const messages = {
+      ROUTING_NOT_CONFIGURED: "Shërbimi i rrugëzimit nuk është konfiguruar. Çmimi nuk u hamendësua.",
+      RIDE_PRICING_NOT_CONFIGURED: "Tarifat e udhëtimit nuk janë konfiguruar për këtë qytet.",
+      CITY_UNAVAILABLE: "Udhëtimet nuk janë aktive në këtë qytet.",
+      OUTSIDE_LAUNCH_AREA: "Nisja dhe destinacioni duhet të jenë brenda zonës fillestare në Kosovë.",
+    };
+    showMessage(rideQuoteMessage, messages[error.code] || error.message || "Nuk mundëm të llogarisim çmimin.", "error");
+  } finally {
+    submit.disabled = false;
+  }
+});
