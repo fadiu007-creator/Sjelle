@@ -530,3 +530,58 @@ async function loadRideRoutes() {
 
 renderAccountState();
 renderCart();
+
+
+const myOrdersOpen = document.querySelector("#my-orders-open");
+const myOrders = document.querySelector("#my-orders");
+const orderStatusLabels = {
+  submitted: "Në pritje të restorantit", accepted: "Pranuar", preparing: "Në përgatitje",
+  ready_for_pickup: "Gati për marrje", courier_assigned: "Korrieri u caktua",
+  picked_up: "Në dërgesë", delivered: "Dorëzuar", rejected: "Refuzuar",
+  cancelled: "Anuluar", delivery_failed: "Dërgesa dështoi",
+};
+
+myOrdersOpen.addEventListener("click", loadMyOrders);
+
+async function loadMyOrders() {
+  if (!state.session?.access_token) return;
+  myOrders.replaceChildren(node("p", "menu-empty", "Po ngarkojmë porositë…"));
+  try {
+    const result = await apiRequest("/food-orders");
+    const orders = Array.isArray(result.data) ? result.data : [];
+    if (!orders.length) {
+      myOrders.replaceChildren(node("p", "menu-empty", "Nuk ke bërë porosi ende."));
+      return;
+    }
+    myOrders.replaceChildren();
+    for (const order of orders) {
+      const card = node("article", "my-order-card");
+      const heading = node("div", "my-order-heading");
+      const restaurant = Array.isArray(order.restaurant) ? order.restaurant[0] : order.restaurant;
+      heading.append(node("b", "", restaurant?.name || "Porosi Sjelle"));
+      heading.append(node("span", "order-status", orderStatusLabels[order.status] || order.status));
+      card.append(heading);
+      card.append(node("p", "", "Totali: " + euro(order.total_cents) + " · Para në dorë"));
+      const orderItems = Array.isArray(order.sjelle_food_order_items) ? order.sjelle_food_order_items : [];
+      card.append(node("p", "order-items-summary", orderItems.map(item => item.quantity + "× " + item.item_name_snapshot).join(", ")));
+      if (order.status === "submitted") {
+        const cancel = node("button", "secondary-button", "Anulo porosinë");
+        cancel.type = "button";
+        cancel.addEventListener("click", async () => {
+          cancel.disabled = true;
+          try {
+            await apiRequest("/food-orders/" + order.id + "/cancel", { method: "POST" });
+            await loadMyOrders();
+          } catch (error) {
+            cancel.disabled = false;
+            window.alert(error.code === "ORDER_NOT_CANCELLABLE" ? "Restoranti ka filluar ta përpunojë porosinë, ndaj nuk mund të anulohet këtu." : "Nuk u anulua porosia. " + (error.message || ""));
+          }
+        });
+        card.append(cancel);
+      }
+      myOrders.append(card);
+    }
+  } catch {
+    myOrders.replaceChildren(node("p", "menu-empty", "Porositë nuk mund të ngarkohen tani. Provo përsëri."));
+  }
+}
