@@ -1531,8 +1531,8 @@ export default {
       if (!isRecord(body) || typeof body.city !== "string" || typeof body.name !== "string" || body.name.trim().length < 2 || body.name.length > 120
         || typeof body.slug !== "string" || !/^[a-z0-9-]{2,80}$/.test(body.slug)
         || typeof body.address_text !== "string" || body.address_text.trim().length < 4 || body.address_text.length > 300
-        || typeof body.latitude !== "number" || body.latitude < -90 || body.latitude > 90
-        || typeof body.longitude !== "number" || body.longitude < -180 || body.longitude > 180
+        || typeof body.latitude !== "number" || body.latitude < 41.7 || body.latitude > 43.4
+        || typeof body.longitude !== "number" || body.longitude < 19.7 || body.longitude > 22.0
         || (body.phone !== undefined && body.phone !== null && (typeof body.phone !== "string" || body.phone.length > 32))
         || (body.description !== undefined && body.description !== null && (typeof body.description !== "string" || body.description.length > 1000))) {
         return response({ error: { code: "INVALID_RESTAURANT_APPLICATION", request_id: requestId } }, 400, requestId, origin, env);
