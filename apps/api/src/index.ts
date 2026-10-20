@@ -191,7 +191,7 @@ export default {
       }
     }
 
-    const menuMatch = url.pathname.match(/^\\/api\\/v1\\/restaurants\\/([^/]+)\\/menu$/);
+    const menuMatch = url.pathname.match(/^\/api\/v1\/restaurants\/([^/]+)\/menu$/);
     if (menuMatch && request.method === "GET") {
       let restaurantSlug: string;
       try {
