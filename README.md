@@ -31,10 +31,10 @@ Sjelle is a Kosovo-first ride-hailing and food-delivery platform. One customer e
 - Applied 25 namespaced Sjelle tables to `zikos`; RLS is enabled on all 25.
 - Added least-privilege client grants and indexes for foreign-key relationships. No existing app tables were targeted.
 - Seeded the six candidate cities as inactive with rides and food delivery disabled.
-- Cloudflare Worker endpoints currently include health/readiness checks, city discovery, restaurant/menu discovery and authenticated customer profile read/write.
-- Customer web interface reads real API data and clearly indicates when services are not active; it does not simulate bookings or orders.
-- Ride booking, trusted route pricing, food-order placement, dispatch, driver onboarding workflows, notifications, payment processing and deployment are not yet complete.
-- Tests are committed, but a successful CI run has not yet been confirmed.
+- Cloudflare Worker endpoints include health/readiness, city/restaurant/menu discovery, authentication/profile, food ordering, ride quoting/booking/cancellation, merchant order/menu management, driver onboarding/document review/dispatch and admin pricing/route/city activation.
+- Customer, driver, merchant and admin portals are present under `apps/customer/`, backed by real API calls. No portal fakes booking, payment or approval success.
+- Server-calculated ride quotes use a configured OSRM-compatible routing provider; address search uses a configured Nominatim-compatible geocoder. A one-minute Cloudflare cron retries dispatch for waiting jobs.
+- Tests cover pricing/state transitions and API authentication guards, but a successful CI run has not yet been confirmed. Online payments, push notifications, a native mobile app and production deployment are still outstanding.
 
 ## Security and operating principles
 
@@ -47,7 +47,7 @@ Sjelle is a Kosovo-first ride-hailing and food-delivery platform. One customer e
 
 ## Deployment
 
-See [Cloudflare deployment instructions](docs/CLOUDFLARE_DEPLOY.md). Deployment is manual and has not yet been run from this repository.
+See [Cloudflare deployment instructions](docs/CLOUDFLARE_DEPLOY.md) and [operations bootstrap](docs/OPERATIONS_BOOTSTRAP.md). Deployment is manual and has not yet been run from this repository.
 
 ## Local API development
 
