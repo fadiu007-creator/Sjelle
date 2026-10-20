@@ -79,3 +79,5 @@ async function loadRestaurantManager(){
 $("#merchant-manage-refresh").addEventListener("click",loadRestaurantManager);
 loadMerchantCities();
 loadRestaurantManager();
+
+setInterval(()=>{if(document.visibilityState==='visible'&&token())load();},15000);
