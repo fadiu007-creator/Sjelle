@@ -12,6 +12,10 @@ Sjelle uses Cloudflare Workers with the static customer app in `apps/customer/`.
    - `SUPABASE_PUBLISHABLE_KEY` as a Worker variable
    - `SUPABASE_SERVICE_ROLE_KEY` as a secret
    - `ALLOWED_ORIGIN` to the exact public origin serving the customer app
+   - `ROUTING_API_URL` to an OSRM-compatible routing service base URL (required for address-based quotes)
+   - `ROUTING_API_KEY` as a secret if your routing provider requires a bearer token
+   - `GEOCODING_API_URL` to a Nominatim-compatible geocoding service base URL (required for address search)
+   - `GEOCODING_API_KEY` as a secret if your geocoder requires a bearer token
 3. Confirm the deployed Worker environment has the expected assets binding and test `/api/v1/health`, `/api/v1/ready`, and `/api/v1/cities`.
 
 Never put the Supabase service-role key in GitHub source, a client bundle, or a non-secret Worker variable.
