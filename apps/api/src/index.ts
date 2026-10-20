@@ -1596,7 +1596,7 @@ export default {
           const cat=await databaseRequest(env,"sjelle_menu_categories?id=eq."+encodeURIComponent(body.category_id)+"&restaurant_id=eq."+encodeURIComponent(menuItemCreateMatch[1])+"&select=id&limit=1");
           const cats=await parseJson(cat) as unknown[];if(!cat.ok)return response({error:{code:"CATEGORY_LOOKUP_FAILED",request_id:requestId}},503,requestId,origin,env);if(!cats.length)return response({error:{code:"CATEGORY_NOT_FOUND",request_id:requestId}},404,requestId,origin,env);
         }
-        const result=await databaseRequest(env,"sjelle_menu_items",{method:"POST",headers:{prefer:"return=representation"},body:JSON.stringify({restaurant_id:menuItemCreateMatch[1],category_id:body.category_id??null,name:body.name.trim(),description:typeof body.description==="string"?body.description.trim():null,price_cents:body.price_cents,available:body.available===true})});
+        const result=await databaseRequest(env,"sjelle_menu_items",{method:"POST",headers:{prefer:"return=representation"},body:JSON.stringify({restaurant_id:menuItemCreateMatch[1],category_id:body.category_id??null,name:body.name.trim(),description:typeof body.description==="string"?body.description.trim():null,price_cents:body.price_cents,available:body.available!==false})});
         const payload=await parseJson(result);if(!result.ok)return response({error:{code:"MENU_ITEM_SAVE_FAILED",request_id:requestId}},503,requestId,origin,env);
         return response({data:Array.isArray(payload)?payload[0]:payload},201,requestId,origin,env);
       }catch{return response({error:{code:"MENU_ITEM_SAVE_FAILED",request_id:requestId}},503,requestId,origin,env);}
