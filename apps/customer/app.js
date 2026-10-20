@@ -69,7 +69,9 @@ function updateCityStatus() {
   const services = [];
   const rideComingArt = document.querySelector(".ride-message-art");
   const rideComingCopy = document.querySelector(".ride-message-copy");
+  const rideQuoteBox = document.querySelector(".ride-quote-box");
   const rideActive = Boolean(city.active && city.rides_enabled);
+  if (rideQuoteBox) rideQuoteBox.hidden = !rideActive;
   if (rideComingArt) rideComingArt.hidden = rideActive;
   if (rideComingCopy) rideComingCopy.hidden = rideActive;
   if (city.rides_enabled) services.push("udhëtimet");
