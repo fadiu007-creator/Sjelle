@@ -22,13 +22,13 @@ Sjelle is a Kosovo-first ride-hailing and food-delivery platform. One customer e
 - `supabase/migrations/` — versioned schema migrations, aligned to applied Supabase migration history
 - `apps/customer/` — mobile-first customer web app served as Cloudflare Worker static assets
 - `apps/api/` — Cloudflare Worker API, tests and deployment configuration
-- `apps/driver/` — driver app, planned
-- `apps/merchant-web/` — merchant portal, planned
-- `apps/admin-web/` — operations dashboard, planned
+- `apps/customer/driver/` — driver portal (native mobile app still planned)
+- `apps/customer/merchant/` — restaurant onboarding, menu and order portal
+- `apps/customer/admin/` — operations dashboard
 
 ## Current implementation
 
-- Applied 25 namespaced Sjelle tables to `zikos`; RLS is enabled on all 25.
+- Applied 27 namespaced Sjelle tables to `zikos`; RLS is enabled on all 27.
 - Added least-privilege client grants and indexes for foreign-key relationships. No existing app tables were targeted.
 - Seeded the six candidate cities as inactive with rides and food delivery disabled.
 - Cloudflare Worker endpoints include health/readiness, city/restaurant/menu discovery, authentication/profile, food ordering, ride quoting/booking/cancellation, merchant order/menu management, driver onboarding/document review/dispatch and admin pricing/route/city activation.
