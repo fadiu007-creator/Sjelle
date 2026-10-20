@@ -71,9 +71,14 @@ function updateCityStatus() {
   const rideComingCopy = document.querySelector(".ride-message-copy");
   const rideQuoteBox = document.querySelector(".ride-quote-box");
   const rideActive = Boolean(city.active && city.rides_enabled);
-  if (rideQuoteBox) rideQuoteBox.hidden = !rideActive;
+  const quoteReady = Boolean(rideActive && city.routing_enabled && city.geocoding_enabled);
+  if (rideQuoteBox) rideQuoteBox.hidden = !quoteReady;
   if (rideComingArt) rideComingArt.hidden = rideActive;
-  if (rideComingCopy) rideComingCopy.hidden = rideActive;
+  if (rideComingCopy) {
+    if (!rideComingCopy.dataset.defaultText) rideComingCopy.dataset.defaultText = rideComingCopy.textContent || "";
+    rideComingCopy.textContent = rideActive && !quoteReady ? "Udhëtimet janë aktive në këtë qytet. Për momentin mund të rezervosh rrugët fikse të listuara më poshtë." : rideComingCopy.dataset.defaultText;
+    rideComingCopy.hidden = rideActive && quoteReady;
+  }
   if (city.rides_enabled) services.push("udhëtimet");
   if (city.food_enabled) services.push("ushqimi");
   cityStatus.textContent = city.active && services.length
