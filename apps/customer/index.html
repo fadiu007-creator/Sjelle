@@ -143,6 +143,8 @@
       <div id="cart-lines" class="cart-lines"><p class="menu-empty">Shto artikuj nga menuja.</p></div>
       <form id="checkout-form" class="checkout-form">
         <label>Adresa e dërgesës<input name="address" required minlength="4" maxlength="500" autocomplete="street-address" placeholder="Rruga, numri, hyrja"></label>
+        <button id="find-delivery-address" class="secondary-button" type="button">Gjej adresën e dërgesës</button>
+        <div id="delivery-address-suggestions" class="address-suggestions"></div>
         <div class="coordinates-row">
           <label>Gjerësia<input name="lat" type="number" step="any" min="-90" max="90" required placeholder="42.6629"></label>
           <label>Gjatësia<input name="lon" type="number" step="any" min="-180" max="180" required placeholder="21.1655"></label>
