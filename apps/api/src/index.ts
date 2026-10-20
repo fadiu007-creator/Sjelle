@@ -57,7 +57,7 @@ function supabaseUrl(env: Env, path: string): string {
 
 async function getAuthenticatedUser(request: Request, env: Env): Promise<AuthUser | null> {
   const authorization = request.headers.get("authorization");
-  if (!authorization || !/^Bearer\\s+\\S+$/i.test(authorization)) return null;
+  if (!authorization || !/^Bearer\s+\S+$/i.test(authorization)) return null;
   if (!configured(env) || !env.SUPABASE_PUBLISHABLE_KEY) throw new Error("SUPABASE_NOT_CONFIGURED");
 
   const result = await fetch(supabaseUrl(env, "/auth/v1/user"), {
