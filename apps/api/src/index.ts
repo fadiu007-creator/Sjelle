@@ -854,6 +854,106 @@ export default {
       } catch { return response({ error: { code: "VEHICLE_REVIEW_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
     }
 
+
+    if (url.pathname === "/api/v1/driver/offers" && request.method === "GET") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try {
+        const result = await databaseRequest(env, "sjelle_driver_offers?driver_id=eq." + encodeURIComponent(user.id) + "&status=eq.offered&expires_at=gt." + encodeURIComponent(new Date().toISOString()) + "&select=id,job_kind,ride_id,delivery_job_id,expires_at,created_at&order=created_at.desc&limit=20");
+        if (!result.ok) return response({ error: { code: "DRIVER_OFFERS_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const offers = await parseJson(result) as Array<Record<string, unknown>>;
+        const data = await Promise.all((Array.isArray(offers) ? offers : []).map(async offer => {
+          if (offer.job_kind === "ride" && typeof offer.ride_id === "string") {
+            const rideResponse = await databaseRequest(env, "sjelle_rides?id=eq." + encodeURIComponent(offer.ride_id) + "&select=id,pickup_label,destination_label,quoted_amount_cents,status,vehicle_type&limit=1");
+            const rides = await parseJson(rideResponse) as unknown[];
+            return { ...offer, job: Array.isArray(rides) ? rides[0] || null : null };
+          }
+          if (offer.job_kind === "delivery" && typeof offer.delivery_job_id === "string") {
+            const jobResponse = await databaseRequest(env, "sjelle_delivery_jobs?id=eq." + encodeURIComponent(offer.delivery_job_id) + "&select=id,status,order_id,pickup_lat,pickup_lon&limit=1");
+            const jobs = await parseJson(jobResponse) as Array<{ id: string; status: string; order_id: string; pickup_lat: number; pickup_lon: number }>;
+            const job = jobs[0];
+            if (!job) return { ...offer, job: null };
+            const orderResponse = await databaseRequest(env, "sjelle_food_orders?id=eq." + encodeURIComponent(job.order_id) + "&select=id,restaurant_id,status,total_cents,prep_time_minutes&limit=1");
+            const orders = await parseJson(orderResponse) as Array<{ id: string; restaurant_id: string; status: string; total_cents: number; prep_time_minutes: number | null }>;
+            const order = orders[0];
+            if (!order) return { ...offer, job: { id: job.id, status: job.status, pickup_lat: job.pickup_lat, pickup_lon: job.pickup_lon } };
+            const restaurantResponse = await databaseRequest(env, "sjelle_restaurants?id=eq." + encodeURIComponent(order.restaurant_id) + "&select=name,address_text&limit=1");
+            const restaurants = await parseJson(restaurantResponse) as unknown[];
+            return { ...offer, job: { id: job.id, status: job.status, pickup_lat: job.pickup_lat, pickup_lon: job.pickup_lon, order_status: order.status, total_cents: order.total_cents, prep_time_minutes: order.prep_time_minutes, restaurant: Array.isArray(restaurants) ? restaurants[0] || null : null } };
+          }
+          return { ...offer, job: null };
+        }));
+        return response({ data }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "DRIVER_OFFERS_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
+    const driverOfferResponseMatch = url.pathname.match(/^\/api\/v1\/driver\/offers\/([0-9a-f-]{36})\/respond$/i);
+    if (driverOfferResponseMatch && request.method === "POST") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      let body: unknown;
+      try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
+      if (!isRecord(body) || !["accept","reject"].includes(String(body.response))) return response({ error: { code: "INVALID_OFFER_RESPONSE", request_id: requestId } }, 400, requestId, origin, env);
+      try {
+        const result = await databaseRequest(env, "rpc/sjelle_respond_driver_offer", {
+          method: "POST", body: JSON.stringify({ p_driver_id: user.id, p_offer_id: driverOfferResponseMatch[1], p_response: body.response }),
+        });
+        const payload = await parseJson(result);
+        if (!result.ok) {
+          const code = isRecord(payload) && typeof payload.message === "string" ? payload.message : "OFFER_RESPONSE_FAILED";
+          const status = code === "OFFER_NOT_FOUND" ? 404 : ["OFFER_EXPIRED","DRIVER_NOT_AVAILABLE","JOB_NOT_AVAILABLE"].includes(code) ? 409 : 503;
+          return response({ error: { code, request_id: requestId } }, status, requestId, origin, env);
+        }
+        return response({ data: payload }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "OFFER_RESPONSE_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
+    const driverJobMatch = url.pathname.match(/^\/api\/v1\/driver\/jobs\/(ride|delivery)\/([0-9a-f-]{36})\/status$/i);
+    if (driverJobMatch && request.method === "POST") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      let body: unknown;
+      try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
+      const allowed = driverJobMatch[1] === "ride"
+        ? ["driver_arriving","driver_arrived","in_progress","completed"]
+        : ["arriving","arrived","picked_up","delivered"];
+      if (!isRecord(body) || !allowed.includes(String(body.status)) || (body.cash_collected !== undefined && typeof body.cash_collected !== "boolean")) {
+        return response({ error: { code: "INVALID_JOB_TRANSITION", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      try {
+        const result = await databaseRequest(env, "rpc/sjelle_driver_update_job", {
+          method: "POST", body: JSON.stringify({ p_driver_id: user.id, p_job_kind: driverJobMatch[1], p_job_id: driverJobMatch[2], p_next_status: body.status, p_cash_collected: body.cash_collected === true }),
+        });
+        const payload = await parseJson(result);
+        if (!result.ok) {
+          const code = isRecord(payload) && typeof payload.message === "string" ? payload.message : "JOB_UPDATE_FAILED";
+          const status = code === "JOB_NOT_FOUND" ? 404 : ["DRIVER_NOT_APPROVED","ORDER_NOT_READY_FOR_PICKUP","INVALID_JOB_TRANSITION"].includes(code) ? 409 : 503;
+          return response({ error: { code, request_id: requestId } }, status, requestId, origin, env);
+        }
+        return response({ data: payload }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "JOB_UPDATE_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
+    const adminDispatchMatch = url.pathname.match(/^\/api\/v1\/admin\/dispatch\/(ride|delivery)\/([0-9a-f-]{36})$/i);
+    if (adminDispatchMatch && request.method === "POST") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try { if (!await hasSjelleRole(env, user.id, "admin")) return response({ error: { code: "FORBIDDEN", request_id: requestId } }, 403, requestId, origin, env); }
+      catch { return response({ error: { code: "ROLE_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+      try {
+        const result = await databaseRequest(env, "rpc/sjelle_offer_next_driver", {
+          method: "POST", body: JSON.stringify({ p_job_kind: adminDispatchMatch[1], p_job_id: adminDispatchMatch[2] }),
+        });
+        const payload = await parseJson(result);
+        if (!result.ok) return response({ error: { code: "DISPATCH_RETRY_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        return response({ data: payload }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "DISPATCH_RETRY_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
     if (url.pathname === "/api/v1/me" && (request.method === "GET" || request.method === "PUT")) {
       let user: AuthUser | null;
       try {
