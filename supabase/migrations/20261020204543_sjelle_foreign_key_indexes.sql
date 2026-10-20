@@ -1,0 +1,30 @@
+-- Foreign-key indexes for Sjelle joins and parent-row maintenance.
+-- Additive only; no existing app objects are changed.
+create index sjelle_audit_logs_actor_id_idx on public.sjelle_audit_logs(actor_id);
+create index sjelle_driver_documents_driver_id_idx on public.sjelle_driver_documents(driver_id);
+create index sjelle_driver_documents_reviewed_by_idx on public.sjelle_driver_documents(reviewed_by);
+create index sjelle_driver_offers_delivery_job_id_idx on public.sjelle_driver_offers(delivery_job_id);
+create index sjelle_driver_offers_ride_id_idx on public.sjelle_driver_offers(ride_id);
+create index sjelle_driver_profiles_approved_by_idx on public.sjelle_driver_profiles(approved_by);
+create index sjelle_driver_profiles_city_id_idx on public.sjelle_driver_profiles(city_id);
+create index sjelle_fixed_route_prices_created_by_idx on public.sjelle_fixed_route_prices(created_by);
+create index sjelle_food_order_items_menu_item_id_idx on public.sjelle_food_order_items(menu_item_id);
+create index sjelle_food_order_items_order_id_idx on public.sjelle_food_order_items(order_id);
+create index sjelle_ledger_entries_reversal_of_idx on public.sjelle_ledger_entries(reversal_of);
+create index sjelle_menu_categories_restaurant_id_idx on public.sjelle_menu_categories(restaurant_id);
+create index sjelle_menu_item_options_menu_item_id_idx on public.sjelle_menu_item_options(menu_item_id);
+create index sjelle_menu_items_category_id_idx on public.sjelle_menu_items(category_id);
+create index sjelle_ratings_restaurant_id_idx on public.sjelle_ratings(restaurant_id);
+create index sjelle_ratings_reviewee_id_idx on public.sjelle_ratings(reviewee_id);
+create index sjelle_ratings_reviewer_id_idx on public.sjelle_ratings(reviewer_id);
+create index sjelle_restaurant_staff_user_id_idx on public.sjelle_restaurant_staff(user_id);
+create index sjelle_restaurants_owner_id_idx on public.sjelle_restaurants(owner_id);
+create index sjelle_ride_events_actor_id_idx on public.sjelle_ride_events(actor_id);
+create index sjelle_saved_addresses_city_id_idx on public.sjelle_saved_addresses(city_id);
+create index sjelle_support_tickets_assigned_to_idx on public.sjelle_support_tickets(assigned_to);
+create index sjelle_support_tickets_order_id_idx on public.sjelle_support_tickets(order_id);
+create index sjelle_support_tickets_requester_id_idx on public.sjelle_support_tickets(requester_id);
+create index sjelle_support_tickets_ride_id_idx on public.sjelle_support_tickets(ride_id);
+create index sjelle_user_roles_granted_by_idx on public.sjelle_user_roles(granted_by);
+create index sjelle_vehicles_driver_id_idx on public.sjelle_vehicles(driver_id);
+create index sjelle_vehicles_verified_by_idx on public.sjelle_vehicles(verified_by);
