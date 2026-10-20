@@ -52,6 +52,34 @@ function response(
   return new Response(JSON.stringify(body), { status, headers });
 }
 
+async function enforceRequestBodyLimit(request: Request, maxBytes: number): Promise<{ request: Request; tooLarge: boolean }> {
+  if (!request.body) return { request, tooLarge: false };
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const part = await reader.read();
+      if (part.done) break;
+      total += part.value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        return { request, tooLarge: true };
+      }
+      chunks.push(part.value);
+    }
+  } catch {
+    return { request, tooLarge: true };
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { request: new Request(request, { body: bytes }), tooLarge: false };
+}
+
 function configured(env: Env): env is Env & { SUPABASE_URL: string; SUPABASE_SERVICE_ROLE_KEY: string } {
   return Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY);
 }
@@ -210,13 +238,12 @@ export default {
       return new Response(null, { status: 204, headers });
     }
 
-    // Bound request bodies before parsing multipart uploads or JSON into memory.
-    // Driver documents have a separate 10 MiB file limit plus multipart overhead.
+    // Bound actual streamed request bytes, even when Content-Length is absent or inaccurate.
     if (url.pathname.startsWith("/api/") && !["GET", "HEAD"].includes(request.method)) {
-      const declaredLength = Number(request.headers.get("content-length") || 0);
       const isDocumentUpload = url.pathname === "/api/v1/driver/documents" && request.method === "POST";
       const maxBytes = isDocumentUpload ? 11 * 1024 * 1024 : 2 * 1024 * 1024;
-      if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+      const bounded = await enforceRequestBodyLimit(request, maxBytes);
+      if (bounded.tooLarge) {
         return response({
           error: {
             code: "REQUEST_TOO_LARGE",
@@ -227,6 +254,7 @@ export default {
           },
         }, 413, requestId, origin, env);
       }
+      request = bounded.request;
     }
 
     if (url.pathname === "/api/v1/health" && request.method === "GET") {
