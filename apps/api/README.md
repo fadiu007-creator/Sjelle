@@ -11,7 +11,7 @@ Cloudflare Worker API backed by the existing Supabase project `zikos`. Every Sje
 - **Food ordering:** `POST /api/v1/food-orders`, `GET /api/v1/food-orders`, `GET /api/v1/food-orders/:id`, `POST /api/v1/food-orders/:id/cancel`.
 - **Merchant portal:** `GET/POST /api/v1/merchant/restaurants`, `PATCH /api/v1/merchant/restaurants/:id/settings`, `POST /api/v1/merchant/restaurants/:id/categories`, `POST /api/v1/merchant/restaurants/:id/menu-items`, `PATCH /api/v1/merchant/menu-items/:id`, `GET /api/v1/merchant/orders`, `PATCH /api/v1/merchant/orders/:id/status`.
 - **Driver portal:** `POST /api/v1/driver/apply`, `GET /api/v1/driver/me`, `POST /api/v1/driver/vehicles`, `POST /api/v1/driver/documents`, `PATCH /api/v1/driver/availability`, `POST /api/v1/driver/location`, `GET /api/v1/driver/offers`, `POST /api/v1/driver/offers/:id/respond`, `GET /api/v1/driver/jobs`, `POST /api/v1/driver/jobs/:kind/:id/status`.
-- **Admin portal:** city/pricing configuration, fixed route creation/activation, guarded city activation, restaurant review, driver-document and vehicle review, driver approval, signed document URLs, and dispatch retry. All require a database-backed Sjelle admin role.
+- **Admin portal:** city/pricing and GeoJSON service-area configuration, fixed route creation/activation, guarded city activation, restaurant review, driver-document and vehicle review, driver approval, signed document URLs, and dispatch retry. All require a database-backed Sjelle admin role.
 
 Unknown routes return 404. The Worker does not fake successful bookings, orders, payments or approvals.
 
