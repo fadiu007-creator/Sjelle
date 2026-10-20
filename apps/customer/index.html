@@ -16,6 +16,7 @@
       <span>sjelle<span class="brand-dot">.</span></span>
     </a>
     <div class="topbar-right">
+      <button id="account-open" class="account-button" type="button">Hyr / Regjistrohu</button>
       <span class="country-pill"><span class="live-dot"></span> Kosovë</span>
       <a class="help-link" href="#status">Ndihmë</a>
     </div>
@@ -85,6 +86,7 @@
       </section>
 
       <section id="ride-panel" class="service-panel ride-panel" role="tabpanel" aria-labelledby="tab-ride" hidden>
+        <div id="ride-routes" class="ride-routes" aria-live="polite"></div>
         <div class="ride-message-art" aria-hidden="true"><span>↗</span></div>
         <div class="ride-message-copy">
           <p class="eyebrow">SË SHPEJTI NË QYTETIN TËND</p>
@@ -119,6 +121,38 @@
       <button id="close-menu" class="close-button" type="button" aria-label="Mbyll menunë">×</button>
     </div>
     <div id="menu-content" class="menu-content"></div>
+    <section class="checkout-box" aria-labelledby="cart-heading">
+      <div class="checkout-heading"><h3 id="cart-heading">Shporta</h3><span id="cart-count">0 artikuj</span></div>
+      <div id="cart-lines" class="cart-lines"><p class="menu-empty">Shto artikuj nga menuja.</p></div>
+      <form id="checkout-form" class="checkout-form">
+        <label>Adresa e dërgesës<input name="address" required minlength="4" maxlength="500" autocomplete="street-address" placeholder="Rruga, numri, hyrja"></label>
+        <div class="coordinates-row">
+          <label>Gjerësia<input name="lat" type="number" step="any" min="-90" max="90" required placeholder="42.6629"></label>
+          <label>Gjatësia<input name="lon" type="number" step="any" min="-180" max="180" required placeholder="21.1655"></label>
+        </div>
+        <button id="locate-me" class="secondary-button" type="button">Përdor vendndodhjen time</button>
+        <label>Udhëzime (opsionale)<textarea name="instructions" rows="2" maxlength="500" placeholder="Kati, hyrja, shënime për korrierin"></textarea></label>
+        <p id="checkout-message" class="form-message" role="status"></p>
+        <button id="checkout-submit" class="primary-button" type="submit" disabled>Porosit me para në dorë</button>
+        <p class="checkout-disclaimer">Totali përfundimtar konfirmohet nga serveri. Pagesa online nuk është aktivizuar.</p>
+      </form>
+    </section>
+  </dialog>
+
+  <dialog id="account-dialog" class="account-dialog" aria-labelledby="account-title">
+    <div class="dialog-header">
+      <div><p class="eyebrow">LLOGARIA SJELLE</p><h2 id="account-title">Mirë se erdhe</h2></div>
+      <button id="account-close" class="close-button" type="button" aria-label="Mbyll llogarinë">×</button>
+    </div>
+    <div class="auth-tabs"><button type="button" class="auth-tab is-active" data-auth-mode="login">Hyr</button><button type="button" class="auth-tab" data-auth-mode="signup">Krijo llogari</button></div>
+    <form id="auth-form" class="auth-form">
+      <label id="auth-name-wrap" hidden>Emri<input name="display_name" maxlength="80" autocomplete="name"></label>
+      <label>Email<input name="email" type="email" required maxlength="254" autocomplete="email"></label>
+      <label>Fjalëkalimi<input name="password" type="password" required minlength="8" maxlength="128" autocomplete="current-password"></label>
+      <p id="auth-message" class="form-message" role="status"></p>
+      <button id="auth-submit" class="primary-button" type="submit">Hyr</button>
+    </form>
+    <div id="account-signed-in" class="account-signed-in" hidden><p id="account-summary"></p><button id="account-logout" class="secondary-button" type="button">Dil nga llogaria</button></div>
   </dialog>
 </body>
 </html>
