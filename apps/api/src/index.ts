@@ -41,7 +41,15 @@ export default {
       if (origin && env.ALLOWED_ORIGIN && origin !== env.ALLOWED_ORIGIN) {
         return response({ error: { code: "ORIGIN_NOT_ALLOWED", request_id: requestId } }, 403, requestId, null, env);
       }
-      return response({ ok: true }, 204, requestId, origin, env);
+      const headers = new Headers();
+      headers.set("x-request-id", requestId);
+      if (origin && env.ALLOWED_ORIGIN && origin === env.ALLOWED_ORIGIN) {
+        headers.set("access-control-allow-origin", origin);
+        headers.set("vary", "Origin");
+        headers.set("access-control-allow-headers", "authorization, content-type, idempotency-key");
+        headers.set("access-control-allow-methods", "GET, POST, PATCH, DELETE, OPTIONS");
+      }
+      return new Response(null, { status: 204, headers });
     }
 
     if (url.pathname === "/api/v1/health" && request.method === "GET") {
