@@ -1136,6 +1136,107 @@ export default {
       } catch { return response({ error: { code: "CITY_ACTIVATION_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
     }
 
+
+    if (url.pathname === "/api/v1/merchant/orders" && request.method === "GET") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try {
+        const [ownedResponse, staffResponse] = await Promise.all([
+          databaseRequest(env, "sjelle_restaurants?owner_id=eq." + encodeURIComponent(user.id) + "&select=id,name,slug,city_id,is_open,delivery_enabled&order=name.asc"),
+          databaseRequest(env, "sjelle_restaurant_staff?user_id=eq." + encodeURIComponent(user.id) + "&can_manage_orders=eq.true&select=restaurant_id"),
+        ]);
+        if (!ownedResponse.ok || !staffResponse.ok) return response({ error: { code: "MERCHANT_ACCESS_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const owned = await parseJson(ownedResponse) as Array<Record<string, unknown>>;
+        const staff = await parseJson(staffResponse) as Array<{ restaurant_id: string }>;
+        const restaurants = [...(Array.isArray(owned) ? owned : [])];
+        const ids = new Set(restaurants.map(r => String(r.id)));
+        for (const item of Array.isArray(staff) ? staff : []) {
+          if (!ids.has(item.restaurant_id)) {
+            const lookup = await databaseRequest(env, "sjelle_restaurants?id=eq." + encodeURIComponent(item.restaurant_id) + "&select=id,name,slug,city_id,is_open,delivery_enabled&limit=1");
+            const found = await parseJson(lookup) as Array<Record<string, unknown>>;
+            if (Array.isArray(found) && found[0]) { restaurants.push(found[0]); ids.add(String(found[0].id)); }
+          }
+        }
+        if (!restaurants.length) return response({ data: { restaurants: [], orders: [] } }, 200, requestId, origin, env);
+        const inFilter = "in.(" + [...ids].join(",") + ")";
+        const orderResponse = await databaseRequest(env, "sjelle_food_orders?restaurant_id=" + inFilter + "&select=id,restaurant_id,status,payment_method,sjelle_cash_status,item_subtotal_cents,delivery_fee_cents,service_fee_cents,total_cents,currency,delivery_address_text,delivery_instructions,created_at,prep_time_minutes,sjelle_food_order_items(id,item_name_snapshot,unit_price_cents,quantity,line_total_cents)&order=created_at.asc&limit=100");
+        if (!orderResponse.ok) return response({ error: { code: "MERCHANT_ORDERS_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const orders = await parseJson(orderResponse) as Array<Record<string, unknown>>;
+        return response({ data: { restaurants, orders: Array.isArray(orders) ? orders : [] } }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "MERCHANT_ORDERS_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
+    if (url.pathname === "/api/v1/driver/jobs" && request.method === "GET") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try {
+        const [ridesResponse, jobsResponse] = await Promise.all([
+          databaseRequest(env, "sjelle_rides?driver_id=eq." + encodeURIComponent(user.id) + "&status=in.(driver_assigned,driver_arriving,driver_arrived,in_progress)&select=id,vehicle_type,pickup_label,pickup_lat,pickup_lon,destination_label,destination_lat,destination_lon,status,quoted_amount_cents,payment_method,sjelle_cash_status,requested_at&order=requested_at.desc"),
+          databaseRequest(env, "sjelle_delivery_jobs?driver_id=eq." + encodeURIComponent(user.id) + "&status=in.(assigned,arriving,arrived,in_progress)&select=id,order_id,status,pickup_lat,pickup_lon,delivery_lat,delivery_lon,assigned_at,picked_up_at"),
+        ]);
+        if (!ridesResponse.ok || !jobsResponse.ok) return response({ error: { code: "DRIVER_JOBS_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const [rides, jobs] = await Promise.all([parseJson(ridesResponse), parseJson(jobsResponse)]);
+        const deliveries = await Promise.all((Array.isArray(jobs) ? jobs : []).map(async job => {
+          if (!isRecord(job) || typeof job.order_id !== "string") return job;
+          const orderResponse = await databaseRequest(env, "sjelle_food_orders?id=eq." + encodeURIComponent(job.order_id) + "&select=id,status,total_cents,delivery_address_text,delivery_instructions,sjelle_cash_status,restaurant_id,ready_at&limit=1");
+          const orders = await parseJson(orderResponse) as Array<Record<string, unknown>>;
+          const order = orders[0];
+          if (!order) return { ...job, order: null };
+          const restaurantResponse = await databaseRequest(env, "sjelle_restaurants?id=eq." + encodeURIComponent(String(order.restaurant_id)) + "&select=name,address_text,latitude,longitude&limit=1");
+          const restaurants = await parseJson(restaurantResponse);
+          return { ...job, order, restaurant: Array.isArray(restaurants) ? restaurants[0] || null : null };
+        }));
+        return response({ data: { rides: Array.isArray(rides) ? rides : [], deliveries } }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "DRIVER_JOBS_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
+    if (url.pathname === "/api/v1/admin/driver-documents" && request.method === "GET") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try { if (!await hasSjelleRole(env, user.id, "admin")) return response({ error: { code: "FORBIDDEN", request_id: requestId } }, 403, requestId, origin, env); }
+      catch { return response({ error: { code: "ROLE_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+      try {
+        const [docsResponse, vehiclesResponse, driversResponse] = await Promise.all([
+          databaseRequest(env, "sjelle_driver_documents?review_status=eq.pending&select=id,driver_id,document_type,document_number_last4,expires_at,review_status,created_at&order=created_at.asc&limit=100"),
+          databaseRequest(env, "sjelle_vehicles?review_status=eq.pending&select=id,driver_id,vehicle_type,make,model,color,registration_number,document_expires_at,created_at&order=created_at.asc&limit=100"),
+          databaseRequest(env, "sjelle_driver_profiles?review_status=eq.pending&select=user_id,city_id,selected_mode,created_at&order=created_at.asc&limit=100"),
+        ]);
+        if (!docsResponse.ok || !vehiclesResponse.ok || !driversResponse.ok) return response({ error: { code: "ADMIN_DRIVER_QUEUE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const [documents, vehicles, drivers] = await Promise.all([parseJson(docsResponse), parseJson(vehiclesResponse), parseJson(driversResponse)]);
+        return response({ data: { documents, vehicles, drivers } }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "ADMIN_DRIVER_QUEUE_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
+    const signedDocumentMatch = url.pathname.match(/^\/api\/v1\/admin\/driver-documents\/([0-9a-f-]{36})\/signed-url$/i);
+    if (signedDocumentMatch && request.method === "POST") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try { if (!await hasSjelleRole(env, user.id, "admin")) return response({ error: { code: "FORBIDDEN", request_id: requestId } }, 403, requestId, origin, env); }
+      catch { return response({ error: { code: "ROLE_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!configured(env)) return response({ error: { code: "BACKEND_NOT_CONFIGURED", request_id: requestId } }, 503, requestId, origin, env);
+      try {
+        const docResponse = await databaseRequest(env, "sjelle_driver_documents?id=eq." + encodeURIComponent(signedDocumentMatch[1]) + "&select=storage_path&limit=1");
+        const docs = await parseJson(docResponse) as Array<{ storage_path: string }>;
+        if (!docResponse.ok) return response({ error: { code: "DOCUMENT_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        if (!docs.length) return response({ error: { code: "DOCUMENT_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+        const signed = await fetch(supabaseUrl(env, "/storage/v1/object/sign/sjelle-driver-documents/" + docs[0].storage_path), {
+          method: "POST",
+          headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY!, authorization: "Bearer " + env.SUPABASE_SERVICE_ROLE_KEY!, "content-type": "application/json" },
+          body: JSON.stringify({ expiresIn: 300 }),
+        });
+        const payload = await parseJson(signed);
+        if (!signed.ok || !isRecord(payload) || typeof payload.signedURL !== "string") return response({ error: { code: "SIGNED_URL_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const base = env.SUPABASE_URL!.replace(/\/+$/, "");
+        const relative = payload.signedURL.startsWith("/") ? payload.signedURL : "/storage/v1/" + payload.signedURL.replace(/^\/+/, "");
+        await databaseRequest(env, "sjelle_audit_logs", { method: "POST", body: JSON.stringify({ actor_id: user.id, action: "driver_document.view_url_issued", target_type: "driver_document", target_id: signedDocumentMatch[1] }) });
+        return response({ data: { url: base + relative, expires_in_seconds: 300 } }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "SIGNED_URL_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
     if (url.pathname === "/api/v1/me" && (request.method === "GET" || request.method === "PUT")) {
       let user: AuthUser | null;
       try {
