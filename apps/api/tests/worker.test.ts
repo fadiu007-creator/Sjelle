@@ -19,7 +19,7 @@ test("CORS preflight is empty and only reflects the configured origin", async ()
   const allowed = await worker.fetch(new Request("https://api.example/api/v1/rides", {
     method: "OPTIONS",
     headers: { origin: "https://sjelle.example", "access-control-request-method": "POST" },
-  }), env, {} as never);
+  }), env);
   assert.equal(allowed.status, 204);
   assert.equal(await allowed.text(), "");
   assert.equal(allowed.headers.get("access-control-allow-origin"), "https://sjelle.example");
@@ -27,7 +27,7 @@ test("CORS preflight is empty and only reflects the configured origin", async ()
   const denied = await worker.fetch(new Request("https://api.example/api/v1/rides", {
     method: "OPTIONS",
     headers: { origin: "https://attacker.example", "access-control-request-method": "POST" },
-  }), env, {} as never);
+  }), env);
   assert.equal(denied.status, 403);
   assert.equal(denied.headers.get("access-control-allow-origin"), null);
 });
