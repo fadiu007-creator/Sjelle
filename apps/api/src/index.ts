@@ -1431,7 +1431,7 @@ export default {
           const [cityRows,activeAreas]=await Promise.all([parseJson(cityResponse),parseJson(activeAreasResponse)]);
           const city=Array.isArray(cityRows)?cityRows[0]:null;
           if(!cityResponse.ok||!activeAreasResponse.ok)return response({error:{code:"SERVICE_AREA_READ_FAILED",request_id:requestId}},503,requestId,origin,env);
-          if(city?.active&&Array.isArray(activeAreas)&&activeAreas.length<=1)return response({error:{code:"CITY_ACTIVE",message:"Disable the city before deactivating its last service area.",request_id:requestId}},409,requestId,origin,env);
+          if(city?.active)return response({error:{code:"CITY_ACTIVE",message:"Disable the city before changing its active service areas.",request_id:requestId}},409,requestId,origin,env);
         }
         const result=await databaseRequest(env,"sjelle_service_areas?id=eq."+encodeURIComponent(adminServiceAreaMatch[1]),{method:"PATCH",headers:{prefer:"return=representation"},body:JSON.stringify({active:body.active})});
         const payload=await parseJson(result);if(!result.ok)return response({error:{code:"SERVICE_AREA_UPDATE_FAILED",request_id:requestId}},503,requestId,origin,env);
