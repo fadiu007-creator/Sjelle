@@ -162,6 +162,94 @@ export default {
       }
     }
 
+    if (url.pathname === "/api/v1/restaurants" && request.method === "GET") {
+      const citySlug = (url.searchParams.get("city") ?? "").trim().toLowerCase();
+      if (!/^[a-z0-9-]{2,60}$/.test(citySlug)) {
+        return response({ error: { code: "CITY_REQUIRED", message: "Provide a valid city slug in ?city=.", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      if (!configured(env)) {
+        return response({ error: { code: "BACKEND_NOT_CONFIGURED", request_id: requestId } }, 503, requestId, origin, env);
+      }
+      try {
+        const cityResponse = await databaseRequest(env, `sjelle_cities?slug=eq.${encodeURIComponent(citySlug)}&select=id,slug,active,food_enabled&limit=1`);
+        if (!cityResponse.ok) return response({ error: { code: "RESTAURANT_LIST_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+        const cityRows = await parseJson(cityResponse) as Array<{ id: string; slug: string; active: boolean; food_enabled: boolean }>;
+        const city = Array.isArray(cityRows) ? cityRows[0] : undefined;
+        if (!city) return response({ error: { code: "CITY_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+        if (!city.active || !city.food_enabled) {
+          return response({ data: [], meta: { city: city.slug, service_available: false } }, 200, requestId, origin, env);
+        }
+        const restaurantsResponse = await databaseRequest(
+          env,
+          `sjelle_restaurants?city_id=eq.${encodeURIComponent(city.id)}&approval_status=eq.approved&is_open=eq.true&delivery_enabled=eq.true&select=id,city_id,name,slug,description,address_text,latitude,longitude,image_path,is_open,delivery_enabled,prep_time_minutes&order=name.asc`,
+        );
+        if (!restaurantsResponse.ok) return response({ error: { code: "RESTAURANT_LIST_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+        const restaurants = await parseJson(restaurantsResponse);
+        return response({ data: Array.isArray(restaurants) ? restaurants : [], meta: { city: city.slug, service_available: true } }, 200, requestId, origin, env);
+      } catch {
+        return response({ error: { code: "RESTAURANT_LIST_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+      }
+    }
+
+    const menuMatch = url.pathname.match(/^\\/api\\/v1\\/restaurants\\/([^/]+)\\/menu$/);
+    if (menuMatch && request.method === "GET") {
+      let restaurantSlug: string;
+      try {
+        restaurantSlug = decodeURIComponent(menuMatch[1]).trim().toLowerCase();
+      } catch {
+        return response({ error: { code: "INVALID_RESTAURANT_SLUG", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      if (!/^[a-z0-9-]{2,80}$/.test(restaurantSlug)) {
+        return response({ error: { code: "INVALID_RESTAURANT_SLUG", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      if (!configured(env)) {
+        return response({ error: { code: "BACKEND_NOT_CONFIGURED", request_id: requestId } }, 503, requestId, origin, env);
+      }
+      try {
+        const restaurantResponse = await databaseRequest(
+          env,
+          `sjelle_restaurants?slug=eq.${encodeURIComponent(restaurantSlug)}&select=id,city_id,name,slug,description,address_text,latitude,longitude,image_path,approval_status,is_open,delivery_enabled,prep_time_minutes&limit=1`,
+        );
+        if (!restaurantResponse.ok) return response({ error: { code: "MENU_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+        const restaurantRows = await parseJson(restaurantResponse) as Array<{
+          id: string; city_id: string; name: string; slug: string; description: string | null;
+          address_text: string; latitude: number; longitude: number; image_path: string | null;
+          approval_status: string; is_open: boolean; delivery_enabled: boolean; prep_time_minutes: number;
+        }>;
+        const restaurant = Array.isArray(restaurantRows) ? restaurantRows[0] : undefined;
+        if (!restaurant || restaurant.approval_status !== "approved" || !restaurant.is_open || !restaurant.delivery_enabled) {
+          return response({ error: { code: "RESTAURANT_UNAVAILABLE", request_id: requestId } }, 404, requestId, origin, env);
+        }
+        const cityResponse = await databaseRequest(env, `sjelle_cities?id=eq.${encodeURIComponent(restaurant.city_id)}&select=active,food_enabled&limit=1`);
+        if (!cityResponse.ok) return response({ error: { code: "MENU_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+        const cityRows = await parseJson(cityResponse) as Array<{ active: boolean; food_enabled: boolean }>;
+        const city = Array.isArray(cityRows) ? cityRows[0] : undefined;
+        if (!city?.active || !city.food_enabled) return response({ error: { code: "RESTAURANT_UNAVAILABLE", request_id: requestId } }, 404, requestId, origin, env);
+
+        const [categoriesResponse, itemsResponse] = await Promise.all([
+          databaseRequest(env, `sjelle_menu_categories?restaurant_id=eq.${encodeURIComponent(restaurant.id)}&active=eq.true&select=id,name,sort_order&order=sort_order.asc`),
+          databaseRequest(env, `sjelle_menu_items?restaurant_id=eq.${encodeURIComponent(restaurant.id)}&available=eq.true&select=id,category_id,name,description,image_path,price_cents&order=name.asc`),
+        ]);
+        if (!categoriesResponse.ok || !itemsResponse.ok) return response({ error: { code: "MENU_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+        const categories = await parseJson(categoriesResponse);
+        const items = await parseJson(itemsResponse) as Array<{ id: string }>;
+        return response({
+          data: {
+            restaurant: {
+              id: restaurant.id, name: restaurant.name, slug: restaurant.slug,
+              description: restaurant.description, address_text: restaurant.address_text,
+              latitude: restaurant.latitude, longitude: restaurant.longitude,
+              image_path: restaurant.image_path, prep_time_minutes: restaurant.prep_time_minutes,
+            },
+            categories: Array.isArray(categories) ? categories : [],
+            items: Array.isArray(items) ? items : [],
+          },
+        }, 200, requestId, origin, env);
+      } catch {
+        return response({ error: { code: "MENU_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+      }
+    }
+
     if (url.pathname === "/api/v1/me" && (request.method === "GET" || request.method === "PUT")) {
       let user: AuthUser | null;
       try {
