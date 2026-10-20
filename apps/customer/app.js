@@ -67,6 +67,11 @@ function updateCityStatus() {
     return;
   }
   const services = [];
+  const rideComingArt = document.querySelector(".ride-message-art");
+  const rideComingCopy = document.querySelector(".ride-message-copy");
+  const rideActive = Boolean(city.active && city.rides_enabled);
+  if (rideComingArt) rideComingArt.hidden = rideActive;
+  if (rideComingCopy) rideComingCopy.hidden = rideActive;
   if (city.rides_enabled) services.push("udhëtimet");
   if (city.food_enabled) services.push("ushqimi");
   cityStatus.textContent = city.active && services.length
