@@ -1181,7 +1181,7 @@ export default {
         }
         if (!restaurants.length) return response({ data: { restaurants: [], orders: [] } }, 200, requestId, origin, env);
         const inFilter = "in.(" + [...ids].join(",") + ")";
-        const orderResponse = await databaseRequest(env, "sjelle_food_orders?restaurant_id=" + inFilter + "&select=id,restaurant_id,status,payment_method,sjelle_cash_status,item_subtotal_cents,delivery_fee_cents,service_fee_cents,total_cents,currency,delivery_address_text,delivery_instructions,created_at,prep_time_minutes,sjelle_food_order_items(id,item_name_snapshot,unit_price_cents,quantity,line_total_cents)&order=created_at.asc&limit=100");
+        const orderResponse = await databaseRequest(env, "sjelle_food_orders?restaurant_id=" + inFilter + "&select=id,restaurant_id,status,payment_method,sjelle_cash_status,item_subtotal_cents,delivery_fee_cents,service_fee_cents,total_cents,currency,delivery_address_text,delivery_instructions,created_at,prep_time_minutes,ready_at,accepted_at,updated_at,sjelle_food_order_items(id,item_name_snapshot,unit_price_cents,quantity,line_total_cents)&order=created_at.asc&limit=100");
         if (!orderResponse.ok) return response({ error: { code: "MERCHANT_ORDERS_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
         const orders = await parseJson(orderResponse) as Array<Record<string, unknown>>;
         return response({ data: { restaurants, orders: Array.isArray(orders) ? orders : [] } }, 200, requestId, origin, env);
