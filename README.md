@@ -13,7 +13,7 @@ Sjelle is a Kosovo-first ride-hailing and food-delivery platform. One customer a
 - **Food dispatch:** platform assigns a courier after restaurant acceptance, using preparation time to reduce waiting
 - **Driver onboarding:** identity, driving licence, vehicle documents, expiry and eligibility verified by an authorized administrator before activation
 - **Hosting:** Cloudflare Pages/Workers
-- **Backend:** a dedicated Supabase project, isolated from unrelated applications
+- **Backend:** existing Supabase project `zikos` (`saavqlbwffrwxingbnri`), with every Sjelle database object namespaced `sjelle_` to avoid collisions
 - **No Vercel**
 
 ## Repository structure
