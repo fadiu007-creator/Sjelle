@@ -1456,7 +1456,7 @@ export default {
         const base = env.SUPABASE_URL!.replace(/\/+$/, "");
         const relative = payload.signedURL.startsWith("http") ? payload.signedURL : (payload.signedURL.startsWith("/storage/v1/") ? base + payload.signedURL : base + "/storage/v1" + (payload.signedURL.startsWith("/") ? payload.signedURL : "/" + payload.signedURL));
         await databaseRequest(env, "sjelle_audit_logs", { method: "POST", body: JSON.stringify({ actor_id: user.id, action: "driver_document.view_url_issued", target_type: "driver_document", target_id: signedDocumentMatch[1] }) });
-        return response({ data: { url: base + relative, expires_in_seconds: 300 } }, 200, requestId, origin, env);
+        return response({ data: { url: relative, expires_in_seconds: 300 } }, 200, requestId, origin, env);
       } catch { return response({ error: { code: "SIGNED_URL_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
     }
 
