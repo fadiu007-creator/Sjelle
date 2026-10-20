@@ -722,3 +722,35 @@ rideQuoteForm.addEventListener("submit", async event => {
     submit.disabled = false;
   }
 });
+
+
+const myRidesOpen = document.querySelector("#my-rides-open");
+const myRides = document.querySelector("#my-rides");
+const rideStatusLabels = {
+  searching:"Po kërkohet shofer",driver_assigned:"Shoferi u caktua",driver_arriving:"Shoferi po vjen",
+  driver_arrived:"Shoferi arriti",in_progress:"Në udhëtim",completed:"Përfunduar",
+  cancelled_by_customer:"Anuluar nga klienti",cancelled_by_driver:"Anuluar nga shoferi",
+  cancelled_by_platform:"Anuluar nga Sjelle",no_driver_found:"Nuk u gjet shofer",
+};
+myRidesOpen.addEventListener("click",loadMyRides);
+async function loadMyRides(){
+  if(!state.session?.access_token)return;
+  myRides.replaceChildren(node("p","menu-empty","Po ngarkojmë udhëtimet…"));
+  try{
+    const result=await apiRequest("/rides");const rides=Array.isArray(result.data)?result.data:[];
+    if(!rides.length){myRides.replaceChildren(node("p","menu-empty","Nuk ke rezervuar udhëtim ende."));return;}
+    myRides.replaceChildren();
+    for(const ride of rides){
+      const c=node("article","my-order-card");
+      c.append(node("div","my-order-heading",ride.pickup_label+" → "+ride.destination_label));
+      c.append(node("span","order-status",rideStatusLabels[ride.status]||ride.status));
+      c.append(node("p","","Çmimi: "+euro(ride.final_amount_cents??ride.quoted_amount_cents)+" · Para në dorë"));
+      if(ride.status==="searching"){
+        const cancel=node("button","secondary-button","Anulo kërkesën");cancel.type="button";
+        cancel.addEventListener("click",async()=>{cancel.disabled=true;try{await apiRequest("/rides/"+ride.id+"/cancel",{method:"POST"});await loadMyRides();}catch(error){cancel.disabled=false;window.alert(error.code==="RIDE_NOT_CANCELLABLE"?"Shoferi mund ta ketë pranuar tashmë udhëtimin.":"Nuk u anulua udhëtimi: "+error.message);}});
+        c.append(cancel);
+      }
+      myRides.append(c);
+    }
+  }catch(error){myRides.replaceChildren(node("p","menu-empty","Udhëtimet nuk mund të ngarkohen: "+error.message));}
+}
