@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="sq">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102f28">
+  <title>Sjelle — Shoferi</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/portal.css">
+  <script src="/driver/driver.js" defer></script>
+</head>
+<body class="portal-body">
+  <header class="topbar">
+    <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">s</span><span>sjelle<span class="brand-dot">.</span></span></a>
+    <div class="topbar-right"><a class="help-link" href="/">Kryefaqja</a><a class="account-button" href="/?account=login">Hyr / Regjistrohu</a></div>
+  </header>
+  <main class="portal-main">
+    <section class="portal-hero">
+      <p class="eyebrow">PORTALI I SHOFERIT</p>
+      <h1>Një llogari.<br><span>Dy mënyra pune.</span></h1>
+      <p>Plotëso aplikimin, ngarko dokumentet dhe prit verifikimin. Statusi online hapet vetëm pasi dokumentet dhe automjeti të aprovohen.</p>
+      <div id="driver-alert" class="portal-alert" role="status">Po kontrollojmë llogarinë…</div>
+    </section>
+    <section class="portal-card" id="application-section">
+      <div class="portal-card-heading"><div><p class="eyebrow">HAPI 1</p><h2>Aplikimi i shoferit</h2></div><span class="portal-tag">Verifikim i detyrueshëm</span></div>
+      <form id="driver-application" class="portal-form">
+        <label>Qyteti<select name="city" id="driver-city" required></select></label>
+        <label>Mënyra e punës<select name="mode" required><option value="ride">Udhëtime</option><option value="delivery">Dërgesa</option></select></label>
+        <button class="primary-button" type="submit">Dërgo aplikimin</button>
+      </form>
+    </section>
+    <section class="portal-card" id="vehicle-section" hidden>
+      <div class="portal-card-heading"><div><p class="eyebrow">HAPI 2</p><h2>Automjeti</h2></div><span class="portal-tag">Në shqyrtim</span></div>
+      <form id="vehicle-form" class="portal-form portal-form-grid">
+        <label>Lloji<select name="vehicle_type" required><option value="standard">Standard</option><option value="comfort">Comfort</option><option value="van">Furgon</option><option value="motorcycle">Motoçikletë</option><option value="bicycle">Biçikletë</option></select></label>
+        <label>Targa / regjistrimi<input name="registration_number" required maxlength="24"></label>
+        <label>Marka<input name="make" maxlength="60"></label><label>Modeli<input name="model" maxlength="60"></label>
+        <label>Ngjyra<input name="color" maxlength="40"></label><label>Vendet<input name="capacity" type="number" min="1" max="20" value="4" required></label>
+        <button class="primary-button portal-full" type="submit">Regjistro automjetin</button>
+      </form>
+      <div id="vehicle-list" class="portal-list"></div>
+    </section>
+    <section class="portal-card" id="documents-section" hidden>
+      <div class="portal-card-heading"><div><p class="eyebrow">HAPI 3</p><h2>Dokumentet</h2></div><span class="portal-tag">Privat</span></div>
+      <p class="portal-muted">Dokumentet ruhen në hapësirë private. Ngarko vetëm dokumente të vlefshme në emrin tënd.</p>
+      <form id="document-form" class="portal-form">
+        <label>Lloji i dokumentit<select name="document_type" required><option value="identity">Dokument identiteti</option><option value="driving_licence">Patentë shoferi</option><option value="vehicle_registration">Regjistrimi i automjetit</option><option value="insurance">Sigurimi</option></select></label>
+        <label>Skedari (PDF, JPG, PNG; maksimumi 10 MB)<input name="file" type="file" accept="application/pdf,image/jpeg,image/png" required></label>
+        <div class="portal-form-grid"><label>4 shenjat e fundit (opsionale)<input name="document_number_last4" maxlength="4" pattern="[A-Za-z0-9]{4}"></label><label>Skadon më (opsionale)<input name="expires_at" type="date"></label></div>
+        <button class="primary-button" type="submit">Ngarko dokumentin</button>
+      </form>
+      <div id="document-list" class="portal-list"></div>
+    </section>
+    <section class="portal-card" id="availability-section" hidden>
+      <div class="portal-card-heading"><div><p class="eyebrow">HAPI 4</p><h2>Disponueshmëria</h2></div><span id="driver-review-tag" class="portal-tag">Në pritje</span></div>
+      <div class="portal-form">
+        <label>Mënyra e punës<select id="driver-mode"><option value="ride">Udhëtime</option><option value="delivery">Dërgesa</option></select></label>
+        <div class="portal-actions"><button id="driver-online" class="primary-button" type="button">Shko online</button><button id="driver-offline" class="secondary-button" type="button">Shko offline</button><button id="driver-location" class="secondary-button" type="button">Dërgo vendndodhjen</button></div>
+        <p class="portal-muted">Vendndodhja dërgohet vetëm kur ti shtyp butonin. Aplikacioni nuk pretendon se je online pa miratim.</p>
+      </div>
+    </section>
+    <section class="portal-card" id="offers-section" hidden>
+      <div class="portal-card-heading"><div><p class="eyebrow">PUNA E RE</p><h2>Ofertat</h2></div><button id="offers-refresh" class="secondary-button" type="button">Rifresko</button></div>
+      <div id="driver-offers" class="portal-list"><p class="portal-muted">Nuk ka oferta të ngarkuara.</p></div>
+    </section>
+    <section class="portal-card" id="jobs-section" hidden>
+      <div class="portal-card-heading"><div><p class="eyebrow">PUNA AKTIVE</p><h2>Udhëtimet dhe dërgesat</h2></div><button id="jobs-refresh" class="secondary-button" type="button">Rifresko</button></div>
+      <div id="driver-jobs" class="portal-list"><p class="portal-muted">Nuk ka punë aktive.</p></div>
+    </section>
+  </main>
+  <footer class="footer"><a class="brand footer-brand" href="/"><span class="brand-mark">s</span><span>sjelle<span class="brand-dot">.</span></span></a><span>© <span id="year"></span> Sjelle</span><span class="footer-location">Portal shoferi</span></footer>
+</body>
+</html>
