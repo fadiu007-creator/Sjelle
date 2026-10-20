@@ -6,3 +6,9 @@ SUPABASE_URL=https://saavqlbwffrwxingbnri.supabase.co
 # Publishable key is not a secret; keep the service-role key server-only.
 SUPABASE_PUBLISHABLE_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
+# Optional; required for accurate distance/time-based ride quotes.
+ROUTING_API_URL=
+ROUTING_API_KEY=
+# Optional; must expose a Nominatim-compatible /search endpoint.
+GEOCODING_API_URL=
+GEOCODING_API_KEY=
