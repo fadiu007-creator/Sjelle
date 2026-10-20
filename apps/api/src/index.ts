@@ -954,6 +954,188 @@ export default {
       } catch { return response({ error: { code: "DISPATCH_RETRY_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
     }
 
+
+    if (url.pathname === "/api/v1/admin/cities" && request.method === "GET") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try { if (!await hasSjelleRole(env, user.id, "admin")) return response({ error: { code: "FORBIDDEN", request_id: requestId } }, 403, requestId, origin, env); }
+      catch { return response({ error: { code: "ROLE_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+      try {
+        const [citiesResponse, pricingResponse] = await Promise.all([
+          databaseRequest(env, "sjelle_cities?select=id,slug,name,active,rides_enabled,food_enabled&order=name.asc"),
+          databaseRequest(env, "sjelle_city_pricing?select=city_id,version,food_delivery_fee_cents,food_service_fee_cents,food_minimum_subtotal_cents,ride_base_fare_cents,ride_minimum_fare_cents,ride_per_km_cents,ride_per_minute_cents,active,updated_at"),
+        ]);
+        if (!citiesResponse.ok || !pricingResponse.ok) return response({ error: { code: "ADMIN_CITY_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const [cities, pricing] = await Promise.all([parseJson(citiesResponse), parseJson(pricingResponse)]);
+        return response({ data: Array.isArray(cities) ? cities.map(city => ({
+          ...city, pricing: Array.isArray(pricing) ? pricing.find(p => p.city_id === city.id) || null : null,
+        })) : [] }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "ADMIN_CITY_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
+    const adminPricingMatch = url.pathname.match(/^\/api\/v1\/admin\/cities\/([a-z0-9-]{2,60})\/pricing$/i);
+    if (adminPricingMatch && request.method === "PUT") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try { if (!await hasSjelleRole(env, user.id, "admin")) return response({ error: { code: "FORBIDDEN", request_id: requestId } }, 403, requestId, origin, env); }
+      catch { return response({ error: { code: "ROLE_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+      let body: unknown;
+      try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
+      const integerFields = ["food_delivery_fee_cents","food_service_fee_cents","food_minimum_subtotal_cents","ride_base_fare_cents","ride_minimum_fare_cents","ride_per_km_cents","ride_per_minute_cents"];
+      if (!isRecord(body) || typeof body.version !== "string" || !/^[a-zA-Z0-9._-]{1,40}$/.test(body.version)
+        || integerFields.some(field => !Number.isSafeInteger(body[field]) || Number(body[field]) < 0)
+        || (body.active !== undefined && typeof body.active !== "boolean")) {
+        return response({ error: { code: "INVALID_CITY_PRICING", message: "Provide a version and non-negative integer fees/rates in euro cents.", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      try {
+        const cityResponse = await databaseRequest(env, "sjelle_cities?slug=eq." + encodeURIComponent(adminPricingMatch[1].toLowerCase()) + "&select=id&limit=1");
+        const cities = await parseJson(cityResponse) as Array<{ id: string }>;
+        if (!cityResponse.ok) return response({ error: { code: "CITY_LOOKUP_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        if (!cities.length) return response({ error: { code: "CITY_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+        const result = await databaseRequest(env, "sjelle_city_pricing?on_conflict=city_id", {
+          method: "POST", headers: { prefer: "resolution=merge-duplicates,return=representation" },
+          body: JSON.stringify({
+            city_id: cities[0].id, version: body.version,
+            food_delivery_fee_cents: body.food_delivery_fee_cents, food_service_fee_cents: body.food_service_fee_cents,
+            food_minimum_subtotal_cents: body.food_minimum_subtotal_cents, ride_base_fare_cents: body.ride_base_fare_cents,
+            ride_minimum_fare_cents: body.ride_minimum_fare_cents, ride_per_km_cents: body.ride_per_km_cents,
+            ride_per_minute_cents: body.ride_per_minute_cents, active: body.active === true, updated_at: new Date().toISOString(),
+          }),
+        });
+        const payload = await parseJson(result);
+        if (!result.ok) return response({ error: { code: "CITY_PRICING_SAVE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        await databaseRequest(env, "sjelle_audit_logs", { method: "POST", body: JSON.stringify({ actor_id: user.id, action: "city.pricing.updated", target_type: "city", target_id: cities[0].id, metadata: { version: body.version, active: body.active === true } }) });
+        return response({ data: Array.isArray(payload) ? payload[0] : payload }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "CITY_PRICING_SAVE_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
+    if (url.pathname === "/api/v1/admin/routes" && request.method === "POST") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try { if (!await hasSjelleRole(env, user.id, "admin")) return response({ error: { code: "FORBIDDEN", request_id: requestId } }, 403, requestId, origin, env); }
+      catch { return response({ error: { code: "ROLE_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+      let body: unknown;
+      try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
+      if (!isRecord(body) || typeof body.city !== "string" || typeof body.route_key !== "string" || !/^[a-z0-9-]{2,80}$/.test(body.route_key)
+        || typeof body.origin_label !== "string" || body.origin_label.trim().length < 2 || body.origin_label.length > 160
+        || typeof body.destination_label !== "string" || body.destination_label.trim().length < 2 || body.destination_label.length > 160
+        || !["standard","comfort","van"].includes(String(body.vehicle_type)) || !Number.isSafeInteger(body.amount_cents) || Number(body.amount_cents) < 1
+        || typeof body.version !== "string" || !/^[a-zA-Z0-9._-]{1,40}$/.test(body.version)
+        || typeof body.origin_lat !== "number" || body.origin_lat < -90 || body.origin_lat > 90
+        || typeof body.origin_lon !== "number" || body.origin_lon < -180 || body.origin_lon > 180
+        || typeof body.destination_lat !== "number" || body.destination_lat < -90 || body.destination_lat > 90
+        || typeof body.destination_lon !== "number" || body.destination_lon < -180 || body.destination_lon > 180) {
+        return response({ error: { code: "INVALID_ROUTE", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      try {
+        const cityResponse = await databaseRequest(env, "sjelle_cities?slug=eq." + encodeURIComponent(body.city.trim().toLowerCase()) + "&select=id&limit=1");
+        const cities = await parseJson(cityResponse) as Array<{ id: string }>;
+        if (!cityResponse.ok) return response({ error: { code: "CITY_LOOKUP_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        if (!cities.length) return response({ error: { code: "CITY_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+        const result = await databaseRequest(env, "sjelle_fixed_route_prices", {
+          method: "POST", headers: { prefer: "return=representation" },
+          body: JSON.stringify({
+            city_id: cities[0].id, route_key: body.route_key, origin_label: body.origin_label.trim(),
+            destination_label: body.destination_label.trim(), vehicle_type: body.vehicle_type, amount_cents: body.amount_cents,
+            currency: "EUR", version: body.version, active: false, created_by: user.id,
+            origin_lat: body.origin_lat, origin_lon: body.origin_lon, destination_lat: body.destination_lat, destination_lon: body.destination_lon,
+          }),
+        });
+        const payload = await parseJson(result);
+        if (!result.ok) return response({ error: { code: "ROUTE_CREATE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        await databaseRequest(env, "sjelle_audit_logs", { method: "POST", body: JSON.stringify({ actor_id: user.id, action: "ride_route.created", target_type: "fixed_route", target_id: Array.isArray(payload) ? payload[0]?.id : "", metadata: { route_key: body.route_key, amount_cents: body.amount_cents } }) });
+        return response({ data: Array.isArray(payload) ? payload[0] : payload }, 201, requestId, origin, env);
+      } catch { return response({ error: { code: "ROUTE_CREATE_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
+    const adminRouteMatch = url.pathname.match(/^\/api\/v1\/admin\/routes\/([0-9a-f-]{36})$/i);
+    if (adminRouteMatch && request.method === "PATCH") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try { if (!await hasSjelleRole(env, user.id, "admin")) return response({ error: { code: "FORBIDDEN", request_id: requestId } }, 403, requestId, origin, env); }
+      catch { return response({ error: { code: "ROLE_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+      let body: unknown;
+      try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
+      if (!isRecord(body) || typeof body.active !== "boolean") return response({ error: { code: "INVALID_ROUTE_STATUS", request_id: requestId } }, 400, requestId, origin, env);
+      try {
+        if (body.active) {
+          const routeResponse = await databaseRequest(env, "sjelle_fixed_route_prices?id=eq." + encodeURIComponent(adminRouteMatch[1]) + "&select=id,city_id,origin_lat,origin_lon,destination_lat,destination_lon,amount_cents&limit=1");
+          const routes = await parseJson(routeResponse) as Array<{ id: string; city_id: string; origin_lat: number | null; origin_lon: number | null; destination_lat: number | null; destination_lon: number | null; amount_cents: number }>;
+          if (!routeResponse.ok) return response({ error: { code: "ROUTE_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+          if (!routes.length) return response({ error: { code: "ROUTE_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+          const route = routes[0];
+          if (route.origin_lat === null || route.origin_lon === null || route.destination_lat === null || route.destination_lon === null || route.amount_cents < 1) {
+            return response({ error: { code: "ROUTE_COORDINATES_REQUIRED", request_id: requestId } }, 409, requestId, origin, env);
+          }
+          const pricing = await databaseRequest(env, "sjelle_city_pricing?city_id=eq." + encodeURIComponent(route.city_id) + "&active=eq.true&select=city_id&limit=1");
+          const pricingRows = await parseJson(pricing) as unknown[];
+          if (!pricing.ok || !pricingRows.length) return response({ error: { code: "CITY_PRICING_NOT_CONFIGURED", request_id: requestId } }, 409, requestId, origin, env);
+        }
+        const result = await databaseRequest(env, "sjelle_fixed_route_prices?id=eq." + encodeURIComponent(adminRouteMatch[1]), {
+          method: "PATCH", headers: { prefer: "return=representation" }, body: JSON.stringify({ active: body.active }),
+        });
+        const payload = await parseJson(result);
+        if (!result.ok) return response({ error: { code: "ROUTE_UPDATE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        if (!Array.isArray(payload) || !payload.length) return response({ error: { code: "ROUTE_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+        await databaseRequest(env, "sjelle_audit_logs", { method: "POST", body: JSON.stringify({ actor_id: user.id, action: "ride_route.activation_changed", target_type: "fixed_route", target_id: adminRouteMatch[1], metadata: { active: body.active } }) });
+        return response({ data: payload[0] }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "ROUTE_UPDATE_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
+    const adminCityServicesMatch = url.pathname.match(/^\/api\/v1\/admin\/cities\/([a-z0-9-]{2,60})\/services$/i);
+    if (adminCityServicesMatch && request.method === "PATCH") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try { if (!await hasSjelleRole(env, user.id, "admin")) return response({ error: { code: "FORBIDDEN", request_id: requestId } }, 403, requestId, origin, env); }
+      catch { return response({ error: { code: "ROLE_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+      let body: unknown;
+      try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
+      if (!isRecord(body) || typeof body.active !== "boolean" || typeof body.rides_enabled !== "boolean" || typeof body.food_enabled !== "boolean"
+        || typeof body.confirm_ready !== "boolean" || typeof body.reason !== "string" || body.reason.trim().length < 8 || body.reason.length > 500
+        || (body.active && !body.rides_enabled && !body.food_enabled)) {
+        return response({ error: { code: "INVALID_CITY_ACTIVATION", message: "Provide explicit service flags, confirm_ready=true and an operational readiness reason.", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      try {
+        const cityResponse = await databaseRequest(env, "sjelle_cities?slug=eq." + encodeURIComponent(adminCityServicesMatch[1].toLowerCase()) + "&select=id&limit=1");
+        const cities = await parseJson(cityResponse) as Array<{ id: string }>;
+        if (!cityResponse.ok) return response({ error: { code: "CITY_LOOKUP_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        if (!cities.length) return response({ error: { code: "CITY_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+        const cityId = cities[0].id;
+        if (body.active) {
+          const pricingResponse = await databaseRequest(env, "sjelle_city_pricing?city_id=eq." + encodeURIComponent(cityId) + "&active=eq.true&select=city_id&limit=1");
+          const pricing = await parseJson(pricingResponse) as unknown[];
+          if (!pricingResponse.ok || !pricing.length) return response({ error: { code: "CITY_PRICING_NOT_CONFIGURED", request_id: requestId } }, 409, requestId, origin, env);
+          if (body.food_enabled) {
+            const restaurantResponse = await databaseRequest(env, "sjelle_restaurants?city_id=eq." + encodeURIComponent(cityId) + "&approval_status=eq.approved&is_open=eq.true&delivery_enabled=eq.true&select=id&limit=1");
+            const restaurants = await parseJson(restaurantResponse) as unknown[];
+            if (!restaurantResponse.ok || !restaurants.length) return response({ error: { code: "NO_READY_RESTAURANTS", request_id: requestId } }, 409, requestId, origin, env);
+          }
+          if (body.rides_enabled) {
+            const [routeResponse, driverResponse] = await Promise.all([
+              databaseRequest(env, "sjelle_fixed_route_prices?city_id=eq." + encodeURIComponent(cityId) + "&active=eq.true&origin_lat=not.is.null&origin_lon=not.is.null&destination_lat=not.is.null&destination_lon=not.is.null&select=id&limit=1"),
+              databaseRequest(env, "sjelle_driver_profiles?city_id=eq." + encodeURIComponent(cityId) + "&review_status=eq.approved&select=user_id&limit=1"),
+            ]);
+            const [routes, drivers] = await Promise.all([parseJson(routeResponse), parseJson(driverResponse)]);
+            if (!routeResponse.ok || !Array.isArray(routes) || !routes.length) return response({ error: { code: "NO_READY_RIDE_ROUTES", request_id: requestId } }, 409, requestId, origin, env);
+            if (!driverResponse.ok || !Array.isArray(drivers) || !drivers.length) return response({ error: { code: "NO_APPROVED_DRIVERS", request_id: requestId } }, 409, requestId, origin, env);
+          }
+        }
+        const result = await databaseRequest(env, "sjelle_cities?id=eq." + encodeURIComponent(cityId), {
+          method: "PATCH", headers: { prefer: "return=representation" },
+          body: JSON.stringify({ active: body.active, rides_enabled: body.active && body.rides_enabled, food_enabled: body.active && body.food_enabled }),
+        });
+        const payload = await parseJson(result);
+        if (!result.ok) return response({ error: { code: "CITY_ACTIVATION_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        await databaseRequest(env, "sjelle_audit_logs", { method: "POST", body: JSON.stringify({ actor_id: user.id, action: "city.services.updated", target_type: "city", target_id: cityId, reason: body.reason.trim(), metadata: { active: body.active, rides_enabled: body.active && body.rides_enabled, food_enabled: body.active && body.food_enabled } }) });
+        return response({ data: Array.isArray(payload) ? payload[0] : payload }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "CITY_ACTIVATION_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
     if (url.pathname === "/api/v1/me" && (request.method === "GET" || request.method === "PUT")) {
       let user: AuthUser | null;
       try {
