@@ -3,8 +3,8 @@
 ## ADR-001 — Cloudflare hosting
 **Decision:** Cloudflare Pages for web portals and Cloudflare Workers for API endpoints. Vercel is excluded.
 
-## ADR-002 — Dedicated Supabase project
-**Decision:** Sjelle must use its own Supabase project(s), not the existing `zikos` project or databases belonging to other apps. Development is provisioned first; production is separate before launch.
+## ADR-002 — Namespaced Sjelle data in existing Supabase project
+**Decision:** By explicit owner direction, Sjelle uses existing Supabase project `zikos` (`saavqlbwffrwxingbnri`). Every Sjelle table, enum, index and policy is namespaced `sjelle_`; migrations are additive only. Never rename, drop, or alter grants/policies on unrelated app objects. Review a separate project again before production scale-up.
 
 ## ADR-003 — One brand, multiple surfaces
 **Decision:** One Sjelle customer brand/app for rides and food; a separate driver app with Ride/Delivery mode switch; merchant and admin web portals.
