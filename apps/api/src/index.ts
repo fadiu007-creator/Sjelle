@@ -1654,8 +1654,8 @@ export default {
         return response({ error: { code: "INVALID_RESTAURANT_SETTINGS", request_id: requestId } }, 400, requestId, origin, env);
       }
       try {
-        const restaurantResponse = await databaseRequest(env, "sjelle_restaurants?id=eq." + encodeURIComponent(merchantSettingsMatch[1]) + "&owner_id=eq." + encodeURIComponent(user.id) + "&select=id,city_id,approval_status&limit=1");
-        const restaurants = await parseJson(restaurantResponse) as Array<{ id:string;city_id:string;approval_status:string }>;
+        const restaurantResponse = await databaseRequest(env, "sjelle_restaurants?id=eq." + encodeURIComponent(merchantSettingsMatch[1]) + "&owner_id=eq." + encodeURIComponent(user.id) + "&select=id,city_id,approval_status,latitude,longitude&limit=1");
+        const restaurants = await parseJson(restaurantResponse) as Array<{ id:string;city_id:string;approval_status:string;latitude:number;longitude:number }>;
         if (!restaurantResponse.ok) return response({ error: { code: "RESTAURANT_READ_FAILED", request_id: requestId } },503,requestId,origin,env);
         if (!restaurants.length) return response({ error: { code: "FORBIDDEN", request_id: requestId } },403,requestId,origin,env);
         const restaurant = restaurants[0];
@@ -1663,13 +1663,15 @@ export default {
         const nextDelivery = body.delivery_enabled === undefined ? undefined : body.delivery_enabled;
         if ((nextOpen === true || nextDelivery === true) && restaurant.approval_status !== "approved") return response({ error: { code: "RESTAURANT_NOT_APPROVED", request_id: requestId } },409,requestId,origin,env);
         if (nextOpen === true || nextDelivery === true) {
-          const [cityResponse,pricingResponse,itemsResponse] = await Promise.all([
+          const [cityResponse,pricingResponse,itemsResponse,areasResponse] = await Promise.all([
             databaseRequest(env,"sjelle_cities?id=eq."+encodeURIComponent(restaurant.city_id)+"&select=active,food_enabled&limit=1"),
             databaseRequest(env,"sjelle_city_pricing?city_id=eq."+encodeURIComponent(restaurant.city_id)+"&active=eq.true&select=city_id&limit=1"),
             databaseRequest(env,"sjelle_menu_items?restaurant_id=eq."+encodeURIComponent(restaurant.id)+"&available=eq.true&select=id&limit=1"),
+            databaseRequest(env,"sjelle_service_areas?city_id=eq."+encodeURIComponent(restaurant.city_id)+"&active=eq.true&select=boundary_geojson"),
           ]);
-          const [cities,pricing,items] = await Promise.all([parseJson(cityResponse),parseJson(pricingResponse),parseJson(itemsResponse)]);
+          const [cities,pricing,items,areas] = await Promise.all([parseJson(cityResponse),parseJson(pricingResponse),parseJson(itemsResponse),parseJson(areasResponse)]);
           const city = Array.isArray(cities)?cities[0]:null;
+          if(!areasResponse.ok||!Array.isArray(areas)||!areas.some(area=>pointInServiceArea(restaurant.latitude,restaurant.longitude,isRecord(area)?area.boundary_geojson:null)))return response({error:{code:"RESTAURANT_OUTSIDE_SERVICE_AREA",request_id:requestId}},409,requestId,origin,env);
           if (!city || !city.active || !city.food_enabled) return response({ error: { code: "CITY_UNAVAILABLE", request_id: requestId } },409,requestId,origin,env);
           if (!pricingResponse.ok || !Array.isArray(pricing) || !pricing.length) return response({ error: { code: "FOOD_PRICING_NOT_CONFIGURED", request_id: requestId } },409,requestId,origin,env);
           if ((nextDelivery===true || nextOpen===true) && (!Array.isArray(items)||!items.length)) return response({ error: { code: "MENU_REQUIRED", request_id: requestId } },409,requestId,origin,env);
