@@ -1623,7 +1623,7 @@ export default {
       let user:AuthUser|null;try{user=await requireUser(request,env);}catch{return response({error:{code:"AUTH_PROVIDER_UNAVAILABLE",request_id:requestId}},503,requestId,origin,env);}
       if(!user)return response({error:{code:"UNAUTHENTICATED",request_id:requestId}},401,requestId,origin,env);
       let body:unknown;try{body=await request.json();}catch{return response({error:{code:"INVALID_JSON",request_id:requestId}},400,requestId,origin,env);}
-      if(!isRecord(body)||typeof body.name!=="string"||body.name.trim().length<1||body.name.length>120||!Number.isSafeInteger(body.price_cents)||Number(body.price_cents)<0||Number(body.price_cents)>2000000000||(body.description!==undefined&&body.description!==null&&(typeof body.description!=="string"||body.description.length>1000))||(body.category_id!==undefined&&body.category_id!==null&&(typeof body.category_id!=="string"||!/^[0-9a-f-]{36}$/i.test(body.category_id))))return response({error:{code:"INVALID_MENU_ITEM",request_id:requestId}},400,requestId,origin,env);
+      if(!isRecord(body)||typeof body.name!=="string"||body.name.trim().length<1||body.name.length>120||!Number.isSafeInteger(body.price_cents)||Number(body.price_cents)<0||Number(body.price_cents)>2000000000||(body.description!==undefined&&body.description!==null&&(typeof body.description!=="string"||body.description.length>1000))||(body.category_id!==undefined&&body.category_id!==null&&(typeof body.category_id!=="string"||!/^[0-9a-f-]{36}$/i.test(body.category_id)))||(body.available!==undefined&&typeof body.available!=="boolean")||(body.category_id!==undefined&&body.category_id!==null&&(typeof body.category_id!=="string"||!/^[0-9a-f-]{36}$/i.test(body.category_id))))return response({error:{code:"INVALID_MENU_ITEM",request_id:requestId}},400,requestId,origin,env);
       try{
         if(!await hasRestaurantPermission(env,user.id,menuItemCreateMatch[1],"can_manage_menu"))return response({error:{code:"FORBIDDEN",request_id:requestId}},403,requestId,origin,env);
         if(typeof body.category_id==="string"){
@@ -1648,6 +1648,12 @@ export default {
         if(!itemResponse.ok)return response({error:{code:"MENU_ITEM_READ_FAILED",request_id:requestId}},503,requestId,origin,env);
         if(!items.length)return response({error:{code:"MENU_ITEM_NOT_FOUND",request_id:requestId}},404,requestId,origin,env);
         if(!await hasRestaurantPermission(env,user.id,items[0].restaurant_id,"can_manage_menu"))return response({error:{code:"FORBIDDEN",request_id:requestId}},403,requestId,origin,env);
+        if(typeof body.category_id==="string"){
+          const categoryResponse=await databaseRequest(env,"sjelle_menu_categories?id=eq."+encodeURIComponent(body.category_id)+"&restaurant_id=eq."+encodeURIComponent(items[0].restaurant_id)+"&select=id&limit=1");
+          const categories=await parseJson(categoryResponse) as unknown[];
+          if(!categoryResponse.ok)return response({error:{code:"CATEGORY_LOOKUP_FAILED",request_id:requestId}},503,requestId,origin,env);
+          if(!categories.length)return response({error:{code:"CATEGORY_NOT_FOUND",request_id:requestId}},404,requestId,origin,env);
+        }
         const patch:Record<string,unknown>={updated_at:new Date().toISOString()};
         for(const key of ["name","description","price_cents","available","category_id"])if(body[key]!==undefined)patch[key]=key==="name"&&typeof body[key]==="string"?body[key].trim():body[key];
         const result=await databaseRequest(env,"sjelle_menu_items?id=eq."+encodeURIComponent(menuItemUpdateMatch[1]),{method:"PATCH",headers:{prefer:"return=representation"},body:JSON.stringify(patch)});
