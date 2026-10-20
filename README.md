@@ -31,10 +31,10 @@ Sjelle is a Kosovo-first ride-hailing and food-delivery platform. One customer e
 - Applied 27 namespaced Sjelle tables to `zikos`; RLS is enabled on all 27.
 - Added least-privilege client grants and indexes for foreign-key relationships. No existing app tables were targeted.
 - Seeded the six candidate cities as inactive with rides and food delivery disabled.
-- Cloudflare Worker endpoints include health/readiness, city/restaurant/menu discovery, authentication/profile, food ordering, ride quoting/booking/cancellation, merchant order/menu management, driver onboarding/document review/dispatch and admin pricing/route/city activation.
+- Cloudflare Worker endpoints include health/readiness, city/restaurant/menu discovery, authentication/profile, food ordering, ride quoting/booking/cancellation, merchant order/menu management, driver onboarding/document review/dispatch and admin pricing, GeoJSON service areas, route/city activation.
 - Customer, driver, merchant and admin portals are present under `apps/customer/`, backed by real API calls. No portal fakes booking, payment or approval success.
 - Server-calculated ride quotes use a configured OSRM-compatible routing provider; address search uses a configured Nominatim-compatible geocoder. A one-minute Cloudflare cron retries dispatch for waiting jobs.
-- Tests cover pricing/state transitions and API authentication guards, but a successful CI run has not yet been confirmed. Online payments, push notifications, a native mobile app and production deployment are still outstanding.
+- [API CI](https://github.com/fadiu007-creator/Sjelle/actions/runs/39502452476) passes tests, TypeScript checks, portal JavaScript syntax checks and a Wrangler dry-run. Online payments, push notifications, a native mobile app and live Cloudflare deployment are still outstanding.
 
 ## Security and operating principles
 
