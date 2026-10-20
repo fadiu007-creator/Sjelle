@@ -1,7 +1,7 @@
 # Copy to .dev.vars locally; never commit actual values.
 APP_ENV=development
 ALLOWED_ORIGIN=http://localhost:8081
-# Add Supabase/provider secrets only after provisioning Sjelle development project.
-# SUPABASE_URL=
-# SUPABASE_PUBLISHABLE_KEY=
-# SUPABASE_SERVICE_ROLE_KEY=
+# Use the existing zikos project; keep secrets in local .dev.vars / Cloudflare secret bindings.
+SUPABASE_URL=https://saavqlbwffrwxingbnri.supabase.co
+# Never commit a real service-role key.
+SUPABASE_SERVICE_ROLE_KEY=
