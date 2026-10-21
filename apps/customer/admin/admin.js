@@ -1,4 +1,4 @@
-const API="/api/v1";const $=s=>document.querySelector(s);$("#year").textContent=String(new Date().getFullYear());let cities=[];let currentCity=null;
+const API = "https://saavqlbwffrwxingbnri.supabase.co/functions/v1/sjelle-api/api/v1";const $=s=>document.querySelector(s);$("#year").textContent=String(new Date().getFullYear());let cities=[];let currentCity=null;
 function alertMsg(t,k=""){const e=$("#admin-alert");e.textContent=t;if(k)e.dataset.kind=k;else delete e.dataset.kind;}
 function token(){try{return JSON.parse(sessionStorage.getItem("sjelle.session")||"null")?.access_token||"";}catch{return "";}}
 async function api(path,options={}){const headers=new Headers(options.headers||{});headers.set("accept","application/json");if(token())headers.set("authorization","Bearer "+token());if(options.body&&!headers.has("content-type"))headers.set("content-type","application/json");const res=await fetch(API+path,{...options,headers,cache:"no-store"});let body;try{body=await res.json();}catch{body=null;}if(!res.ok){const e=new Error(body?.error?.message||body?.error?.code||"Kërkesa dështoi.");e.code=body?.error?.code;throw e;}return body;}
