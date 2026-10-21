@@ -24,8 +24,20 @@ try {
 
   for (const portal of portals) {
     const url = new URL(portal.path, baseUrl).toString();
-    const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-    assert.ok(response && response.status() === 200, `${portal.label} should load successfully`);
+    let response;
+    let lastError;
+    // GitHub Pages deployments can take a short time to propagate after deploy-pages completes.
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      try {
+        response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+        if (response && response.status() === 200) break;
+        lastError = new Error(`HTTP ${response?.status() ?? "no response"} at ${url}`);
+      } catch (error) {
+        lastError = error;
+      }
+      if (attempt < 4) await page.waitForTimeout(2500);
+    }
+    assert.ok(response && response.status() === 200, `${portal.label} should load successfully: ${lastError?.message || "unexpected response"}`);
     await page.locator("body").waitFor();
     await page.waitForTimeout(800);
     assert.match(await page.title(), new RegExp(portal.title, "i"), `${portal.label} title`);
