@@ -250,3 +250,64 @@ test("driver availability reports a backend error if active-job checks fail", as
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("ride completion requires explicit cash collection confirmation", async () => {
+  const originalFetch = globalThis.fetch;
+  let rpcCalls = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    }
+    if (url.includes("/rpc/")) rpcCalls += 1;
+    return new Response("[]", { status: 200 });
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/jobs/ride/33333333-3333-4333-8333-333333333333/status", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ status: "completed" }),
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 400);
+    assert.equal(body.error.code, "CASH_COLLECTION_CONFIRMATION_REQUIRED");
+    assert.equal(rpcCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("cash collection cannot be confirmed before a ride reaches completion", async () => {
+  const originalFetch = globalThis.fetch;
+  let rpcCalls = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    }
+    if (url.includes("/rpc/")) rpcCalls += 1;
+    return new Response("[]", { status: 200 });
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/jobs/ride/33333333-3333-4333-8333-333333333333/status", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ status: "driver_arriving", cash_collected: true }),
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 400);
+    assert.equal(body.error.code, "CASH_CONFIRMATION_ONLY_ON_COMPLETION");
+    assert.equal(rpcCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
