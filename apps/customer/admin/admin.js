@@ -41,8 +41,21 @@ function renderServiceAreas(){
  const areas=currentCity?.service_areas||[];
  if(!areas.length){root.append(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Nuk ka zona shërbimi. Krijo dhe aktivizo një zonë para aktivizimit të qytetit."}));return;}
  for(const area of areas){
-  const c=makeCard(area.name,area.active?"Aktive — mund të përdoret për verifikimin e adresave":"Joaktive — ende nuk përdoret për verifikimin e adresave");
+  const geometry=area.boundary_geojson;
+  const geometryType=geometry&&typeof geometry.type==="string"?geometry.type:"GeoJSON mungon";
+  const status=area.active?"Aktive — mund të përdoret për verifikimin e adresave":"Joaktive — ende nuk përdoret për verifikimin e adresave";
+  const c=makeCard(area.name,status+" · Gjeometria: "+geometryType);
   const actions=document.createElement("div");actions.className="portal-list-actions";
+  if(geometry&&["Polygon","MultiPolygon"].includes(geometry.type)){
+   const preview=document.createElement("a");
+   const feature={type:"Feature",properties:{name:area.name,city:currentCity.name},geometry};
+   const collection={type:"FeatureCollection",features:[feature]};
+   preview.href="https://geojson.io/#data=data:application/json,"+encodeURIComponent(JSON.stringify(collection));
+   preview.target="_blank";preview.rel="noopener noreferrer";preview.className="secondary-button";
+   preview.textContent="Shiko kufirin në hartë";
+   preview.setAttribute("aria-label","Shiko kufirin e zonës "+area.name+" në hartë");
+   actions.append(preview);
+  }
   actions.append(button(area.active?"Çaktivizo zonën":"Aktivizo zonën",area.active?"secondary-button":"primary-button",async()=>{try{await api("/admin/service-areas/"+area.id,{method:"PATCH",body:JSON.stringify({active:!area.active})});await loadCities();alertMsg("Zona e shërbimit u përditësua.","success");}catch(err){alertMsg("Zona nuk u përditësua: "+err.message,"error");}}));
   c.append(actions);root.append(c);
  }
