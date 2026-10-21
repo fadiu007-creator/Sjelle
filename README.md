@@ -34,8 +34,9 @@ Sjelle is a Kosovo-first ride-hailing and food-delivery platform. One customer e
 - Seeded the six candidate cities as inactive with rides and food delivery disabled.
 - Cloudflare Worker endpoints include health/readiness, city/restaurant/menu discovery, authentication/profile, food ordering, ride quoting/booking/cancellation, merchant order/menu management, driver onboarding/document review/dispatch and admin pricing, GeoJSON service areas, route/city activation.
 - Customer, driver, merchant and admin portals are present under `apps/customer/`, backed by real API calls. No portal fakes booking, payment or approval success.
+- Customer support now includes ticket submission and personal ticket history; admins have an authenticated support queue with status updates, self-assignment and audit records. Latest API CI and static Pages build workflow checks pass for the current commit.
 - Server-calculated ride quotes use a configured OSRM-compatible routing provider; address search uses a configured Nominatim-compatible geocoder. A one-minute Cloudflare cron retries dispatch for waiting jobs.
-- API CI runs tests and TypeScript checks on API/migration changes. The manual Cloudflare deployment workflow additionally checks customer/portal JavaScript syntax and runs a Wrangler dry-run before deployment. A verified passing run for the latest revision has not yet been confirmed. Online payments, push notifications, native mobile apps and live Cloudflare deployment are still outstanding.
+- API CI runs tests and TypeScript checks on API/migration changes. The manual Cloudflare deployment workflow additionally checks customer/portal JavaScript syntax and runs a Wrangler dry-run before deployment. The latest API CI, API checks, and repository Pages build workflow runs passed for the current source revision. These are source/build checks, not proof that the Cloudflare Worker was deployed. Online payments, push notifications, native mobile apps and live Cloudflare deployment are still outstanding.
 
 ## Security and operating principles
 
