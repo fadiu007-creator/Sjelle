@@ -10,7 +10,7 @@ export interface Env {
   ROUTING_API_KEY?: string;
   GEOCODING_API_URL?: string;
   GEOCODING_API_KEY?: string;
-  ASSETS?: unknown;
+  ASSETS?: { fetch(request: Request): Promise<Response> };
 }
 
 type AuthUser = { id: string; email?: string };
