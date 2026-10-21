@@ -29,6 +29,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type-check the deployed Supabase Edge Function source
+        run: deno check supabase/functions/sjelle-api/index.ts
       - name: Test server-side API source
         working-directory: apps/api
         run: |
