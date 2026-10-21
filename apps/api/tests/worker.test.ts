@@ -23,6 +23,21 @@ test("readiness fails closed when Supabase is not configured", async () => {
   assert.equal(body.error?.code, "BACKEND_NOT_CONFIGURED");
 });
 
+test("readiness fails closed when routing or geocoding providers are missing", async () => {
+  const result = await worker.fetch(new Request("https://api.example/api/v1/ready"), {
+    APP_ENV: "test",
+    ALLOWED_ORIGIN: "https://sjelle.example",
+    SUPABASE_URL: "https://project.supabase.co",
+    SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+    SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+  } as never);
+  assert.equal(result.status, 503);
+  const body = await result.json() as { ok?: boolean; error?: { code?: string; missing?: string[] } };
+  assert.equal(body.ok, false);
+  assert.equal(body.error?.code, "ENVIRONMENT_NOT_CONFIGURED");
+  assert.deepEqual(body.error?.missing, ["ROUTING_API_URL", "GEOCODING_API_URL"]);
+});
+
 test("CORS preflight is empty and only reflects the configured origin", async () => {
   const allowed = await worker.fetch(new Request("https://api.example/api/v1/rides", {
     method: "OPTIONS",
