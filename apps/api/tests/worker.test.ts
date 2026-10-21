@@ -731,3 +731,53 @@ test("support ticket creation rejects a linked ride that does not belong to the 
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("admin support queue rejects unauthenticated access before database work", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => { calls += 1; return new Response("{}", { status: 500 }); };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/admin/support-tickets"), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(result.status, 401);
+    assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "UNAUTHENTICATED");
+    assert.equal(calls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("admin support status update validates status before database writes", async () => {
+  const originalFetch = globalThis.fetch;
+  const userId = "00000000-0000-4000-8000-000000000001";
+  const ticketId = "00000000-0000-4000-8000-000000000002";
+  const calls: string[] = [];
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    calls.push(url);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: userId }), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_user_roles?")) return new Response(JSON.stringify([{ role: "admin" }]), { status: 200 });
+    return new Response("unexpected database call", { status: 500 });
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/admin/support-tickets/" + ticketId, {
+      method: "PATCH",
+      headers: { authorization: "Bearer user-token", "content-type": "application/json" },
+      body: JSON.stringify({ status: "delete_everything" }),
+    }), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(result.status, 400);
+    assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "INVALID_SUPPORT_STATUS");
+    assert.equal(calls.length, 2);
+    assert.ok(calls[1].includes("/rest/v1/sjelle_user_roles?"));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
