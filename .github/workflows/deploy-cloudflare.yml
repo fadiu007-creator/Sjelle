@@ -69,4 +69,4 @@ jobs:
           curl --fail --silent --show-error --max-time 20 "$WORKER_URL/api/v1/health" -o /tmp/sjelle-health.json
           node -e 'const x=require("/tmp/sjelle-health.json"); if(x.ok!==true || x.service!=="sjelle-api") process.exit(1); console.log("Health endpoint OK")'
           curl --fail --silent --show-error --max-time 20 "$WORKER_URL/api/v1/ready" -o /tmp/sjelle-ready.json
-          node -e 'const x=require("/tmp/sjelle-ready.json"); if(x.ok!==true || x.database!=="reachable") { console.error(JSON.stringify(x)); process.exit(1); } console.log("Readiness and database connectivity OK")'
+          node -e 'const x=require("/tmp/sjelle-ready.json"); if(x.ok!==true || x.database!=="reachable" || x.providers?.routing!=="configured" || x.providers?.geocoding!=="configured") { console.error(JSON.stringify(x)); process.exit(1); } console.log("Readiness, database, routing and geocoding configuration OK")'
