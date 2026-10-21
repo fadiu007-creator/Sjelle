@@ -41,6 +41,14 @@ try {
   assert.ok(cityOptions >= 2, "homepage should render city options from the live API");
   console.log(`PASS city selector rendered ${cityOptions - 1} city options`);
 
+  const signupLink = page.locator('.hero-actions a[href*="account=signup"]');
+  await signupLink.waitFor({ state: "visible" });
+  await signupLink.click();
+  await page.locator("#account-dialog[open]").waitFor({ state: "visible" });
+  assert.equal(await page.locator("#auth-submit").textContent(), "Krijo llogari", "signup deep link should open signup mode");
+  await page.locator("#account-close").click();
+  console.log("PASS homepage signup CTA opens the real signup dialog");
+
   assert.deepEqual(missingAssets, [], "Pages must not return 4xx/5xx for local portal files");
   assert.deepEqual(pageErrors, [], "portal pages must not raise uncaught JavaScript errors");
   console.log("PASS no broken local assets and no uncaught browser JavaScript errors");
