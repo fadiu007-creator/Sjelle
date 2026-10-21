@@ -226,8 +226,9 @@ const worker = {
     const requestId = crypto.randomUUID();
     const url = new URL(request.url);
     // Supabase may expose the full function prefix in Request.url; normalize defensively.
-    const edgePrefix = "/functions/v1/sjelle-api";
-    if (url.pathname.startsWith(edgePrefix)) url.pathname = url.pathname.slice(edgePrefix.length) || "/";
+    for (const edgePrefix of ["/functions/v1/sjelle-api", "/sjelle-api"]) {
+      if (url.pathname.startsWith(edgePrefix)) url.pathname = url.pathname.slice(edgePrefix.length) || "/";
+    }
     const origin = request.headers.get("origin");
 
     if (request.method === "OPTIONS") {
@@ -2208,8 +2209,9 @@ const worker = {
 const DEFAULT_ALLOWED_ORIGIN = "https://fadiu007-creator.github.io";
 Deno.serve(async (incoming: Request) => {
   const url = new URL(incoming.url);
-  const prefix = "/functions/v1/sjelle-api";
-  if (url.pathname.startsWith(prefix)) url.pathname = url.pathname.slice(prefix.length) || "/";
+  for (const prefix of ["/functions/v1/sjelle-api", "/sjelle-api"]) {
+    if (url.pathname.startsWith(prefix)) url.pathname = url.pathname.slice(prefix.length) || "/";
+  }
   const request = new Request(url.toString(), incoming);
   const env: Env = {
     SUPABASE_URL: Deno.env.get("SUPABASE_URL"),
