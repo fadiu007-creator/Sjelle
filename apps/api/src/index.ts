@@ -1980,6 +1980,71 @@ export default {
       }catch{return response({error:{code:"RESTAURANT_REVIEW_FAILED",request_id:requestId}},503,requestId,origin,env);}
     }
 
+    if (url.pathname === "/api/v1/support-tickets" && (request.method === "GET" || request.method === "POST")) {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); }
+      catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+
+      if (request.method === "GET") {
+        try {
+          const result = await databaseRequest(env,
+            "sjelle_support_tickets?requester_id=eq." + encodeURIComponent(user.id)
+            + "&select=id,ride_id,order_id,category,description,status,created_at,updated_at&order=created_at.desc&limit=50");
+          if (!result.ok) return response({ error: { code: "SUPPORT_TICKETS_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+          const rows = await parseJson(result);
+          return response({ data: Array.isArray(rows) ? rows : [] }, 200, requestId, origin, env);
+        } catch {
+          return response({ error: { code: "SUPPORT_TICKETS_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        }
+      }
+
+      let body: unknown;
+      try { body = await request.json(); }
+      catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
+      if (!isRecord(body)) return response({ error: { code: "INVALID_SUPPORT_TICKET", request_id: requestId } }, 400, requestId, origin, env);
+
+      const categories = ["ride", "food_order", "payment", "safety", "driver", "restaurant", "account", "other"];
+      const category = typeof body.category === "string" ? body.category.trim() : "";
+      const description = typeof body.description === "string" ? body.description.trim() : "";
+      const rideId = body.ride_id === undefined || body.ride_id === null || body.ride_id === "" ? null : body.ride_id;
+      const orderId = body.order_id === undefined || body.order_id === null || body.order_id === "" ? null : body.order_id;
+      const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (!categories.includes(category) || description.length < 10 || description.length > 3000
+        || (rideId !== null && (typeof rideId !== "string" || !uuidPattern.test(rideId)))
+        || (orderId !== null && (typeof orderId !== "string" || !uuidPattern.test(orderId)))
+        || (rideId !== null && orderId !== null)) {
+        return response({ error: { code: "INVALID_SUPPORT_TICKET", message: "Choose a valid category, provide 10–3000 characters, and link at most one valid ride or order.", request_id: requestId } }, 400, requestId, origin, env);
+      }
+
+      try {
+        if (rideId !== null) {
+          const ownedRide = await databaseRequest(env, "sjelle_rides?id=eq." + encodeURIComponent(rideId) + "&customer_id=eq." + encodeURIComponent(user.id) + "&select=id&limit=1");
+          if (!ownedRide.ok) return response({ error: { code: "SUPPORT_LINK_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+          const rows = await parseJson(ownedRide);
+          if (!Array.isArray(rows) || rows.length === 0) return response({ error: { code: "LINKED_RIDE_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+        }
+        if (orderId !== null) {
+          const ownedOrder = await databaseRequest(env, "sjelle_food_orders?id=eq." + encodeURIComponent(orderId) + "&customer_id=eq." + encodeURIComponent(user.id) + "&select=id&limit=1");
+          if (!ownedOrder.ok) return response({ error: { code: "SUPPORT_LINK_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+          const rows = await parseJson(ownedOrder);
+          if (!Array.isArray(rows) || rows.length === 0) return response({ error: { code: "LINKED_ORDER_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+        }
+
+        const result = await databaseRequest(env, "sjelle_support_tickets", {
+          method: "POST",
+          headers: { prefer: "return=representation" },
+          body: JSON.stringify({ requester_id: user.id, ride_id: rideId, order_id: orderId, category, description, status: "open" }),
+        });
+        const rows = await parseJson(result);
+        if (!result.ok) return response({ error: { code: "SUPPORT_TICKET_CREATE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        if (!Array.isArray(rows) || !rows.length) return response({ error: { code: "SUPPORT_TICKET_CREATE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        return response({ data: rows[0] as Record<string, unknown> }, 201, requestId, origin, env);
+      } catch {
+        return response({ error: { code: "SUPPORT_TICKET_CREATE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+      }
+    }
+
     if (url.pathname === "/api/v1/me" && (request.method === "GET" || request.method === "PUT")) {
       let user: AuthUser | null;
       try {
