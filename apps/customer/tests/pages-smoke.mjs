@@ -57,7 +57,7 @@ try {
   await signupLink.waitFor({ state: "visible" });
   await signupLink.click();
   await page.locator("#account-dialog[open]").waitFor({ state: "visible" });
-  assert.equal(await page.locator("#auth-submit").textContent(), "Krijo llogari", "signup deep link should open signup mode");
+  assert.equal((await page.locator("#auth-submit").textContent()).trim(), "Regjistrohu", "signup deep link should open signup mode using Kosovo Albanian copy");
   await page.locator("#account-close").click();
   console.log("PASS homepage signup CTA opens the real signup dialog");
 
