@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="sq">
+<html lang="sq-XK">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -16,7 +16,7 @@
       <span>sjelle<span class="brand-dot">.</span></span>
     </a>
     <div class="topbar-right">
-      <button id="account-open" class="account-button" type="button">Hyr / Regjistrohu</button>
+      <button id="account-open" class="account-button" type="button">Kyçu / Regjistrohu</button>
       <span class="country-pill"><span class="live-dot"></span> Kosovë</span>
       <a class="help-link" href="#status">Ndihmë</a>
     </div>
@@ -25,12 +25,12 @@
   <main>
     <section class="hero">
       <div class="hero-copy">
-        <p class="eyebrow">MË AFËR, MË LEHTË</p>
-        <h1>Lëviz. Shijo.<br><span>Vazhdo ditën.</span></h1>
-        <p class="hero-description">Udhëtime dhe ushqim nga një vend i vetëm. Sjelle po përgatitet të jetë pranë teje në Kosovë.</p>
+        <p class="eyebrow">MË AFËR. MË LEHTË.</p>
+        <h1>Lëviz. Shijo.<br><span>Vazhdo me ditën.</span></h1>
+        <p class="hero-description">Udhëtime e ushqim, krejt në një vend. Sjelle po bëhet gati me qenë pranë teje në Kosovë.</p>
         <div class="hero-actions" aria-label="Fillo me Sjelle">
-          <a class="primary-button hero-primary" href="/?account=signup">Krijo llogari</a>
-          <a class="secondary-button hero-secondary" href="/driver/">Apliko si shofer</a>
+          <a class="primary-button hero-primary" href="/?account=signup">Regjistrohu</a>
+          <a class="secondary-button hero-secondary" href="/driver/">Bëhu shofer</a>
           <a class="secondary-button hero-secondary" href="/merchant/">Regjistro restorantin</a>
         </div>
         <div class="city-picker">
@@ -38,11 +38,11 @@
           <div class="select-wrap">
             <span aria-hidden="true">⌖</span>
             <select id="city-select" aria-describedby="city-status">
-              <option value="">Duke ngarkuar qytetet…</option>
+              <option value="">Po i ngarkojmë qytetet…</option>
             </select>
             <span class="select-chevron" aria-hidden="true">⌄</span>
           </div>
-          <p id="city-status" class="city-status" role="status">Po kontrollojmë disponueshmërinë.</p>
+          <p id="city-status" class="city-status" role="status">Po kontrollojmë a është shërbimi në dispozicion.</p>
         </div>
       </div>
       <div class="hero-art" aria-hidden="true">
@@ -168,7 +168,7 @@
       <div><p class="eyebrow">LLOGARIA SJELLE</p><h2 id="account-title">Mirë se erdhe</h2></div>
       <button id="account-close" class="close-button" type="button" aria-label="Mbyll llogarinë">×</button>
     </div>
-    <div class="auth-tabs"><button type="button" class="auth-tab is-active" data-auth-mode="login">Hyr</button><button type="button" class="auth-tab" data-auth-mode="signup">Krijo llogari</button></div>
+    <div class="auth-tabs"><button type="button" class="auth-tab is-active" data-auth-mode="login">Hyr</button><button type="button" class="auth-tab" data-auth-mode="signup">Regjistrohu</button></div>
     <form id="auth-form" class="auth-form">
       <label id="auth-name-wrap" hidden>Emri<input name="display_name" maxlength="80" autocomplete="name"></label>
       <label>Email<input name="email" type="email" required maxlength="254" autocomplete="email"></label>
@@ -178,22 +178,22 @@
     </form>
     <div id="account-signed-in" class="account-signed-in" hidden><p id="account-summary"></p><button id="my-orders-open" class="secondary-button" type="button">Porositë e mia</button><div id="my-orders" class="my-orders" aria-live="polite"></div><button id="my-rides-open" class="secondary-button" type="button">Udhëtimet e mia</button><div id="my-rides" class="my-orders" aria-live="polite"></div>
       <section class="support-section" aria-labelledby="support-heading">
-        <h3 id="support-heading">Ndihmë dhe siguri</h3>
-        <p class="support-intro">Raporto një problem me udhëtimin, porosinë ose llogarinë tënde. Ekipi mund ta shqyrtojë kërkesën.</p>
-        <button id="support-open" class="secondary-button" type="button">Krijo kërkesë për ndihmë</button>
+        <h3 id="support-heading">Ndihmë & siguri</h3>
+        <p class="support-intro">Na trego nëse ke problem me udhëtimin, porosinë ose llogarinë. Ekipi ynë do ta shqyrtojë.</p>
+        <button id="support-open" class="secondary-button" type="button">Kërko ndihmë</button>
         <form id="support-form" class="support-form" hidden>
           <label>Kategoria
             <select name="category" required>
               <option value="ride">Udhëtim</option><option value="food_order">Porosi ushqimi</option><option value="payment">Pagesa</option><option value="safety">Siguria</option><option value="driver">Shoferi</option><option value="restaurant">Restoranti</option><option value="account">Llogaria</option><option value="other">Tjetër</option>
             </select>
           </label>
-          <label>Përshkrimi <textarea name="description" required minlength="10" maxlength="3000" rows="4" placeholder="Përshkruaj çfarë ndodhi (10–3000 karaktere)."></textarea></label>
+          <label>Përshkrimi <textarea name="description" required minlength="10" maxlength="3000" rows="4" placeholder="Na trego çka ndodhi (10–3000 karaktere)."></textarea></label>
           <p id="support-message" class="form-message" role="status"></p>
           <button id="support-submit" class="primary-button" type="submit">Dërgo kërkesën</button>
         </form>
         <div id="support-tickets" class="my-orders" aria-live="polite"></div>
       </section>
-      <button id="account-logout" class="secondary-button" type="button">Dil nga llogaria</button></div>
+      <button id="account-logout" class="secondary-button" type="button">Çkyçu</button></div>
   </dialog>
 </body>
 </html>
