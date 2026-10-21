@@ -226,3 +226,15 @@ select { width: 100%; min-width: 0; height: 50px; padding: 0 25px 0 0; appearanc
 @media(max-width:620px){.portal-footer-links{width:100%;justify-content:center;order:4}.footer-location{display:none}}
 
 [hidden]{display:none!important}
+
+
+.support-section{margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid var(--line,#e5e7eb);display:grid;gap:.75rem}
+.support-section h3{margin:0}
+.support-intro{margin:0;color:var(--muted,#64748b);font-size:.92rem;line-height:1.5}
+.support-form{display:grid;gap:.8rem;padding:1rem;border:1px solid var(--line,#e5e7eb);border-radius:1rem;background:var(--surface,#fff)}
+.support-form[hidden]{display:none}
+.support-form label{display:grid;gap:.4rem;font-weight:600}
+.support-form select,.support-form textarea{width:100%;font:inherit;border:1px solid var(--line,#cbd5e1);border-radius:.7rem;padding:.75rem;background:var(--surface,#fff);color:inherit}
+.support-ticket-card{display:grid;gap:.4rem}
+.support-ticket-description{margin:.25rem 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.support-ticket-date{color:var(--muted,#64748b)}
