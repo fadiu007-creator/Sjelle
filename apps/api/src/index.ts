@@ -1098,7 +1098,7 @@ export default {
       let body: unknown;
       try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
       if (!isRecord(body) || typeof body.latitude !== "number" || typeof body.longitude !== "number"
-        || body.latitude < -90 || body.latitude > 90 || body.longitude < -180 || body.longitude > 180
+        || body.latitude < 41.7 || body.latitude > 43.4 || body.longitude < 19.7 || body.longitude > 22.0
         || (body.accuracy_m !== undefined && (typeof body.accuracy_m !== "number" || body.accuracy_m < 0 || body.accuracy_m > 10000))
         || (body.heading_degrees !== undefined && (typeof body.heading_degrees !== "number" || body.heading_degrees < 0 || body.heading_degrees >= 360))) {
         return response({ error: { code: "INVALID_LOCATION", request_id: requestId } }, 400, requestId, origin, env);
