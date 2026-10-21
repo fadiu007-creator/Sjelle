@@ -594,3 +594,53 @@ test("driver job RPC conflicts are returned as conflicts instead of backend outa
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("concurrent duplicate driver applications cannot overwrite an existing profile", async () => {
+  const originalFetch = globalThis.fetch;
+  const requestedUrls: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    requestedUrls.push(url);
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    }
+    if (url.includes("/sjelle_cities?slug=eq.prishtina")) {
+      return new Response(JSON.stringify([{ id: "22222222-2222-4222-8222-222222222222", slug: "prishtina" }]), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.includes("/sjelle_driver_profiles?user_id=eq.")) {
+      return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (url.endsWith("/sjelle_driver_profiles")) {
+      assert.equal(init?.method, "POST");
+      assert.equal(new URL(url).search, "");
+      assert.equal(new Headers(init?.headers).get("prefer"), "return=representation");
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      assert.equal(body.city_id, "22222222-2222-4222-8222-222222222222");
+      return new Response(JSON.stringify({ message: "duplicate key value violates unique constraint" }), {
+        status: 409, headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error("Unexpected database request: " + url);
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/apply", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ city: "prishtina", mode: "ride" }),
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 409);
+    assert.equal(body.error.code, "DRIVER_APPLICATION_EXISTS");
+    assert.ok(requestedUrls.some(url => url.endsWith("/sjelle_driver_profiles")));
+    assert.ok(!requestedUrls.some(url => url.includes("on_conflict=user_id")));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
