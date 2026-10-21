@@ -47,6 +47,8 @@ jobs:
           node --check apps/customer/driver/driver.js
           node --check apps/customer/merchant/merchant.js
           node --check apps/customer/admin/admin.js
+      - name: Guard API and deployed Edge Function parity
+        run: node scripts/check-critical-api-parity.mjs
       - name: Smoke test deployed Supabase API
         run: |
           API_BASE="https://saavqlbwffrwxingbnri.supabase.co/functions/v1/sjelle-api/api/v1"
