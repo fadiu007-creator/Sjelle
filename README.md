@@ -71,5 +71,7 @@ The deployed Supabase Edge Function uses its configured secrets for `SUPABASE_UR
 
 - [Implementation specification](docs/IMPLEMENTATION_SPEC.md)
 - [API contracts](docs/API_CONTRACTS.md)
+- [Production go-live checklist](docs/GO_LIVE_CHECKLIST.md)
+- [Safe first-admin bootstrap SQL](supabase/operations/first-admin.sql) — run manually after replacing the confirmed account email
 - [Initial schema](supabase/migrations/20261020203959_sjelle_initial_namespaced_schema.sql)
 - [Least-privilege grants](supabase/migrations/20261020204056_sjelle_least_privilege_grants.sql)
