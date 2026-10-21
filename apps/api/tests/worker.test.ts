@@ -107,3 +107,107 @@ test("oversized API bodies are rejected before parsing or backend access", async
   }), env);
   assert.equal(withoutLength.status, 413);
 });
+
+
+test("ride and food-order creation reject unauthenticated requests before backend work", async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = async () => {
+    fetchCalls += 1;
+    return new Response(JSON.stringify({ message: "should not be called" }), { status: 500 });
+  };
+  try {
+    const ride = await worker.fetch(new Request("https://api.example/api/v1/rides", {
+      method: "POST",
+      headers: { "content-type": "application/json", "idempotency-key": "ride-request-key-123" },
+      body: JSON.stringify({ quote_id: "00000000-0000-4000-8000-000000000001" }),
+    }), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    const food = await worker.fetch(new Request("https://api.example/api/v1/food-orders", {
+      method: "POST",
+      headers: { "content-type": "application/json", "idempotency-key": "food-request-key-123" },
+      body: JSON.stringify({}),
+    }), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+
+    assert.equal(ride.status, 401);
+    assert.equal((await ride.json() as { error?: { code?: string } }).error?.code, "UNAUTHENTICATED");
+    assert.equal(food.status, 401);
+    assert.equal((await food.json() as { error?: { code?: string } }).error?.code, "UNAUTHENTICATED");
+    assert.equal(fetchCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("food-order creation validates idempotency and order shape before database writes", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    requests.push(url);
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099", email: "customer@example.test" }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error("Unexpected database call during validation");
+  };
+  const configuredEnv = {
+    APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+    SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+    SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+  } as never;
+  try {
+    const missingKey = await worker.fetch(new Request("https://api.example/api/v1/food-orders", {
+      method: "POST", headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({}),
+    }), configuredEnv);
+    assert.equal(missingKey.status, 400);
+    assert.equal((await missingKey.json() as { error?: { code?: string } }).error?.code, "IDEMPOTENCY_KEY_REQUIRED");
+
+    const malformedOrder = await worker.fetch(new Request("https://api.example/api/v1/food-orders", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json", "idempotency-key": "food-request-key-123" },
+      body: JSON.stringify({ restaurant_id: "not-a-uuid", delivery_address_text: "Main street", delivery_lat: 42.6, delivery_lon: 21.1, items: [] }),
+    }), configuredEnv);
+    assert.equal(malformedOrder.status, 400);
+    assert.equal((await malformedOrder.json() as { error?: { code?: string } }).error?.code, "INVALID_ORDER");
+    assert.equal(requests.filter(url => url.includes("/rest/v1/")).length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("ride booking requires a quote or route and a sufficiently long idempotency key", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    if (String(input).endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error("Ride request validation must not reach the database");
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/rides", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json", "idempotency-key": "short" },
+      body: JSON.stringify({}),
+    }), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(result.status, 400);
+    assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "INVALID_RIDE_REQUEST");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
