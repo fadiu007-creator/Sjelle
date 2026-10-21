@@ -835,3 +835,44 @@ test("ride quotes accept valid MultiPolygon service areas including non-first po
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("city activation refuses draft-only service areas before enabling any public service", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls: Array<{ url: string; method: string }> = [];
+  const userId = "00000000-0000-4000-8000-000000000099";
+  const cityId = "00000000-0000-4000-8000-000000000010";
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    calls.push({ url, method: init?.method ?? "GET" });
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: userId }), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_user_roles?")) return new Response(JSON.stringify([{ role: "admin" }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_cities?slug=eq.prishtina")) return new Response(JSON.stringify([{ id: cityId }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_service_areas?")) return new Response("[]", { status: 200 });
+    throw new Error("City activation must fail before pricing, supply checks or city mutation: " + url);
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/admin/cities/prishtina/services", {
+      method: "PATCH",
+      headers: { authorization: "Bearer admin-token", "content-type": "application/json" },
+      body: JSON.stringify({
+        active: true,
+        rides_enabled: false,
+        food_enabled: true,
+        confirm_ready: true,
+        reason: "Attempted launch before service-area review",
+      }),
+    }), {
+      APP_ENV: "test",
+      ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(result.status, 409);
+    assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "NO_ACTIVE_SERVICE_AREA");
+    assert.equal(calls.some(call => call.method === "PATCH" && call.url.includes("/rest/v1/sjelle_cities?")), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
