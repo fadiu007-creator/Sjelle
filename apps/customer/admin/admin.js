@@ -113,3 +113,30 @@ if(reconciliationForm){
  reconciliationForm.addEventListener("submit",e=>{e.preventDefault();loadReconciliation();});
  $("#reconciliation-refresh").addEventListener("click",loadReconciliation);
 }
+
+
+const supportStatusLabel = {open:"E hapur",in_progress:"Në shqyrtim",resolved:"E zgjidhur",closed:"E mbyllur"};
+const supportCategoryLabel = {ride:"Udhëtim",food_order:"Porosi ushqimi",payment:"Pagesa",safety:"Siguria",driver:"Shoferi",restaurant:"Restoranti",account:"Llogaria",other:"Tjetër"};
+async function loadSupportTickets(){
+ const root=$("#admin-support-tickets");if(!root)return;
+ root.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Po ngarkohen kërkesat…"}));
+ try{
+  const result=await api("/admin/support-tickets");const tickets=result.data||[];root.replaceChildren();
+  if(!tickets.length){root.append(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Nuk ka kërkesa për ndihmë."}));return;}
+  for(const ticket of tickets){
+   const c=makeCard((supportCategoryLabel[ticket.category]||"Kërkesë")+" · "+(supportStatusLabel[ticket.status]||ticket.status),ticket.description);
+   const meta=document.createElement("p");meta.className="portal-muted";meta.textContent="Krijuar: "+new Date(ticket.created_at).toLocaleString("sq-XK")+" · Klienti: "+ticket.requester_id+(ticket.ride_id?" · Udhëtimi: "+ticket.ride_id:"")+(ticket.order_id?" · Porosia: "+ticket.order_id:"")+(ticket.assigned_to?" · Caktuar: "+ticket.assigned_to:"");c.append(meta);
+   const actions=document.createElement("div");actions.className="portal-list-actions";
+   for(const [status,label] of [["open","Rihap"],["in_progress","Merr në shqyrtim"],["resolved","Zgjidhur"],["closed","Mbyll"]]){
+    if(status===ticket.status)continue;
+    actions.append(button(label,status==="resolved"?"primary-button":"secondary-button",async()=>{
+     try{await api("/admin/support-tickets/"+ticket.id,{method:"PATCH",body:JSON.stringify({status})});alertMsg("Statusi i kërkesës u ruajt dhe u regjistrua.","success");await loadSupportTickets();}
+     catch(err){alertMsg("Kërkesa nuk u përditësua: "+err.message,"error");}
+    }));
+   }
+   c.append(actions);root.append(c);
+  }
+ }catch(err){root.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Kërkesat nuk mund të ngarkohen: "+err.message}));}
+}
+$("#support-refresh")?.addEventListener("click",loadSupportTickets);
+loadSupportTickets();
