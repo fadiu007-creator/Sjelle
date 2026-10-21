@@ -769,6 +769,12 @@ async function loadMyRides(){
 
 setInterval(()=>{if(document.visibilityState==='visible'&&state.session?.access_token&&document.querySelector('#account-dialog')?.open){loadMyOrders();loadMyRides();}},20000);
 
+// Support direct links to account creation/login from GitHub Pages project paths.
+const requestedAccountMode = new URLSearchParams(window.location.search).get("account");
+if (requestedAccountMode === "signup" || requestedAccountMode === "login") {
+  openAccount(requestedAccountMode);
+}
+
 
 const supportOpen = document.querySelector("#support-open");
 const supportForm = document.querySelector("#support-form");
