@@ -278,3 +278,62 @@ test("food orders reject coordinates outside the launch region before database a
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("ride quotes reject destinations outside active service areas before routing", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    requests.push(url);
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.includes("/rest/v1/sjelle_cities?")) {
+      return new Response(JSON.stringify([{
+        id: "00000000-0000-4000-8000-000000000010",
+        slug: "prishtina", active: true, rides_enabled: true,
+      }]), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (url.includes("/rest/v1/sjelle_service_areas?")) {
+      return new Response(JSON.stringify([{
+        boundary_geojson: {
+          type: "Polygon",
+          coordinates: [[[21.0, 42.6], [21.2, 42.6], [21.2, 42.7], [21.0, 42.7], [21.0, 42.6]]],
+        },
+      }]), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    throw new Error("Destination outside coverage must be rejected before routing or quote creation");
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/ride-quotes", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({
+        city: "prishtina",
+        pickup_label: "Pickup in service area",
+        pickup_lat: 42.65,
+        pickup_lon: 21.1,
+        destination_label: "Destination outside service area",
+        destination_lat: 42.8,
+        destination_lon: 21.3,
+        vehicle_type: "standard",
+      }),
+    }), {
+      APP_ENV: "test",
+      ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+      ROUTING_API_URL: "https://routing.example",
+    } as never);
+    assert.equal(result.status, 400);
+    assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "DESTINATION_OUTSIDE_SERVICE_AREA");
+    assert.equal(requests.some(url => url.includes("/route/v1/")), false);
+    assert.equal(requests.some(url => url.includes("/rest/v1/sjelle_ride_quotes")), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
