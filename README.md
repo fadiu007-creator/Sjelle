@@ -19,6 +19,7 @@ Sjelle is a Kosovo-first ride-hailing and food-delivery platform. One customer e
 
 - `docs/IMPLEMENTATION_SPEC.md` — scope, roles, workflows, security and acceptance criteria
 - `docs/API_CONTRACTS.md` — planned API contracts and status models
+- `docs/DRIVER_OPERATIONS.md` — driver status/cash controls and pre-launch verification checklist
 - `supabase/migrations/` — versioned schema migrations, aligned to applied Supabase migration history
 - `apps/customer/` — mobile-first customer web app served as Cloudflare Worker static assets
 - `apps/api/` — Cloudflare Worker API, tests and deployment configuration
