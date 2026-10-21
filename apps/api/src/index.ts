@@ -589,6 +589,7 @@ export default {
         const serviceAreas = await parseJson(serviceAreaResponse) as Array<{ boundary_geojson: unknown }>;
         if (!serviceAreaResponse.ok) return response({ error: { code: "SERVICE_AREA_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
         if (!serviceAreas.some(area => pointInServiceArea(body.pickup_lat as number, body.pickup_lon as number, area.boundary_geojson))) return response({ error: { code: "PICKUP_OUTSIDE_SERVICE_AREA", message: "Pickup must be inside an active service area for the selected city.", request_id: requestId } }, 400, requestId, origin, env);
+        if (!serviceAreas.some(area => pointInServiceArea(body.destination_lat as number, body.destination_lon as number, area.boundary_geojson))) return response({ error: { code: "DESTINATION_OUTSIDE_SERVICE_AREA", message: "Destination must be inside an active service area for the selected city.", request_id: requestId } }, 400, requestId, origin, env);
 
         const haversine = (lat1: number, lon1: number, lat2: number, lon2: number) => {
           const rad = (n: number) => n * Math.PI / 180;
