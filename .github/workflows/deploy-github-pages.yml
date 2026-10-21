@@ -54,6 +54,12 @@ jobs:
           cat /tmp/sjelle-cities.json
           test "$CITY_STATUS" = "200"
           node -e 'const x=require("/tmp/sjelle-cities.json"); if(!Array.isArray(x.data) || x.data.length!==6) { console.error(JSON.stringify(x)); process.exit(1); } if(x.data.some(c=>c.active || c.rides_enabled || c.food_enabled)) { console.error("Safety check failed: a launch city is enabled"); process.exit(1); } console.log("City API OK; all six launch cities remain disabled")'
+          for CITY in $(node -e 'const x=require("/tmp/sjelle-cities.json"); process.stdout.write(x.data.map(c=>c.slug).join(" "))'); do
+            STATUS=$(curl --silent --show-error --max-time 30 "$API_BASE/restaurants?city=$CITY" -o "/tmp/sjelle-restaurants-$CITY.json" -w "%{http_code}")
+            test "$STATUS" = "200"
+            CITY="$CITY" node -e 'const x=require(process.argv[1]); if(x.meta?.city!==process.env.CITY || x.meta?.service_available!==false || !Array.isArray(x.data) || x.data.length!==0) { console.error(JSON.stringify(x)); process.exit(1); }' "/tmp/sjelle-restaurants-$CITY.json"
+          done
+          echo "All six disabled cities correctly block restaurant listings"
           curl --fail --silent --show-error --max-time 30 "$API_BASE/ready" -o /tmp/sjelle-ready.json
           node -e 'const x=require("/tmp/sjelle-ready.json"); if(x.ok!==true || x.database!=="reachable" || x.providers?.routing!=="configured" || x.providers?.geocoding!=="configured") { console.error(JSON.stringify(x)); process.exit(1); } console.log("Supabase readiness and routing/geocoding configuration OK")'
           PREFLIGHT_STATUS=$(curl --silent --show-error --max-time 30 -X OPTIONS "$API_BASE/me" -H "Origin: https://fadiu007-creator.github.io" -H "Access-Control-Request-Method: GET" -H "Access-Control-Request-Headers: authorization,content-type" -D /tmp/sjelle-cors-headers.txt -o /dev/null -w "%{http_code}")
@@ -63,6 +69,14 @@ jobs:
           AUTH_STATUS=$(curl --silent --show-error --max-time 30 "$API_BASE/me" -o /tmp/sjelle-auth.json -w "%{http_code}")
           test "$AUTH_STATUS" = "401"
           node -e 'const x=require("/tmp/sjelle-auth.json"); if(x.error?.code!=="UNAUTHENTICATED") { console.error(JSON.stringify(x)); process.exit(1); } console.log("Protected profile endpoint rejects unauthenticated access")'
+          for ROUTE in "/rides" "/food-orders" "/driver/offers" "/admin/cities"; do
+            METHOD="GET"
+            case "$ROUTE" in "/rides"|"/food-orders") METHOD="POST";; esac
+            STATUS=$(curl --silent --show-error --max-time 30 -X "$METHOD" "$API_BASE$ROUTE" -H "content-type: application/json" --data '{}' -o /tmp/sjelle-protected.json -w "%{http_code}")
+            test "$STATUS" = "401"
+            node -e 'const x=require("/tmp/sjelle-protected.json"); if(x.error?.code!=="UNAUTHENTICATED") { console.error(JSON.stringify(x)); process.exit(1); }'
+          done
+          echo "Ride, food-order, driver, and admin APIs reject unauthenticated requests"
       - name: Prepare project Pages path
         run: |
           python3 - <<'PY'
