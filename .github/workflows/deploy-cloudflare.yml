@@ -35,7 +35,6 @@ jobs:
       - name: Check customer and portal JavaScript syntax
         run: |
           node --check ../customer/app.js
-          node --check ../customer/app.js
           node --check ../customer/driver/driver.js
           node --check ../customer/merchant/merchant.js
           node --check ../customer/admin/admin.js
