@@ -66,6 +66,8 @@ Checkout revalidates menu availability and price server-side, snapshots item lab
 - Food total = item subtotal + disclosed delivery fee + disclosed service/other charges - discounts. Merchant commission is accounted separately.
 - Each quote/order stores a pricing-rule version/snapshot.
 - Cash is not “free”: record amount collected, collector, commission, driver payable, merchant payable, outstanding balance and reconciliation state.
+- The cash-collection trigger now posts a signed, idempotent pair when a cash ride reaches completed/collected or a cash delivery reaches delivered/collected: clear customer cash due and record the driver as cash collector. A unique key prevents duplicate postings on retries.
+- This is the collection layer, not a complete settlement/reconciliation system: commission allocation, driver net earnings, merchant payable, cash handover, disputes, and admin reconciliation still need explicit rules and workflows before launch.
 - Ledger entries are append-only; correction uses reversal/adjustment entries. No card data is stored.
 
 ## 9. API and architecture
@@ -119,6 +121,7 @@ Indicative duration: several months for a small team; estimates depend on staffi
 - [ ] Kosovo legal, insurance, tax, privacy and consumer checks completed.
 - [ ] Restaurant menus, opening hours and service areas verified.
 - [ ] Map provider tested in all proposed cities.
+- [ ] Cash collection ledger migration replayed and verified against real test jobs.
 - [ ] Cash collection, commission and merchant/driver balance reconciliation tested.
 - [ ] Support coverage, incident response and cancellation/refund policies operational.
 - [ ] E2E ride and delivery tests on real Android devices.
