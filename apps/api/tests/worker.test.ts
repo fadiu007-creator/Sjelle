@@ -371,3 +371,37 @@ test("driver location rejects coordinates outside Kosovo before database access"
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("driver cannot complete a cash job without confirming collection", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    requests.push(url);
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error("Cash confirmation validation must happen before the job RPC");
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/driver/jobs/ride/00000000-0000-4000-8000-000000000001/status", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ status: "completed", cash_collected: false }),
+    }), {
+      APP_ENV: "test",
+      ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(result.status, 400);
+    assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "CASH_COLLECTION_CONFIRMATION_REQUIRED");
+    assert.equal(requests.some(url => url.includes("/rest/v1/rpc/sjelle_driver_update_job")), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
