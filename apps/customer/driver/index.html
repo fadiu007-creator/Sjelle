@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="sq">
+<html lang="sq-XK">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -12,17 +12,17 @@
 <body class="portal-body">
   <header class="topbar">
     <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">s</span><span>sjelle<span class="brand-dot">.</span></span></a>
-    <div class="topbar-right"><a class="help-link" href="/">Kryefaqja</a><a class="account-button" href="/?account=login">Hyr / Regjistrohu</a></div>
+    <div class="topbar-right"><a class="help-link" href="/">Ballina</a><a class="account-button" href="/?account=login">Kyçu / Regjistrohu</a></div>
   </header>
   <main class="portal-main">
     <section class="portal-hero">
       <p class="eyebrow">PORTALI I SHOFERIT</p>
       <h1>Një llogari.<br><span>Dy mënyra pune.</span></h1>
-      <p>Plotëso aplikimin, ngarko dokumentet dhe prit verifikimin. Statusi online hapet vetëm pasi dokumentet dhe automjeti të aprovohen.</p>
-      <div id="driver-alert" class="portal-alert" role="status">Po kontrollojmë llogarinë…</div>
+      <p>Plotëso aplikimin, ngarkoji dokumentet dhe prit verifikimin. Mund të dalësh online vetëm pasi të aprovohen dokumentet dhe automjeti.</p>
+      <div id="driver-alert" class="portal-alert" role="status">Po e kontrollojmë llogarinë…</div>
     </section>
     <section class="portal-card" id="application-section">
-      <div class="portal-card-heading"><div><p class="eyebrow">HAPI 1</p><h2>Aplikimi i shoferit</h2></div><span class="portal-tag">Verifikim i detyrueshëm</span></div>
+      <div class="portal-card-heading"><div><p class="eyebrow">HAPI 1</p><h2>Aplikimi për shofer</h2></div><span class="portal-tag">Verifikimi është i detyrueshëm</span></div>
       <form id="driver-application" class="portal-form">
         <label>Qyteti<select name="city" id="driver-city" required></select></label>
         <label>Mënyra e punës<select name="mode" required><option value="ride">Udhëtime</option><option value="delivery">Dërgesa</option></select></label>
@@ -30,10 +30,10 @@
       </form>
     </section>
     <section class="portal-card" id="vehicle-section" hidden>
-      <div class="portal-card-heading"><div><p class="eyebrow">HAPI 2</p><h2>Automjeti</h2></div><span class="portal-tag">Në shqyrtim</span></div>
+      <div class="portal-card-heading"><div><p class="eyebrow">HAPI 2</p><h2>Automjeti</h2></div><span class="portal-tag">Në verifikim</span></div>
       <form id="vehicle-form" class="portal-form portal-form-grid">
         <label>Lloji<select name="vehicle_type" required><option value="standard">Standard</option><option value="comfort">Comfort</option><option value="van">Furgon</option><option value="motorcycle">Motoçikletë</option><option value="bicycle">Biçikletë</option></select></label>
-        <label>Targa / regjistrimi<input name="registration_number" required maxlength="24"></label>
+        <label>Targat / numri i regjistrimit<input name="registration_number" required maxlength="24"></label>
         <label>Marka<input name="make" maxlength="60"></label><label>Modeli<input name="model" maxlength="60"></label>
         <label>Ngjyra<input name="color" maxlength="40"></label><label>Vendet<input name="capacity" type="number" min="1" max="20" value="4" required></label>
         <button class="primary-button portal-full" type="submit">Regjistro automjetin</button>
