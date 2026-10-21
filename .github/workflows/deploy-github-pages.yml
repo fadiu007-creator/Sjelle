@@ -46,7 +46,10 @@ jobs:
           API_BASE="https://saavqlbwffrwxingbnri.supabase.co/functions/v1/sjelle-api/api/v1"
           curl --fail --silent --show-error --max-time 30 "$API_BASE/health" -o /tmp/sjelle-health.json
           node -e 'const x=require("/tmp/sjelle-health.json"); if(x.ok!==true || x.service!=="sjelle-api") { console.error(JSON.stringify(x)); process.exit(1); } console.log("Supabase API health OK")'
-          curl --fail --silent --show-error --max-time 30 "$API_BASE/cities" -o /tmp/sjelle-cities.json
+          CITY_STATUS=$(curl --silent --show-error --max-time 30 "$API_BASE/cities" -o /tmp/sjelle-cities.json -w "%{http_code}")
+          echo "City endpoint HTTP status: $CITY_STATUS"
+          cat /tmp/sjelle-cities.json
+          test "$CITY_STATUS" = "200"
           node -e 'const x=require("/tmp/sjelle-cities.json"); if(!Array.isArray(x.data)) { console.error(JSON.stringify(x)); process.exit(1); } if(x.data.some(c=>c.active || c.rides_enabled || c.food_enabled)) { console.error("Safety check failed: a launch city is enabled"); process.exit(1); } console.log("City API OK; all launch cities remain disabled")'
       - name: Prepare project Pages path
         run: |
