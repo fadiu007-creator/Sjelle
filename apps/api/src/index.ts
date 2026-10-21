@@ -273,12 +273,30 @@ export default {
       if (!configured(env)) {
         return response({ ok: false, error: { code: "BACKEND_NOT_CONFIGURED", request_id: requestId } }, 503, requestId, origin, env);
       }
+      const missing = [
+        !env.SUPABASE_PUBLISHABLE_KEY && "SUPABASE_PUBLISHABLE_KEY",
+        !env.ALLOWED_ORIGIN && "ALLOWED_ORIGIN",
+        !env.ROUTING_API_URL && "ROUTING_API_URL",
+        !env.GEOCODING_API_URL && "GEOCODING_API_URL",
+      ].filter((key): key is string => Boolean(key));
+      if (missing.length) {
+        return response({
+          ok: false,
+          error: { code: "ENVIRONMENT_NOT_CONFIGURED", missing, request_id: requestId },
+        }, 503, requestId, origin, env);
+      }
       try {
         const result = await databaseRequest(env, "sjelle_cities?select=id&limit=1");
         if (!result.ok) {
           return response({ ok: false, error: { code: "DATABASE_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
         }
-        return response({ ok: true, service: "sjelle-api", database: "reachable", request_id: requestId }, 200, requestId, origin, env);
+        return response({
+          ok: true,
+          service: "sjelle-api",
+          database: "reachable",
+          providers: { routing: "configured", geocoding: "configured" },
+          request_id: requestId,
+        }, 200, requestId, origin, env);
       } catch {
         return response({ ok: false, error: { code: "DATABASE_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
       }
