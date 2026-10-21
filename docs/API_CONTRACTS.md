@@ -69,7 +69,7 @@ Base path: `/api/v1`. JSON request/response. Authenticated requests use Supabase
 ## Support and safety
 - `GET /support-tickets` — authenticated requester sees only their own tickets (up to 50, newest first).
 - `POST /support-tickets` — authenticated user opens a ticket with `category` (`ride|food_order|payment|safety|driver|restaurant|account|other`) and a 10–3,000 character `description`; optional `ride_id` or `order_id` may be linked, but not both.
-- Linked ride/order ownership is checked server-side before ticket creation; another user's ride/order cannot be attached. Tickets begin in `open` status. Support staff assignment and status updates remain an operations follow-up.
+- Linked ride/order ownership is checked server-side before ticket creation; another user's ride/order cannot be attached. Tickets begin in `open` status. `GET /admin/support-tickets?status=open|in_progress|resolved|closed` — admin-only queue. `PATCH /admin/support-tickets/{id}` accepts a valid status; it assigns the current admin when `assigned_to` is omitted and writes an audit record. Customer access is restricted to the caller's own tickets.
 
 ## State and idempotency
 Ride statuses: `searching, driver_assigned, driver_arriving, driver_arrived, in_progress, completed, cancelled_by_customer, cancelled_by_driver, cancelled_by_platform, no_driver_found`.
