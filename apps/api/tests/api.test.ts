@@ -187,10 +187,10 @@ test("admin route configuration requires an authenticated admin", async () => {
 
 test("driver cannot go offline while an assigned ride is active", async () => {
   const originalFetch = globalThis.fetch;
-  const calls: string[] = [];
+  const calls: Array<{ url: string; method: string }> = [];
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    calls.push(url);
+    calls.push({ url, method: init?.method ?? "GET" });
     if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
     if (url.includes("sjelle_driver_profiles?")) {
       return new Response(JSON.stringify([{ user_id: "11111111-1111-4111-8111-111111111111", review_status: "approved", city_id: "22222222-2222-4222-8222-222222222222", selected_mode: "ride" }]), { status: 200 });
@@ -213,9 +213,9 @@ test("driver cannot go offline while an assigned ride is active", async () => {
     const body = await response.json() as { error: { code: string } };
     assert.equal(response.status, 409);
     assert.equal(body.error.code, "DRIVER_HAS_ACTIVE_JOB");
-    assert.ok(calls.some(url => url.includes("sjelle_rides?")));
-    assert.ok(calls.some(url => url.includes("sjelle_delivery_jobs?")));
-    assert.equal(calls.some(url => url.includes("sjelle_driver_profiles?") && url.includes("PATCH")), false);
+    assert.ok(calls.some(call => call.url.includes("sjelle_rides?")));
+    assert.ok(calls.some(call => call.url.includes("sjelle_delivery_jobs?")));
+    assert.equal(calls.some(call => call.url.includes("sjelle_driver_profiles?") && call.method === "PATCH"), false);
   } finally {
     globalThis.fetch = originalFetch;
   }
