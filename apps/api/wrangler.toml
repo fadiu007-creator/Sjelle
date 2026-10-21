@@ -8,6 +8,16 @@ directory = "../customer"
 binding = "ASSETS"
 run_worker_first = ["/api/*"]
 
+[env.staging.assets]
+directory = "../customer"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+
+[env.production.assets]
+directory = "../customer"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+
 [triggers]
 crons = ["* * * * *"]
 
