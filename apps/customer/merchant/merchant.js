@@ -1,4 +1,4 @@
-const API="/api/v1";
+const API = "https://saavqlbwffrwxingbnri.supabase.co/functions/v1/sjelle-api/api/v1";
 function button(label,cls,handler){const b=document.createElement("button");b.type="button";b.className=cls;b.textContent=label;b.addEventListener("click",handler);return b;}
 const $=s=>document.querySelector(s);$("#year").textContent=String(new Date().getFullYear());
 function alertMsg(t,k=""){const e=$("#merchant-alert");e.textContent=t;if(k)e.dataset.kind=k;else delete e.dataset.kind;}
