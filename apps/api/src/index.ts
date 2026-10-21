@@ -1336,7 +1336,7 @@ export default {
         && !Number.isNaN(Date.parse(value + "T00:00:00.000Z"))
         && new Date(value + "T00:00:00.000Z").toISOString().slice(0, 10) === value;
       if (!isDate(from) || !isDate(to) || from > to
-        || Date.parse(to + "T00:00:00.000Z") - Date.parse(from + "T00:00:00.000Z") > 366 * 86400000) {
+        || Date.parse(to + "T00:00:00.000Z") - Date.parse(from + "T00:00:00.000Z") >= 366 * 86400000) {
         return response({ error: { code: "INVALID_DATE_RANGE", message: "Use valid YYYY-MM-DD dates; from must be on or before to and the range cannot exceed 366 days.", request_id: requestId } }, 400, requestId, origin, env);
       }
 
@@ -1357,10 +1357,17 @@ export default {
         const totals = new Map<string, { entry_count: number; net_amount_cents: number }>();
         for (const row of rows) {
           const amount = Number(row.amount_cents);
-          if (!Number.isSafeInteger(amount)) return response({ error: { code: "RECONCILIATION_DATA_INVALID", request_id: requestId } }, 503, requestId, origin, env);
+          if (!Number.isSafeInteger(amount) || row.currency !== "EUR"
+            || typeof row.account_type !== "string" || row.account_type.length === 0) {
+            return response({ error: { code: "RECONCILIATION_DATA_INVALID", request_id: requestId } }, 503, requestId, origin, env);
+          }
           const total = totals.get(row.account_type) ?? { entry_count: 0, net_amount_cents: 0 };
+          const net = total.net_amount_cents + amount;
+          if (!Number.isSafeInteger(net)) {
+            return response({ error: { code: "RECONCILIATION_TOTAL_OVERFLOW", request_id: requestId } }, 503, requestId, origin, env);
+          }
           total.entry_count += 1;
-          total.net_amount_cents += amount;
+          total.net_amount_cents = net;
           totals.set(row.account_type, total);
         }
         return response({
