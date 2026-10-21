@@ -1059,6 +1059,32 @@ export default {
         if (!profile) return response({ error: { code: "DRIVER_APPLICATION_REQUIRED", request_id: requestId } }, 409, requestId, origin, env);
         const mode = body.mode === undefined ? profile.selected_mode : String(body.mode);
         if (mode !== "ride" && mode !== "delivery") return response({ error: { code: "INVALID_AVAILABILITY", request_id: requestId } }, 400, requestId, origin, env);
+
+        // Never let a driver go offline or switch modes while a job is active.
+        // The database remains authoritative for acceptance and job transitions;
+        // this guard prevents ordinary availability changes from hiding an assigned job.
+        if (!body.online || mode !== profile.selected_mode) {
+          const [ridesResponse, jobsResponse] = await Promise.all([
+            databaseRequest(env, "sjelle_rides?driver_id=eq." + encodeURIComponent(user.id)
+              + "&status=in.(driver_assigned,driver_arriving,driver_arrived,in_progress)&select=id&limit=1"),
+            databaseRequest(env, "sjelle_delivery_jobs?driver_id=eq." + encodeURIComponent(user.id)
+              + "&status=in.(assigned,arriving,arrived,in_progress)&select=id&limit=1"),
+          ]);
+          if (!ridesResponse.ok || !jobsResponse.ok) {
+            return response({ error: { code: "ACTIVE_JOB_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+          }
+          const [rides, jobs] = await Promise.all([parseJson(ridesResponse), parseJson(jobsResponse)]);
+          if ((Array.isArray(rides) && rides.length > 0) || (Array.isArray(jobs) && jobs.length > 0)) {
+            return response({
+              error: {
+                code: "DRIVER_HAS_ACTIVE_JOB",
+                message: "Finish or cancel the active job before going offline or changing mode.",
+                request_id: requestId,
+              },
+            }, 409, requestId, origin, env);
+          }
+        }
+
         if (body.online && profile.review_status !== "approved") return response({ error: { code: "DRIVER_NOT_APPROVED", request_id: requestId } }, 409, requestId, origin, env);
         if (body.online) {
           const [docsResponse, vehicleResponse, cityResponse] = await Promise.all([
