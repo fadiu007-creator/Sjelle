@@ -544,7 +544,7 @@ test("admin reconciliation rejects invalid date ranges before reading ledger ent
     throw new Error("Invalid reconciliation date range must be rejected before ledger access");
   };
   try {
-    const result = await worker.fetch(new Request("https://api.example/api/v1/admin/reconciliation?from=2026-10-22&to=2026-10-01", {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/admin/reconciliation?from=2025-01-01&to=2026-01-02", {
       method: "GET",
       headers: { authorization: "Bearer test-token" },
     }), {
@@ -610,4 +610,45 @@ test("admin reconciliation returns signed ledger totals grouped by account type"
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+
+test("admin reconciliation fails closed when account totals overflow safe integer cents", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_user_roles?")) return new Response(JSON.stringify([{ role: "admin" }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_ledger_entries?")) return new Response(JSON.stringify([
+      { id: "1", related_ride_id: "r1", related_order_id: null, account_type: "driver_cash_collected", account_user_id: "d1", amount_cents: "9007199254740991", currency: "EUR", entry_type: "test", idempotency_key: "k1", metadata: {}, created_at: "2026-10-21T10:00:00Z" },
+      { id: "2", related_ride_id: "r2", related_order_id: null, account_type: "driver_cash_collected", account_user_id: "d1", amount_cents: "1", currency: "EUR", entry_type: "test", idempotency_key: "k2", metadata: {}, created_at: "2026-10-21T10:00:01Z" }
+    ]), { status: 200 });
+    throw new Error("Unexpected reconciliation request: " + url);
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/admin/reconciliation?from=2026-10-21&to=2026-10-21", { method: "GET", headers: { authorization: "Bearer test-token" } }), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example", SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key", SUPABASE_SERVICE_ROLE_KEY: "service-test-key"
+    } as never);
+    assert.equal(result.status, 503);
+    assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "RECONCILIATION_TOTAL_OVERFLOW");
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+
+test("admin reconciliation rejects non-EUR ledger rows instead of mixing currencies", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_user_roles?")) return new Response(JSON.stringify([{ role: "admin" }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_ledger_entries?")) return new Response(JSON.stringify([{ id: "1", related_ride_id: null, related_order_id: "o1", account_type: "driver_cash_collected", account_user_id: "d1", amount_cents: "100", currency: "USD", entry_type: "test", idempotency_key: "k1", metadata: {}, created_at: "2026-10-21T10:00:00Z" }]), { status: 200 });
+    throw new Error("Unexpected reconciliation request: " + url);
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/admin/reconciliation?from=2026-10-21&to=2026-10-21", { method: "GET", headers: { authorization: "Bearer test-token" } }), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example", SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key", SUPABASE_SERVICE_ROLE_KEY: "service-test-key"
+    } as never);
+    assert.equal(result.status, 503);
+    assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "RECONCILIATION_DATA_INVALID");
+  } finally { globalThis.fetch = originalFetch; }
 });
