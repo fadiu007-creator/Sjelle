@@ -372,3 +372,91 @@ test("delivery cash cannot be confirmed before delivery is complete", async () =
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("driver availability uses the atomic database RPC after preflight checks", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls: Array<{ url: string; method: string; body?: string }> = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    calls.push({ url, method: init?.method ?? "GET", body: typeof init?.body === "string" ? init.body : undefined });
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    }
+    if (url.includes("sjelle_driver_profiles?")) {
+      return new Response(JSON.stringify([{
+        user_id: "11111111-1111-4111-8111-111111111111",
+        review_status: "approved",
+        city_id: "22222222-2222-4222-8222-222222222222",
+        selected_mode: "ride",
+      }]), { status: 200 });
+    }
+    if (url.includes("sjelle_rides?") || url.includes("sjelle_delivery_jobs?")) {
+      return new Response("[]", { status: 200 });
+    }
+    if (url.includes("/rpc/sjelle_set_driver_availability")) {
+      return new Response(JSON.stringify({ online: false, mode: "ride" }), { status: 200 });
+    }
+    return new Response("[]", { status: 200 });
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/availability", {
+      method: "PATCH",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ online: false }),
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { data: { online: boolean; mode: string } };
+    assert.equal(response.status, 200);
+    assert.equal(body.data.online, false);
+    assert.equal(body.data.mode, "ride");
+    assert.ok(calls.some(call => call.url.includes("/rpc/sjelle_set_driver_availability") && call.method === "POST"));
+    assert.equal(calls.some(call => call.url.includes("sjelle_driver_profiles?") && call.method === "PATCH"), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("atomic driver availability RPC remains authoritative if a job is assigned during preflight", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    }
+    if (url.includes("sjelle_driver_profiles?")) {
+      return new Response(JSON.stringify([{
+        user_id: "11111111-1111-4111-8111-111111111111",
+        review_status: "approved",
+        city_id: "22222222-2222-4222-8222-222222222222",
+        selected_mode: "ride",
+      }]), { status: 200 });
+    }
+    if (url.includes("sjelle_rides?") || url.includes("sjelle_delivery_jobs?")) {
+      return new Response("[]", { status: 200 });
+    }
+    if (url.includes("/rpc/sjelle_set_driver_availability")) {
+      return new Response(JSON.stringify({ message: "DRIVER_HAS_ACTIVE_JOB" }), { status: 409 });
+    }
+    return new Response("[]", { status: 200 });
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/availability", {
+      method: "PATCH",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ online: false }),
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 409);
+    assert.equal(body.error.code, "DRIVER_HAS_ACTIVE_JOB");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
