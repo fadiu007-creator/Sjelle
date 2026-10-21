@@ -4,11 +4,12 @@ Sjelle is deployed at https://fadiu007-creator.github.io/Sjelle/ and its API run
 
 ## Current verified state
 
-- The latest GitHub Actions deployment completed successfully, including the browser smoke test for the homepage, driver, merchant and admin portals.
-- The API CI and live API deployment smoke checks passed.
-- Six candidate cities exist, but all remain disabled.
-- The Sjelle operational tables currently have no driver profiles, vehicles, restaurants, menus, fixed routes, service areas or admin roles.
-- The static pages and API are deployed; live authenticated end-to-end ride and food-order lifecycle testing is still required.
+- The static site and Supabase Edge Function API are deployed. API CI and live API smoke checks passed on the latest code change.
+- The browser smoke test exposed a stale English-era signup-label assertion after the Kosovo Albanian localization; the assertion has been corrected and the updated deployment/browser run is being verified.
+- All six candidate cities (Prishtina, Ferizaj, Prizren, Gjilan, Mitrovica and Peja) exist and remain disabled for rides and food delivery.
+- Current live database check: one driver application is pending review and offline; there are no vehicles, restaurants, menu items or service-area polygons, and no Sjelle administrator role is assigned.
+- The requested aa@aa.aa address is not currently a confirmed Supabase Auth account. Create and confirm that account before running the first-admin bootstrap SQL.
+- Live authenticated end-to-end ride and food-order lifecycle testing is still required; public service must remain disabled until supply and operating gates are met.
 
 ## 1. Create the first administrator safely
 
