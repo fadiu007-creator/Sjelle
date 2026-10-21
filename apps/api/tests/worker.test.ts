@@ -405,3 +405,93 @@ test("driver cannot complete a cash job without confirming collection", async ()
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("driver completion records successful cash confirmation through the atomic job RPC", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls: Array<{ url: string; body?: string }> = [];
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    calls.push({ url, body: typeof init?.body === "string" ? init.body : undefined });
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), { status: 200 });
+    }
+    if (url.includes("/rest/v1/rpc/sjelle_driver_update_job")) {
+      return new Response(JSON.stringify({ status: "completed", cash_collected: true }), { status: 200 });
+    }
+    throw new Error("Unexpected backend request");
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/driver/jobs/ride/00000000-0000-4000-8000-000000000001/status", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ status: "completed", cash_collected: true }),
+    }), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(result.status, 200);
+    assert.equal(calls.filter(call => call.url.includes("/rest/v1/rpc/sjelle_driver_update_job")).length, 1);
+    const rpcBody = JSON.parse(calls.find(call => call.url.includes("/rest/v1/rpc/sjelle_driver_update_job"))!.body!);
+    assert.equal(rpcBody.p_job_kind, "ride");
+    assert.equal(rpcBody.p_next_status, "completed");
+    assert.equal(rpcBody.p_cash_collected, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("delivery cannot be marked delivered when cash confirmation is missing", async () => {
+  const originalFetch = globalThis.fetch;
+  let rpcCalls = 0;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), { status: 200 });
+    if (url.includes("/rest/v1/rpc/sjelle_driver_update_job")) rpcCalls += 1;
+    throw new Error("Missing cash confirmation must not reach the RPC");
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/driver/jobs/delivery/00000000-0000-4000-8000-000000000002/status", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ status: "delivered" }),
+    }), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(result.status, 400);
+    assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "CASH_COLLECTION_CONFIRMATION_REQUIRED");
+    assert.equal(rpcCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("driver job status rejects a non-boolean cash confirmation before backend mutation", async () => {
+  const originalFetch = globalThis.fetch;
+  let rpcCalls = 0;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), { status: 200 });
+    if (url.includes("/rest/v1/rpc/sjelle_driver_update_job")) rpcCalls += 1;
+    throw new Error("Invalid cash confirmation must not reach the RPC");
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/driver/jobs/ride/00000000-0000-4000-8000-000000000001/status", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ status: "in_progress", cash_collected: "yes" }),
+    }), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(result.status, 400);
+    assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "INVALID_JOB_TRANSITION");
+    assert.equal(rpcCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
