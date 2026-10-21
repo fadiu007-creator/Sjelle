@@ -65,6 +65,12 @@ Base path: `/api/v1`. JSON request/response. Authenticated requests use Supabase
 - `GET /admin/reconciliation?from=&to=`; `POST /admin/ledger-adjustments` — append-only, reason-required, audited.
 - `GET /admin/audit-logs?cursor=` — privileged, paginated, read-only.
 
+
+## Support and safety
+- `GET /support-tickets` — authenticated requester sees only their own tickets (up to 50, newest first).
+- `POST /support-tickets` — authenticated user opens a ticket with `category` (`ride|food_order|payment|safety|driver|restaurant|account|other`) and a 10–3,000 character `description`; optional `ride_id` or `order_id` may be linked, but not both.
+- Linked ride/order ownership is checked server-side before ticket creation; another user's ride/order cannot be attached. Tickets begin in `open` status. Support staff assignment and status updates remain an operations follow-up.
+
 ## State and idempotency
 Ride statuses: `searching, driver_assigned, driver_arriving, driver_arrived, in_progress, completed, cancelled_by_customer, cancelled_by_driver, cancelled_by_platform, no_driver_found`.
 Food statuses: `submitted, accepted, preparing, ready_for_pickup, courier_assigned, picked_up, delivered, rejected, cancelled, delivery_failed`.
