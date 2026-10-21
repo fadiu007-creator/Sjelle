@@ -1277,6 +1277,11 @@ export default {
       if (!isRecord(body) || !allowed.includes(String(body.status)) || (body.cash_collected !== undefined && typeof body.cash_collected !== "boolean")) {
         return response({ error: { code: "INVALID_JOB_TRANSITION", request_id: requestId } }, 400, requestId, origin, env);
       }
+      const cashTerminalStatus = (driverJobMatch[1] === "ride" && body.status === "completed")
+        || (driverJobMatch[1] === "delivery" && body.status === "delivered");
+      if (cashTerminalStatus && body.cash_collected !== true) {
+        return response({ error: { code: "CASH_COLLECTION_CONFIRMATION_REQUIRED", message: "Confirm cash collection before completing this job.", request_id: requestId } }, 400, requestId, origin, env);
+      }
       try {
         const result = await databaseRequest(env, "rpc/sjelle_driver_update_job", {
           method: "POST", body: JSON.stringify({ p_driver_id: user.id, p_job_kind: driverJobMatch[1], p_job_id: driverJobMatch[2], p_next_status: body.status, p_cash_collected: body.cash_collected === true }),
