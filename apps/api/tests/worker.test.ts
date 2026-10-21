@@ -878,6 +878,44 @@ test("city activation refuses draft-only service areas before enabling any publi
 });
 
 
+test("city activation requires an approved vehicle for an approved ride driver", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls: Array<{ url: string; method: string }> = [];
+  const cityId = "00000000-0000-4000-8000-000000000010";
+  const driverId = "00000000-0000-4000-8000-000000000099";
+  const area = { type: "Polygon", coordinates: [[[21.0, 42.6], [21.2, 42.6], [21.2, 42.7], [21.0, 42.7], [21.0, 42.6]]] };
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    calls.push({ url, method: init?.method ?? "GET" });
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: driverId }), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_user_roles?")) return new Response(JSON.stringify([{ role: "admin" }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_cities?slug=eq.prishtina")) return new Response(JSON.stringify([{ id: cityId }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_service_areas?")) return new Response(JSON.stringify([{ boundary_geojson: area }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_city_pricing?")) return new Response(JSON.stringify([{ city_id: cityId }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_fixed_route_prices?")) return new Response(JSON.stringify([{ id: "route-1", origin_lat: 42.65, origin_lon: 21.05, destination_lat: 42.66, destination_lon: 21.15 }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_driver_profiles?")) return new Response(JSON.stringify([{ user_id: driverId }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_vehicles?")) return new Response("[]", { status: 200 });
+    throw new Error("Unexpected request during ride launch readiness check: " + url);
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/admin/cities/prishtina/services", {
+      method: "PATCH",
+      headers: { authorization: "Bearer admin-token", "content-type": "application/json" },
+      body: JSON.stringify({ active: true, rides_enabled: true, food_enabled: false, confirm_ready: true, reason: "Vehicle approval is required before rides launch" }),
+    }), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(result.status, 409);
+    assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "NO_APPROVED_VEHICLES");
+    assert.ok(calls.some(call => call.url.includes("/rest/v1/sjelle_vehicles?") && call.url.includes("review_status=eq.approved")));
+    assert.equal(calls.some(call => call.method === "PATCH" && call.url.includes("/rest/v1/sjelle_cities?")), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("city activation rejects fixed routes whose destination falls outside the active service area", async () => {
   const originalFetch = globalThis.fetch;
   const calls: Array<{ url: string; method: string }> = [];
