@@ -11,6 +11,7 @@ on:
       - ".github/workflows/api-ci.yml"
   pull_request:
     paths:
+      - "scripts/**"
       - "apps/api/**"
       - "apps/customer/**"
       - "supabase/functions/**"
