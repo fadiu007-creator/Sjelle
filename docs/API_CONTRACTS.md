@@ -51,6 +51,10 @@ Base path: `/api/v1`. JSON request/response. Authenticated requests use Supabase
 - `POST /driver/offers/{id}/accept`, `/reject` — accept is transactional and may return 409 if expired or already claimed.
 - `GET /driver/jobs/active`, `GET /driver/earnings?from=&to=`.
 
+## Finance and reconciliation
+- GET /admin/reconciliation?from=YYYY-MM-DD&to=YYYY-MM-DD — admin-only read of up to 1,000 ledger entries in the inclusive UTC date range, with signed net totals grouped by account type. Defaults to the latest 30 calendar days; rejects invalid dates, reversed ranges, and ranges over 366 days. Response marks possibly_truncated when the 1,000-row limit is reached, so this endpoint must not be treated as a complete export when truncated.
+- Cash collection ledger postings are created by database triggers when a cash ride is completed and marked collected or a cash delivery is delivered and marked collected. A deterministic unique idempotency key prevents duplicate customer-due/driver-collected entries. This is not yet a full commission, merchant settlement, cash handover, or dispute workflow.
+
 ## Merchant and admin
 - `GET /merchant/restaurants` — only assigned restaurants.
 - `PATCH /merchant/restaurants/{id}/hours`, `PATCH /merchant/menu-items/{id}` — staff with appropriate permissions.
