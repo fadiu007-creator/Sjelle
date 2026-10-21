@@ -781,7 +781,7 @@ test("city activation is blocked until a valid active service area exists", asyn
   const requestedUrls: string[] = [];
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    requestedUrls.push(url);
+    requestedUrls.push(url + " " + String(init?.method || "GET"));
     if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
     if (url.includes("/sjelle_user_roles?") && url.includes("role=eq.admin")) return new Response(JSON.stringify([{ role: "admin" }]), { status: 200, headers: { "content-type": "application/json" } });
     if (url.includes("/sjelle_cities?slug=eq.prishtina")) return new Response(JSON.stringify([{ id: cityId }]), { status: 200, headers: { "content-type": "application/json" } });
