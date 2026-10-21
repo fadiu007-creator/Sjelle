@@ -643,3 +643,48 @@ test("duplicate driver applications are rejected by the atomic database function
     globalThis.fetch = originalFetch;
   }
 });
+
+test("successful driver application returns pending status after atomic RPC succeeds", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls: Array<{ url: string; method: string; body?: string }> = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    calls.push({ url, method: init?.method ?? "GET", body: typeof init?.body === "string" ? init.body : undefined });
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    }
+    if (url.includes("/sjelle_cities?slug=eq.prishtina")) {
+      return new Response(JSON.stringify([{ id: "22222222-2222-4222-8222-222222222222", slug: "prishtina" }]), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.endsWith("/rpc/sjelle_apply_for_driver")) {
+      return new Response(JSON.stringify({
+        application_status: "pending",
+        city_id: "22222222-2222-4222-8222-222222222222",
+        mode: "ride",
+        online: false,
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    throw new Error("Unexpected database request: " + url);
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/apply", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ city: "prishtina", mode: "ride" }),
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { data: { application_status: string; city: string; mode: string; online: boolean } };
+    assert.equal(response.status, 201);
+    assert.deepEqual(body.data, { application_status: "pending", city: "prishtina", mode: "ride", online: false });
+    assert.ok(calls.some(call => call.url.endsWith("/rpc/sjelle_apply_for_driver") && call.method === "POST"));
+    assert.equal(calls.some(call => call.url.includes("/sjelle_driver_profiles?") || call.url.includes("/sjelle_user_roles")), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
