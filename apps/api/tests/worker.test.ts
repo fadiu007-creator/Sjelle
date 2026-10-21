@@ -781,3 +781,57 @@ test("admin support status update validates status before database writes", asyn
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("ride quotes accept valid MultiPolygon service areas including non-first polygons", async () => {
+  const originalFetch = globalThis.fetch;
+  const cityId = "00000000-0000-4000-8000-000000000010";
+  const quoteId = "00000000-0000-4000-8000-000000000020";
+  const area = {
+    type: "MultiPolygon",
+    coordinates: [
+      [[[21.0, 42.6], [21.1, 42.6], [21.1, 42.7], [21.0, 42.7], [21.0, 42.6]]],
+      [[[21.3, 42.7], [21.4, 42.7], [21.4, 42.8], [21.3, 42.8], [21.3, 42.7]]],
+    ],
+  };
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_cities?")) return new Response(JSON.stringify([{ id: cityId, slug: "prishtina", active: true, rides_enabled: true }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_service_areas?")) return new Response(JSON.stringify([{ boundary_geojson: area }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_fixed_route_prices?")) return new Response("[]", { status: 200 });
+    if (url.startsWith("https://routing.example/route/v1/driving/")) return new Response(JSON.stringify({ code: "Ok", routes: [{ distance: 1200, duration: 240 }] }), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_city_pricing?")) return new Response(JSON.stringify([{ version: "test-v1", ride_base_fare_cents: 100, ride_minimum_fare_cents: 150, ride_per_km_cents: 50, ride_per_minute_cents: 10 }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_ride_quotes") && init?.method === "POST") return new Response(JSON.stringify([{ id: quoteId, expires_at: "2026-10-21T22:15:00.000Z" }]), { status: 201 });
+    throw new Error("Unexpected request in MultiPolygon service-area test: " + url);
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/ride-quotes", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({
+        city: "prishtina",
+        pickup_label: "Pickup in second polygon",
+        pickup_lat: 42.71,
+        pickup_lon: 21.31,
+        destination_label: "Destination in second polygon",
+        destination_lat: 42.72,
+        destination_lon: 21.32,
+        vehicle_type: "standard",
+      }),
+    }), {
+      APP_ENV: "test",
+      ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+      ROUTING_API_URL: "https://routing.example",
+    } as never);
+    assert.equal(result.status, 201);
+    const body = await result.json() as { data?: { quote_id?: string; amount_cents?: number } };
+    assert.equal(body.data?.quote_id, quoteId);
+    assert.equal(body.data?.amount_cents, 150);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
