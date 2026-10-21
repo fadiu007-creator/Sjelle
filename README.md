@@ -11,8 +11,8 @@ Sjelle is a Kosovo-first ride-hailing and food-delivery platform. One customer e
 - **Payments:** cash initially; online payments only after a supported provider and reconciliation flow are verified
 - **Food dispatch:** courier assignment begins after restaurant acceptance
 - **Driver onboarding:** identity, driving licence and vehicle documents verified before activation
-- **Hosting:** Cloudflare Workers with static customer assets
-- **Backend:** existing Supabase project `zikos` (`saavqlbwffrwxingbnri`), using additive `sjelle_*` database objects to protect unrelated apps
+- **Hosting:** GitHub Pages for the static web portals; existing Cloudflare setup deferred until the owner chooses to configure it
+- **Backend:** existing Supabase project `zikos` (`saavqlbwffrwxingbnri`), using additive `sjelle_*` database objects and a Supabase Edge Function API to protect unrelated apps
 - **No Vercel**
 
 ## Repository structure
@@ -22,7 +22,8 @@ Sjelle is a Kosovo-first ride-hailing and food-delivery platform. One customer e
 - `docs/DRIVER_OPERATIONS.md` — driver status/cash controls and pre-launch verification checklist
 - `supabase/migrations/` — versioned schema migrations, aligned to applied Supabase migration history
 - `apps/customer/` — mobile-first customer web app served as Cloudflare Worker static assets
-- `apps/api/` — Cloudflare Worker API, tests and deployment configuration
+- `apps/api/` — API source, domain tests and compatibility checks
+- `supabase/functions/sjelle-api/` — deployed Supabase Edge Function API runtime and pricing module
 - `apps/customer/driver/` — driver portal (native mobile app still planned)
 - `apps/customer/merchant/` — restaurant onboarding, menu and order portal
 - `apps/customer/admin/` — operations dashboard
