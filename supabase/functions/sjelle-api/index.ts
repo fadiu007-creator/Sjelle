@@ -1685,6 +1685,11 @@ const worker = {
             const inAreaRoutes = Array.isArray(routes) ? routes.filter(route => isRecord(route) && typeof route.origin_lat === "number" && typeof route.origin_lon === "number" && typeof route.destination_lat === "number" && typeof route.destination_lon === "number" && serviceAreas.some(area => pointInServiceArea(route.origin_lat as number,route.origin_lon as number,area.boundary_geojson)) && serviceAreas.some(area => pointInServiceArea(route.destination_lat as number,route.destination_lon as number,area.boundary_geojson))) : [];
             if (!routeResponse.ok || !inAreaRoutes.length) return response({ error: { code: "NO_READY_RIDE_ROUTES", request_id: requestId } }, 409, requestId, origin, env);
             if (!driverResponse.ok || !Array.isArray(drivers) || !drivers.length) return response({ error: { code: "NO_APPROVED_DRIVERS", request_id: requestId } }, 409, requestId, origin, env);
+            const driverIds = drivers.filter(driver => isRecord(driver) && typeof driver.user_id === "string").map(driver => encodeURIComponent(String(driver.user_id)));
+            if (!driverIds.length) return response({ error: { code: "NO_APPROVED_DRIVERS", request_id: requestId } }, 409, requestId, origin, env);
+            const vehicleResponse = await databaseRequest(env, "sjelle_vehicles?driver_id=in.(" + driverIds.join(",") + ")&review_status=eq.approved&select=id&limit=1");
+            const vehicles = await parseJson(vehicleResponse) as unknown[];
+            if (!vehicleResponse.ok || !Array.isArray(vehicles) || !vehicles.length) return response({ error: { code: "NO_APPROVED_VEHICLES", request_id: requestId } }, 409, requestId, origin, env);
           }
         }
         const result = await databaseRequest(env, "sjelle_cities?id=eq." + encodeURIComponent(cityId), {
