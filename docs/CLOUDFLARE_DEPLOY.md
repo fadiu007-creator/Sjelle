@@ -22,6 +22,6 @@ Never put the Supabase service-role key in GitHub source, a client bundle, or a 
 
 ## Deploy
 
-Open GitHub Actions → **Deploy Sjelle to Cloudflare** → **Run workflow**. Choose `staging` first. The workflow runs API tests and TypeScript type checking before deployment. Choose production only after staging is checked.
+Open GitHub Actions → **Deploy Sjelle to Cloudflare** → **Run workflow**. Choose `staging` first and provide the exact HTTPS URL for that Worker (without a trailing slash). The workflow runs API tests and TypeScript type checking before deployment, then checks `/api/v1/health` and `/api/v1/ready`. Readiness must confirm database connectivity. Choose production only after staging is checked.
 
 The workflow is manual by design; commits do not automatically deploy to a live Worker. Deployment has not been run from this repository yet.
