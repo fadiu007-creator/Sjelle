@@ -1678,11 +1678,11 @@ const worker = {
           }
           if (body.rides_enabled) {
             const [routeResponse, driverResponse] = await Promise.all([
-              databaseRequest(env, "sjelle_fixed_route_prices?city_id=eq." + encodeURIComponent(cityId) + "&active=eq.true&origin_lat=not.is.null&origin_lon=not.is.null&destination_lat=not.is.null&destination_lon=not.is.null&select=id,origin_lat,origin_lon&limit=100"),
+              databaseRequest(env, "sjelle_fixed_route_prices?city_id=eq." + encodeURIComponent(cityId) + "&active=eq.true&origin_lat=not.is.null&origin_lon=not.is.null&destination_lat=not.is.null&destination_lon=not.is.null&select=id,origin_lat,origin_lon,destination_lat,destination_lon&limit=100"),
               databaseRequest(env, "sjelle_driver_profiles?city_id=eq." + encodeURIComponent(cityId) + "&review_status=eq.approved&select=user_id&limit=1"),
             ]);
             const [routes, drivers] = await Promise.all([parseJson(routeResponse), parseJson(driverResponse)]);
-            const inAreaRoutes = Array.isArray(routes) ? routes.filter(route => isRecord(route) && typeof route.origin_lat === "number" && typeof route.origin_lon === "number" && serviceAreas.some(area => pointInServiceArea(route.origin_lat as number,route.origin_lon as number,area.boundary_geojson))) : [];
+            const inAreaRoutes = Array.isArray(routes) ? routes.filter(route => isRecord(route) && typeof route.origin_lat === "number" && typeof route.origin_lon === "number" && typeof route.destination_lat === "number" && typeof route.destination_lon === "number" && serviceAreas.some(area => pointInServiceArea(route.origin_lat as number,route.origin_lon as number,area.boundary_geojson)) && serviceAreas.some(area => pointInServiceArea(route.destination_lat as number,route.destination_lon as number,area.boundary_geojson))) : [];
             if (!routeResponse.ok || !inAreaRoutes.length) return response({ error: { code: "NO_READY_RIDE_ROUTES", request_id: requestId } }, 409, requestId, origin, env);
             if (!driverResponse.ok || !Array.isArray(drivers) || !drivers.length) return response({ error: { code: "NO_APPROVED_DRIVERS", request_id: requestId } }, 409, requestId, origin, env);
           }
