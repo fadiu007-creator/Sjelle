@@ -1,7 +1,7 @@
 const API = "https://saavqlbwffrwxingbnri.supabase.co/functions/v1/sjelle-api/api/v1";const $=s=>document.querySelector(s);$("#year").textContent=String(new Date().getFullYear());let cities=[];let currentCity=null;
 function alertMsg(t,k=""){const e=$("#admin-alert");e.textContent=t;if(k)e.dataset.kind=k;else delete e.dataset.kind;}
 function token(){try{return JSON.parse(sessionStorage.getItem("sjelle.session")||"null")?.access_token||"";}catch{return "";}}
-async function api(path,options={}){const headers=new Headers(options.headers||{});headers.set("accept","application/json");if(token())headers.set("authorization","Bearer "+token());if(options.body&&!headers.has("content-type"))headers.set("content-type","application/json");const res=await fetch(API+path,{...options,headers,cache:"no-store"});let body;try{body=await res.json();}catch{body=null;}if(!res.ok){const e=new Error(body?.error?.message||body?.error?.code||"Kërkesa dështoi.");e.code=body?.error?.code;throw e;}return body;}
+async function api(path,options={}){const headers=new Headers(options.headers||{});headers.set("accept","application/json");if(token())headers.set("authorization","Bearer "+token());if(options.body&&!headers.has("content-type"))headers.set("content-type","application/json");const res=await fetch(API+path,{...options,headers,cache:"no-store"});let body;try{body=await res.json();}catch{body=null;}if(!res.ok){const e=new Error(body?.error?.message||body?.error?.code||"Kërkesa s’u krye.");e.code=body?.error?.code;throw e;}return body;}
 function cents(value){return Math.round(Number(value||0)*100);}
 function euros(c){return (Number(c||0)/100).toFixed(2);}
 function makeCard(title,description){const c=document.createElement("article");c.className="portal-list-card";const h=document.createElement("strong");h.textContent=title;c.append(h);if(description){const p=document.createElement("p");p.textContent=description;c.append(p);}return c;}
@@ -115,28 +115,28 @@ if(reconciliationForm){
 }
 
 
-const supportStatusLabel = {open:"E hapur",in_progress:"Në shqyrtim",resolved:"E zgjidhur",closed:"E mbyllur"};
+const supportStatusLabel = {open:"E hapur",in_progress:"Në verifikim",resolved:"E zgjidhur",closed:"E mbyllur"};
 const supportCategoryLabel = {ride:"Udhëtim",food_order:"Porosi ushqimi",payment:"Pagesa",safety:"Siguria",driver:"Shoferi",restaurant:"Restoranti",account:"Llogaria",other:"Tjetër"};
 async function loadSupportTickets(){
  const root=$("#admin-support-tickets");if(!root)return;
  root.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Po ngarkohen kërkesat…"}));
  try{
   const result=await api("/admin/support-tickets");const tickets=result.data||[];root.replaceChildren();
-  if(!tickets.length){root.append(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Nuk ka kërkesa për ndihmë."}));return;}
+  if(!tickets.length){root.append(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"S’ka kërkesa për ndihmë."}));return;}
   for(const ticket of tickets){
    const c=makeCard((supportCategoryLabel[ticket.category]||"Kërkesë")+" · "+(supportStatusLabel[ticket.status]||ticket.status),ticket.description);
    const meta=document.createElement("p");meta.className="portal-muted";meta.textContent="Krijuar: "+new Date(ticket.created_at).toLocaleString("sq-XK")+" · Klienti: "+ticket.requester_id+(ticket.ride_id?" · Udhëtimi: "+ticket.ride_id:"")+(ticket.order_id?" · Porosia: "+ticket.order_id:"")+(ticket.assigned_to?" · Caktuar: "+ticket.assigned_to:"");c.append(meta);
    const actions=document.createElement("div");actions.className="portal-list-actions";
-   for(const [status,label] of [["open","Rihap"],["in_progress","Merr në shqyrtim"],["resolved","Zgjidhur"],["closed","Mbyll"]]){
+   for(const [status,label] of [["open","Rihap"],["in_progress","Merre në shqyrtim"],["resolved","Zgjidhur"],["closed","Mbyll"]]){
     if(status===ticket.status)continue;
     actions.append(button(label,status==="resolved"?"primary-button":"secondary-button",async()=>{
      try{await api("/admin/support-tickets/"+ticket.id,{method:"PATCH",body:JSON.stringify({status})});alertMsg("Statusi i kërkesës u ruajt dhe u regjistrua.","success");await loadSupportTickets();}
-     catch(err){alertMsg("Kërkesa nuk u përditësua: "+err.message,"error");}
+     catch(err){alertMsg("Kërkesa s’u përditësua: "+err.message,"error");}
     }));
    }
    c.append(actions);root.append(c);
   }
- }catch(err){root.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Kërkesat nuk mund të ngarkohen: "+err.message}));}
+ }catch(err){root.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Kërkesat s’u ngarkuan: "+err.message}));}
 }
 $("#support-refresh")?.addEventListener("click",loadSupportTickets);
 loadSupportTickets();
