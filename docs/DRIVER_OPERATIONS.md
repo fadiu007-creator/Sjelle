@@ -36,6 +36,19 @@ Relevant validation errors:
 - `UNAUTHENTICATED`: missing or invalid access token.
 - `DRIVER_NOT_APPROVED` / `JOB_NOT_FOUND`: database-owned eligibility and resource checks.
 
+
+## Atomic driver availability and assignment
+
+Driver availability now uses the service-role-only RPC `sjelle_set_driver_availability`. The RPC locks the driver's profile row, checks for an active ride/delivery before going offline or changing mode, and then updates availability in the same transaction.
+
+Database triggers `sjelle_guard_ride_driver_assignment` and `sjelle_guard_delivery_driver_assignment` lock that same driver row before a job assignment. They reject assignment if the driver is offline, unapproved, in the wrong mode, or already assigned to another active job. This shared row lock serializes availability changes and assignment attempts.
+
+- [ ] Run API tests and type-check after the latest commits.
+- [ ] Verify both RPC execution grants remain limited to `service_role`.
+- [ ] In staging, test simultaneous availability-off and offer acceptance; exactly one operation must win safely.
+- [ ] Test that an active ride blocks delivery assignment and an active delivery blocks ride assignment.
+- [ ] Confirm the driver can go offline and switch modes after the active job reaches a terminal state.
+
 ## Cash-control limitation
 
 A boolean sent by a driver is a declaration, not proof of payment. The current API guard prevents obvious premature/missing confirmations, but must not be treated as a cash ledger, commission calculation, or reconciliation system.
