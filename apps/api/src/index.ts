@@ -77,7 +77,7 @@ async function enforceRequestBodyLimit(request: Request, maxBytes: number): Prom
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return { request: new Request(request, { body: bytes }), tooLarge: false };
+  return { request: new Request(request.url, { method: request.method, headers: request.headers, body: bytes, redirect: request.redirect, signal: request.signal }), tooLarge: false };
 }
 
 function configured(env: Env): env is Env & { SUPABASE_URL: string; SUPABASE_SERVICE_ROLE_KEY: string } {
