@@ -1,4 +1,4 @@
-const API="/api/v1";
+const API = "https://saavqlbwffrwxingbnri.supabase.co/functions/v1/sjelle-api/api/v1";
 const $=s=>document.querySelector(s);
 const state={profile:null,vehicles:[],documents:[],offers:[],jobs:{rides:[],deliveries:[]}};
 $("#year").textContent=String(new Date().getFullYear());
