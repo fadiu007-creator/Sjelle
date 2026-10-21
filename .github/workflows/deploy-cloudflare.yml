@@ -10,6 +10,10 @@ on:
         options:
           - staging
           - production
+      worker_url:
+        description: Exact HTTPS URL of the deployed environment Worker (without trailing slash)
+        type: string
+        required: true
 
 permissions:
   contents: read
@@ -51,3 +55,18 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Verify deployed Worker health and readiness
+        env:
+          WORKER_URL: ${{ inputs.worker_url }}
+        run: |
+          case "$WORKER_URL" in
+            https://*) ;;
+            *) echo "worker_url must be an HTTPS URL"; exit 1 ;;
+          esac
+          case "$WORKER_URL" in
+            */) echo "worker_url must not end with a slash"; exit 1 ;;
+          esac
+          curl --fail --silent --show-error --max-time 20 "$WORKER_URL/api/v1/health" -o /tmp/sjelle-health.json
+          node -e 'const x=require("/tmp/sjelle-health.json"); if(x.ok!==true || x.service!=="sjelle-api") process.exit(1); console.log("Health endpoint OK")'
+          curl --fail --silent --show-error --max-time 20 "$WORKER_URL/api/v1/ready" -o /tmp/sjelle-ready.json
+          node -e 'const x=require("/tmp/sjelle-ready.json"); if(x.ok!==true || x.database!=="reachable") { console.error(JSON.stringify(x)); process.exit(1); } console.log("Readiness and database connectivity OK")'
