@@ -4,11 +4,12 @@ Sjelle is deployed at https://fadiu007-creator.github.io/Sjelle/ and its API run
 
 ## Current verified state
 
-- The static site is published at GitHub Pages and the Supabase Edge Function `sjelle-api` is active at version 17. API CI and the custom Pages workflow are configured, but CI status for the latest code commits is not confirmed; do not mark the latest tests as passing until GitHub reports success.
+- The static site is published at GitHub Pages and the Supabase Edge Function `sjelle-api` is active at version 17. The API source, deployed Edge Function source and admin activation guard have parity checks in CI. The latest commits currently have no reported CI status or workflow run in the connected GitHub results; treat tests/deployment of the latest static portal changes as unverified until Actions confirms success.
 - `fatmirsejdiu007@gmail.com` is a confirmed Supabase Auth account and now has the `admin` role in `public.sjelle_user_roles`. Sign in to the admin portal and verify access with a fresh session.
 - All six candidate cities (Prishtina, Ferizaj, Prizren, Gjilan, Mitrovica and Peja) remain disabled for rides and food delivery.
 - Six **inactive draft reference boundaries** have been added for the six candidate cities from the public GeoJSON-Kosova municipality dataset. They are simplified reference polygons, not approved operational coverage. The source includes OSM-derived geoBoundaries data: https://github.com/Learti82/GeoJSON-Kosova. Review each boundary in the admin portal, especially the Mitrovica city mapping, and replace it with the intended operational zone before activation.
 - Live database audit (2026-10-22): one driver profile exists but none are approved; there are zero vehicles, restaurants, menu items, and active fixed routes. All six cities have zero active service areas and zero active city-pricing versions. Keep all services disabled until real coverage, pricing and supply are configured.
+- The admin portal now lets an operator deactivate a city without ticking the readiness checkbox; activating a city still requires explicit confirmation, a reason and server-verified supply/coverage/pricing gates.
 - Live authenticated end-to-end ride and food-order lifecycle testing is still required; public service must remain disabled until supply and operating gates are met.
 
 ## 1. First administrator
