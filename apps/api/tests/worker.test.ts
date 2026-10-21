@@ -961,3 +961,47 @@ test("city activation rejects fixed routes whose destination falls outside the a
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("food delivery activation requires an approved delivery driver and vehicle", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls: Array<{ url: string; method: string }> = [];
+  const cityId = "00000000-0000-4000-8000-000000000010";
+  const restaurantId = "00000000-0000-4000-8000-000000000020";
+  const area = {
+    type: "Polygon",
+    coordinates: [[[21.0, 42.6], [21.2, 42.6], [21.2, 42.7], [21.0, 42.7], [21.0, 42.6]]],
+  };
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    calls.push({ url, method: init?.method ?? "GET" });
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_user_roles?")) return new Response(JSON.stringify([{ role: "admin" }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_cities?slug=eq.prishtina")) return new Response(JSON.stringify([{ id: cityId }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_service_areas?")) return new Response(JSON.stringify([{ boundary_geojson: area }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_city_pricing?")) return new Response(JSON.stringify([{ city_id: cityId }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_restaurants?")) return new Response(JSON.stringify([{ id: restaurantId, latitude: 42.65, longitude: 21.05 }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_menu_items?")) return new Response(JSON.stringify([{ id: "00000000-0000-4000-8000-000000000030" }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_driver_profiles?")) return new Response("[]", { status: 200 });
+    throw new Error("Unexpected request in food delivery readiness test: " + url);
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/admin/cities/prishtina/services", {
+      method: "PATCH",
+      headers: { authorization: "Bearer admin-token", "content-type": "application/json" },
+      body: JSON.stringify({
+        active: true, rides_enabled: false, food_enabled: true,
+        confirm_ready: true, reason: "Food delivery requires courier supply",
+      }),
+    }), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(result.status, 409);
+    assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "NO_APPROVED_DELIVERY_DRIVERS");
+    assert.equal(calls.some(call => call.method === "PATCH" && call.url.includes("/rest/v1/sjelle_cities?")), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
