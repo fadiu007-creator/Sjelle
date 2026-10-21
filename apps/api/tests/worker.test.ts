@@ -23,6 +23,30 @@ test("readiness fails closed when Supabase is not configured", async () => {
   assert.equal(body.error?.code, "BACKEND_NOT_CONFIGURED");
 });
 
+test("readiness succeeds only when core config and database connectivity are present", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/ready"), {
+      APP_ENV: "test",
+      ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+      ROUTING_API_URL: "https://routing.example",
+      GEOCODING_API_URL: "https://geocoding.example",
+    } as never);
+    assert.equal(result.status, 200);
+    const body = await result.json() as { ok?: boolean; database?: string; providers?: { routing?: string; geocoding?: string } };
+    assert.equal(body.ok, true);
+    assert.equal(body.database, "reachable");
+    assert.equal(body.providers?.routing, "configured");
+    assert.equal(body.providers?.geocoding, "configured");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("readiness fails closed when routing or geocoding providers are missing", async () => {
   const result = await worker.fetch(new Request("https://api.example/api/v1/ready"), {
     APP_ENV: "test",
