@@ -101,7 +101,38 @@ jobs:
           rewritten = re.sub(r"""(["'])/(?!/)""", r"\1/Sjelle/", sample)
           if '/Sjelle/driver/' not in rewritten or '/Sjelle/app.js' not in rewritten or '/Sjelle/merchant/' not in rewritten:
               raise SystemExit(f"GitHub Pages root-path rewrite failed: {rewritten}")
-          print(f"Prepared {sum(1 for p in target.rglob('*') if p.is_file())} static files; project-path rewriting passed")
+          from html.parser import HTMLParser
+          from urllib.parse import urlsplit
+          class LocalReferences(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.urls = []
+              def handle_starttag(self, tag, attrs):
+                  for key, value in attrs:
+                      if key in ("href", "src") and value:
+                          self.urls.append(value)
+          for page in target.rglob("*.html"):
+              parser = LocalReferences()
+              parser.feed(page.read_text(encoding="utf-8"))
+              for value in parser.urls:
+                  parsed = urlsplit(value)
+                  if parsed.scheme or parsed.netloc or not parsed.path or parsed.path.startswith("//"):
+                      continue
+                  path = parsed.path
+                  if path == "/Sjelle":
+                      path = ""
+                  elif path.startswith("/Sjelle/"):
+                      path = path[len("/Sjelle/"):]
+                  elif path.startswith("/"):
+                      raise SystemExit(f"Unprefixed root URL in {page}: {value}")
+                  else:
+                      path = (page.parent.relative_to(target) / path).as_posix()
+                  candidate = target / path
+                  if path.endswith("/") or candidate.is_dir():
+                      candidate = candidate / "index.html"
+                  if not candidate.is_file():
+                      raise SystemExit(f"Broken local HTML reference in {page}: {value} -> {candidate}")
+          print(f"Prepared {sum(1 for p in target.rglob('*') if p.is_file())} static files; path rewriting and local HTML references passed")
           PY
       - name: Configure Pages
         uses: actions/configure-pages@v5
