@@ -63,12 +63,20 @@ export function calculateRideQuote(input: RideQuoteInput): RideQuote {
   assertNonNegativeSafeInteger(rule.perKmCents, "perKmCents");
   assertNonNegativeSafeInteger(rule.perMinuteCents, "perMinuteCents");
 
-  // Round each distance/time component to the nearest cent, then apply minimum.
-  const distanceCents = Math.round((input.distanceMeters * rule.perKmCents) / 1000);
-  const timeCents = Math.round((input.durationSeconds * rule.perMinuteCents) / 60);
-  const amountCents = Math.max(rule.minimumFareCents, rule.baseFareCents + distanceCents + timeCents);
-
-  if (!Number.isSafeInteger(amountCents)) throw new RangeError("Calculated fare exceeds safe integer range");
+  // Use integer arithmetic so valid large inputs cannot lose cents to floating-point rounding.
+  const roundedRatio = (units: number, rateCents: number, divisor: bigint): number => {
+    const numerator = BigInt(units) * BigInt(rateCents);
+    const rounded = (numerator + divisor / 2n) / divisor;
+    if (rounded > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new RangeError("Calculated fare component exceeds safe integer range");
+    }
+    return Number(rounded);
+  };
+  const distanceCents = roundedRatio(input.distanceMeters, rule.perKmCents, 1000n);
+  const timeCents = roundedRatio(input.durationSeconds, rule.perMinuteCents, 60n);
+  const totalCents = BigInt(rule.baseFareCents) + BigInt(distanceCents) + BigInt(timeCents);
+  if (totalCents > BigInt(Number.MAX_SAFE_INTEGER)) throw new RangeError("Calculated fare exceeds safe integer range");
+  const amountCents = Math.max(rule.minimumFareCents, Number(totalCents));
   return {
     pricingKind: "estimated",
     amountCents,
