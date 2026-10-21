@@ -596,7 +596,7 @@ test("driver job RPC conflicts are returned as conflicts instead of backend outa
 });
 
 
-test("concurrent duplicate driver applications cannot overwrite an existing profile", async () => {
+test("duplicate driver applications are rejected by the atomic database function", async () => {
   const originalFetch = globalThis.fetch;
   const requestedUrls: string[] = [];
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -610,15 +610,13 @@ test("concurrent duplicate driver applications cannot overwrite an existing prof
         status: 200, headers: { "content-type": "application/json" },
       });
     }
-    if (url.includes("/sjelle_driver_profiles?user_id=eq.")) {
-      return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
-    }
-    if (url.endsWith("/sjelle_driver_profiles")) {
+    if (url.endsWith("/rpc/sjelle_apply_for_driver")) {
       assert.equal(init?.method, "POST");
-      assert.equal(new URL(url).search, "");
-      assert.equal(new Headers(init?.headers).get("prefer"), "return=representation");
-      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-      assert.equal(body.city_id, "22222222-2222-4222-8222-222222222222");
+      assert.deepEqual(JSON.parse(String(init?.body)), {
+        p_user_id: "11111111-1111-4111-8111-111111111111",
+        p_city_id: "22222222-2222-4222-8222-222222222222",
+        p_selected_mode: "ride",
+      });
       return new Response(JSON.stringify({ message: "duplicate key value violates unique constraint" }), {
         status: 409, headers: { "content-type": "application/json" },
       });
@@ -638,8 +636,9 @@ test("concurrent duplicate driver applications cannot overwrite an existing prof
     const body = await response.json() as { error: { code: string } };
     assert.equal(response.status, 409);
     assert.equal(body.error.code, "DRIVER_APPLICATION_EXISTS");
-    assert.ok(requestedUrls.some(url => url.endsWith("/sjelle_driver_profiles")));
-    assert.ok(!requestedUrls.some(url => url.includes("on_conflict=user_id")));
+    assert.ok(requestedUrls.some(url => url.endsWith("/rpc/sjelle_apply_for_driver")));
+    assert.ok(!requestedUrls.some(url => url.includes("/sjelle_driver_profiles?")));
+    assert.ok(!requestedUrls.some(url => url.includes("/sjelle_user_roles")));
   } finally {
     globalThis.fetch = originalFetch;
   }
