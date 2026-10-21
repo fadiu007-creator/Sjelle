@@ -35,6 +35,7 @@ jobs:
       - name: Check customer and portal JavaScript syntax
         run: |
           node --check ../customer/app.js
+          node --check ../customer/app.js
           node --check ../customer/driver/driver.js
           node --check ../customer/merchant/merchant.js
           node --check ../customer/admin/admin.js
@@ -66,7 +67,14 @@ jobs:
           case "$WORKER_URL" in
             */) echo "worker_url must not end with a slash"; exit 1 ;;
           esac
+          curl --fail --silent --show-error --max-time 20 "$WORKER_URL/" -o /tmp/sjelle-home.html
+          grep -qi "Sjelle" /tmp/sjelle-home.html || { echo "Customer homepage did not contain expected Sjelle app marker"; exit 1; }
+          for path in driver/ merchant/ admin/; do
+            curl --fail --silent --show-error --max-time 20 "$WORKER_URL/$path" -o /dev/null
+          done
           curl --fail --silent --show-error --max-time 20 "$WORKER_URL/api/v1/health" -o /tmp/sjelle-health.json
           node -e 'const x=require("/tmp/sjelle-health.json"); if(x.ok!==true || x.service!=="sjelle-api") process.exit(1); console.log("Health endpoint OK")'
+          curl --fail --silent --show-error --max-time 20 "$WORKER_URL/api/v1/cities" -o /tmp/sjelle-cities.json
+          node -e 'const x=require("/tmp/sjelle-cities.json"); if(!Array.isArray(x.data)) { console.error(JSON.stringify(x)); process.exit(1); } console.log("City discovery endpoint OK")'
           curl --fail --silent --show-error --max-time 20 "$WORKER_URL/api/v1/ready" -o /tmp/sjelle-ready.json
           node -e 'const x=require("/tmp/sjelle-ready.json"); if(x.ok!==true || x.database!=="reachable" || x.providers?.routing!=="configured" || x.providers?.geocoding!=="configured") { console.error(JSON.stringify(x)); process.exit(1); } console.log("Readiness, database, routing and geocoding configuration OK")'
