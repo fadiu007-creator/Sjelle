@@ -523,3 +523,41 @@ test("driver cannot record cash collection before the terminal job state", async
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("admin reconciliation rejects invalid date ranges before reading ledger entries", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    requests.push(url);
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.includes("/rest/v1/sjelle_user_roles?")) {
+      return new Response(JSON.stringify([{ role: "admin" }]), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error("Invalid reconciliation date range must be rejected before ledger access");
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/admin/reconciliation?from=2026-10-22&to=2026-10-01", {
+      method: "GET",
+      headers: { authorization: "Bearer test-token" },
+    }), {
+      APP_ENV: "test",
+      ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(result.status, 400);
+    assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "INVALID_DATE_RANGE");
+    assert.equal(requests.some(url => url.includes("/rest/v1/sjelle_ledger_entries")), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
