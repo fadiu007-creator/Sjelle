@@ -5,6 +5,8 @@ const apiPath = "apps/api/src/index.ts";
 const edgePath = "supabase/functions/sjelle-api/index.ts";
 const api = readFileSync(apiPath, "utf8");
 const edge = readFileSync(edgePath, "utf8");
+const adminJs = readFileSync("apps/customer/admin/admin.js", "utf8");
+const adminHtml = readFileSync("apps/customer/admin/index.html", "utf8");
 
 const expectedConflictCodes = [
   "DRIVER_NOT_APPROVED",
@@ -30,4 +32,8 @@ for (const [file, source] of [[apiPath, api], [edgePath, edge]]) {
   assert.deepEqual(readConflictCodes(source, file), expectedConflictCodes, `${file}: expected consistent job conflict codes`);
 }
 
-console.log("Critical API/Edge Function parity checks passed.");
+assert.ok(adminJs.includes("cityConfirmInput.required=cityActiveInput.checked"), "admin portal must require readiness confirmation only when activating a city");
+assert.ok(adminJs.includes("if(!cityActiveInput.checked)cityConfirmInput.checked=false"), "deactivating a city must clear readiness confirmation");
+assert.ok(!adminHtml.includes('name="confirm_ready" type="checkbox" required'), "readiness confirmation must not block safe deactivation in HTML");
+
+console.log("Critical API/Edge Function and admin activation parity checks passed.");
