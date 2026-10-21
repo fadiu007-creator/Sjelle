@@ -5,11 +5,13 @@ on:
     branches: [main]
     paths:
       - "apps/api/**"
+      - "supabase/functions/**"
       - "supabase/migrations/**"
       - ".github/workflows/sjelle-api.yml"
   pull_request:
     paths:
       - "apps/api/**"
+      - "supabase/functions/**"
       - "supabase/migrations/**"
       - ".github/workflows/sjelle-api.yml"
 
@@ -35,3 +37,10 @@ jobs:
         run: npm test
       - name: Type-check API
         run: npm run typecheck
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type-check the actual Supabase Edge Function
+        working-directory: .
+        run: deno check supabase/functions/sjelle-api/index.ts
