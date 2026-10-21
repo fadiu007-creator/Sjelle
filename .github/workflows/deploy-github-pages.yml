@@ -54,7 +54,7 @@ jobs:
           # GitHub project Pages is hosted below /Sjelle/, unlike a domain root.
           for page in target.rglob("*.html"):
               text = page.read_text(encoding="utf-8")
-              text = re.sub(r"('|\\x22)/(?!/)", r"\\1/Sjelle/", text)
+              text = re.sub(r"('|\\x22)/(?!/)", r"\1/Sjelle/", text)
               page.write_text(text, encoding="utf-8")
           (target / ".nojekyll").touch()
           index = target / "index.html"
