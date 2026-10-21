@@ -1,13 +1,13 @@
 <!doctype html>
-<html lang="sq">
+<html lang="sq-XK">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#102f28"><title>Sjelle — Administrimi</title><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/portal.css"><script src="/admin/admin.js" defer></script></head>
 <body class="portal-body">
-<header class="topbar"><a class="brand" href="/"><span class="brand-mark">s</span><span>sjelle<span class="brand-dot">.</span></span></a><div class="topbar-right"><a class="help-link" href="/">Kryefaqja</a><a class="account-button" href="/?account=login">Hyr / Regjistrohu</a></div></header>
+<header class="topbar"><a class="brand" href="/"><span class="brand-mark">s</span><span>sjelle<span class="brand-dot">.</span></span></a><div class="topbar-right"><a class="help-link" href="/">Ballina</a><a class="account-button" href="/?account=login">Kyçu / Regjistrohu</a></div></header>
 <main class="portal-main">
-<section class="portal-hero"><p class="eyebrow">OPERACIONET SJELLE</p><h1>Konfigurim.<br><span>Kontroll. Siguri.</span></h1><p>Menaxho tarifat, rrugët fikse dhe verifikimin e shoferëve. Qytetet mbeten joaktive derisa të konfigurohen dhe aktivizohen shprehimisht.</p><div id="admin-alert" class="portal-alert" role="status">Po kontrollojmë qasjen…</div></section>
-<section class="portal-card"><div class="portal-card-heading"><div><p class="eyebrow">QYTETI</p><h2>Tarifat dhe shërbimet</h2></div></div><label class="admin-city-label">Zgjedh qytetin<select id="admin-city"></select></label><section class="portal-card">
+<section class="portal-hero"><p class="eyebrow">MENAXHIMI I SJELLE</p><h1>Konfigurim.<br><span>Kontroll. Siguri.</span></h1><p>Menaxho çmimet, linjat me tarifë fikse dhe verifikimin e shoferëve. Qytetet mbesin joaktive derisa të konfigurohen e të aktivizohen nga administratori.</p><div id="admin-alert" class="portal-alert" role="status">Po e kontrollojmë qasjen…</div></section>
+<section class="portal-card"><div class="portal-card-heading"><div><p class="eyebrow">QYTETI</p><h2>Tarifat dhe shërbimet</h2></div></div><label class="admin-city-label">Zgjidhe qytetin<select id="admin-city"></select></label><section class="portal-card">
 <div class="portal-card-heading"><div><p class="eyebrow">MBULIMI GJEOGRAFIK</p><h2>Zonat e shërbimit</h2></div><span class="portal-tag">GeoJSON</span></div>
-<p class="portal-muted">Shto një GeoJSON Polygon për zonën reale të qytetit. Koordinatat duhet të jenë në rendin [gjatësia, gjerësia], unaza duhet të mbyllet dhe kufijtë duhet të jenë brenda zonës fillestare të Kosovës. Shembulli në fushë është vetëm ilustrues, jo kufi real. Zona e re krijohet joaktive.</p>
+<p class="portal-muted">Shto një poligon GeoJSON që përputhet me zonën reale të qytetit. Koordinatat duhet të jenë në rendin [gjatësia, gjerësia], unaza duhet të mbyllet dhe kufijtë duhet të jenë brenda zonës fillestare të Kosovës. Shembulli në fushë është veç ilustrim, jo kufi real. Zona e re krijohet joaktive.</p>
 <form id="service-area-form" class="portal-form">
 <label>Emri i zonës<input name="name" required maxlength="120" placeholder="Qendra e Prishtinës"></label>
 <label>GeoJSON Polygon<textarea name="boundary_geojson" required rows="5" placeholder='{"type":"Polygon","coordinates":[[[20.1,42.6],[20.2,42.6],[20.2,42.7],[20.1,42.7],[20.1,42.6]]]} '></textarea></label>
