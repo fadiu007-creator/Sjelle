@@ -1279,6 +1279,9 @@ export default {
       }
       const cashTerminalStatus = (driverJobMatch[1] === "ride" && body.status === "completed")
         || (driverJobMatch[1] === "delivery" && body.status === "delivered");
+      if (body.cash_collected === true && !cashTerminalStatus) {
+        return response({ error: { code: "CASH_CONFIRMATION_ONLY_ON_COMPLETION", message: "Cash collection can only be confirmed when completing the job.", request_id: requestId } }, 400, requestId, origin, env);
+      }
       if (cashTerminalStatus && body.cash_collected !== true) {
         return response({ error: { code: "CASH_COLLECTION_CONFIRMATION_REQUIRED", message: "Confirm cash collection before completing this job.", request_id: requestId } }, 400, requestId, origin, env);
       }
