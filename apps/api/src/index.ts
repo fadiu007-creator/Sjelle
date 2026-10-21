@@ -1317,6 +1317,62 @@ export default {
     }
 
 
+    if (url.pathname === "/api/v1/admin/reconciliation" && request.method === "GET") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); }
+      catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try {
+        if (!await hasSjelleRole(env, user.id, "admin")) {
+          return response({ error: { code: "FORBIDDEN", request_id: requestId } }, 403, requestId, origin, env);
+        }
+      } catch {
+        return response({ error: { code: "ROLE_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+      }
+
+      const from = url.searchParams.get("from") ?? new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);
+      const to = url.searchParams.get("to") ?? new Date().toISOString().slice(0, 10);
+      const isDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value)
+        && !Number.isNaN(Date.parse(value + "T00:00:00.000Z"))
+        && new Date(value + "T00:00:00.000Z").toISOString().slice(0, 10) === value;
+      if (!isDate(from) || !isDate(to) || from > to
+        || Date.parse(to + "T00:00:00.000Z") - Date.parse(from + "T00:00:00.000Z") > 366 * 86400000) {
+        return response({ error: { code: "INVALID_DATE_RANGE", message: "Use valid YYYY-MM-DD dates; from must be on or before to and the range cannot exceed 366 days.", request_id: requestId } }, 400, requestId, origin, env);
+      }
+
+      try {
+        const filter = "and=(created_at.gte." + encodeURIComponent(from + "T00:00:00.000Z")
+          + ",created_at.lt." + encodeURIComponent(new Date(Date.parse(to + "T00:00:00.000Z") + 86400000).toISOString()) + ")";
+        const result = await databaseRequest(env,
+          "sjelle_ledger_entries?select=id,related_ride_id,related_order_id,account_type,account_user_id,amount_cents,currency,entry_type,idempotency_key,metadata,created_at&"
+          + filter + "&order=created_at.desc&limit=1000");
+        if (!result.ok) return response({ error: { code: "RECONCILIATION_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const rows = await parseJson(result) as Array<{
+          id: string; related_ride_id: string | null; related_order_id: string | null;
+          account_type: string; account_user_id: string | null; amount_cents: number | string;
+          currency: string; entry_type: string; idempotency_key: string; metadata: Record<string, unknown>;
+          created_at: string;
+        }>;
+        if (!Array.isArray(rows)) return response({ error: { code: "RECONCILIATION_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const totals = new Map<string, { entry_count: number; net_amount_cents: number }>();
+        for (const row of rows) {
+          const amount = Number(row.amount_cents);
+          if (!Number.isSafeInteger(amount)) return response({ error: { code: "RECONCILIATION_DATA_INVALID", request_id: requestId } }, 503, requestId, origin, env);
+          const total = totals.get(row.account_type) ?? { entry_count: 0, net_amount_cents: 0 };
+          total.entry_count += 1;
+          total.net_amount_cents += amount;
+          totals.set(row.account_type, total);
+        }
+        return response({
+          data: rows,
+          summary: Array.from(totals.entries()).map(([account_type, total]) => ({ account_type, ...total })),
+          meta: { from, to, returned: rows.length, limit: 1000, possibly_truncated: rows.length === 1000 },
+        }, 200, requestId, origin, env);
+      } catch {
+        return response({ error: { code: "RECONCILIATION_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+      }
+    }
+
     if (url.pathname === "/api/v1/admin/cities" && request.method === "GET") {
       let user: AuthUser | null;
       try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
