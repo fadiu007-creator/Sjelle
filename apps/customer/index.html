@@ -171,7 +171,24 @@
       <p id="auth-message" class="form-message" role="status"></p>
       <button id="auth-submit" class="primary-button" type="submit">Hyr</button>
     </form>
-    <div id="account-signed-in" class="account-signed-in" hidden><p id="account-summary"></p><button id="my-orders-open" class="secondary-button" type="button">Porositë e mia</button><div id="my-orders" class="my-orders" aria-live="polite"></div><button id="my-rides-open" class="secondary-button" type="button">Udhëtimet e mia</button><div id="my-rides" class="my-orders" aria-live="polite"></div><button id="account-logout" class="secondary-button" type="button">Dil nga llogaria</button></div>
+    <div id="account-signed-in" class="account-signed-in" hidden><p id="account-summary"></p><button id="my-orders-open" class="secondary-button" type="button">Porositë e mia</button><div id="my-orders" class="my-orders" aria-live="polite"></div><button id="my-rides-open" class="secondary-button" type="button">Udhëtimet e mia</button><div id="my-rides" class="my-orders" aria-live="polite"></div>
+      <section class="support-section" aria-labelledby="support-heading">
+        <h3 id="support-heading">Ndihmë dhe siguri</h3>
+        <p class="support-intro">Raporto një problem me udhëtimin, porosinë ose llogarinë tënde. Ekipi mund ta shqyrtojë kërkesën.</p>
+        <button id="support-open" class="secondary-button" type="button">Krijo kërkesë për ndihmë</button>
+        <form id="support-form" class="support-form" hidden>
+          <label>Kategoria
+            <select name="category" required>
+              <option value="ride">Udhëtim</option><option value="food_order">Porosi ushqimi</option><option value="payment">Pagesa</option><option value="safety">Siguria</option><option value="driver">Shoferi</option><option value="restaurant">Restoranti</option><option value="account">Llogaria</option><option value="other">Tjetër</option>
+            </select>
+          </label>
+          <label>Përshkrimi <textarea name="description" required minlength="10" maxlength="3000" rows="4" placeholder="Përshkruaj çfarë ndodhi (10–3000 karaktere)."></textarea></label>
+          <p id="support-message" class="form-message" role="status"></p>
+          <button id="support-submit" class="primary-button" type="submit">Dërgo kërkesën</button>
+        </form>
+        <div id="support-tickets" class="my-orders" aria-live="polite"></div>
+      </section>
+      <button id="account-logout" class="secondary-button" type="button">Dil nga llogaria</button></div>
   </dialog>
 </body>
 </html>
