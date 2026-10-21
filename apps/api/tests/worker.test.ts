@@ -15,6 +15,14 @@ test("health endpoint is available without database secrets", async () => {
   assert.equal(body.service, "sjelle-api");
 });
 
+test("readiness fails closed when Supabase is not configured", async () => {
+  const result = await worker.fetch(new Request("https://api.example/api/v1/ready"), env);
+  assert.equal(result.status, 503);
+  const body = await result.json() as { ok?: boolean; error?: { code?: string } };
+  assert.equal(body.ok, false);
+  assert.equal(body.error?.code, "BACKEND_NOT_CONFIGURED");
+});
+
 test("CORS preflight is empty and only reflects the configured origin", async () => {
   const allowed = await worker.fetch(new Request("https://api.example/api/v1/rides", {
     method: "OPTIONS",
