@@ -5,11 +5,15 @@ on:
     paths:
       - "apps/api/**"
       - "apps/customer/**"
+      - "supabase/functions/**"
+      - "supabase/migrations/**"
       - ".github/workflows/api-ci.yml"
   pull_request:
     paths:
       - "apps/api/**"
       - "apps/customer/**"
+      - "supabase/functions/**"
+      - "supabase/migrations/**"
       - ".github/workflows/api-ci.yml"
 
 permissions:
@@ -35,5 +39,9 @@ jobs:
           node --check ../customer/driver/driver.js
           node --check ../customer/merchant/merchant.js
           node --check ../customer/admin/admin.js
-      - name: Validate Worker bundle and Wrangler configuration
-        run: npx wrangler deploy --dry-run --outdir /tmp/sjelle-worker-dry-run
+      - name: Validate deployed Supabase Edge Function source
+        working-directory: .
+        run: |
+          curl -fsSL https://deno.land/install.sh | sh
+          echo "$HOME/.deno/bin" >> "$GITHUB_PATH"
+          "$HOME/.deno/bin/deno" check supabase/functions/sjelle-api/index.ts
