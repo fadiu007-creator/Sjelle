@@ -652,3 +652,82 @@ test("admin reconciliation rejects non-EUR ledger rows instead of mixing currenc
     assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "RECONCILIATION_DATA_INVALID");
   } finally { globalThis.fetch = originalFetch; }
 });
+
+
+test("support ticket endpoints reject unauthenticated access before database work", async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = async () => { fetchCalls += 1; return new Response("{}", { status: 500 }); };
+  try {
+    const list = await worker.fetch(new Request("https://api.example/api/v1/support-tickets"), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(list.status, 401);
+    assert.equal((await list.json() as { error?: { code?: string } }).error?.code, "UNAUTHENTICATED");
+    assert.equal(fetchCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("support ticket creation validates category and description before database writes", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    requests.push(url);
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000001" }), { status: 200 });
+    }
+    return new Response("unexpected database call", { status: 500 });
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/support-tickets", {
+      method: "POST",
+      headers: { authorization: "Bearer user-token", "content-type": "application/json" },
+      body: JSON.stringify({ category: "made-up", description: "short" }),
+    }), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(result.status, 400);
+    assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "INVALID_SUPPORT_TICKET");
+    assert.deepEqual(requests, ["https://project.supabase.co/auth/v1/user"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("support ticket creation rejects a linked ride that does not belong to the requester", async () => {
+  const originalFetch = globalThis.fetch;
+  const userId = "00000000-0000-4000-8000-000000000001";
+  const rideId = "00000000-0000-4000-8000-000000000002";
+  const requests: string[] = [];
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    requests.push(url);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: userId }), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_rides?")) return new Response("[]", { status: 200 });
+    return new Response("unexpected database call", { status: 500 });
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/support-tickets", {
+      method: "POST",
+      headers: { authorization: "Bearer user-token", "content-type": "application/json" },
+      body: JSON.stringify({ category: "ride", description: "The driver never arrived and I need help.", ride_id: rideId }),
+    }), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(result.status, 404);
+    assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "LINKED_RIDE_NOT_FOUND");
+    assert.equal(requests.length, 2);
+    assert.ok(requests[1].includes("customer_id=eq." + userId));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
