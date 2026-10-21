@@ -211,3 +211,70 @@ test("ride booking requires a quote or route and a sufficiently long idempotency
     globalThis.fetch = originalFetch;
   }
 });
+
+test("readiness reports database failures as unavailable", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ message: "database unavailable" }), {
+    status: 503, headers: { "content-type": "application/json" },
+  });
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/ready"), {
+      APP_ENV: "test",
+      ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+      ROUTING_API_URL: "https://routing.example",
+      GEOCODING_API_URL: "https://geocoding.example",
+    } as never);
+    assert.equal(result.status, 503);
+    const body = await result.json() as { ok?: boolean; error?: { code?: string } };
+    assert.equal(body.ok, false);
+    assert.equal(body.error?.code, "DATABASE_UNAVAILABLE");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("food orders reject coordinates outside the launch region before database access", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    requests.push(url);
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error("Invalid coordinates must be rejected before database access");
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/food-orders", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer test-token",
+        "content-type": "application/json",
+        "idempotency-key": "food-request-key-123",
+      },
+      body: JSON.stringify({
+        restaurant_id: "00000000-0000-4000-8000-000000000001",
+        delivery_address_text: "Main street, Prishtina",
+        delivery_lat: 51.5072,
+        delivery_lon: -0.1276,
+        items: [{ id: "00000000-0000-4000-8000-000000000002", quantity: 1 }],
+      }),
+    }), {
+      APP_ENV: "test",
+      ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(result.status, 400);
+    assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "INVALID_DELIVERY_ADDRESS");
+    assert.equal(requests.filter(url => url.includes("/rest/v1/")).length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
