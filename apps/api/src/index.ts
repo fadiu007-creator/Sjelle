@@ -1346,7 +1346,7 @@ export default {
         const payload = await parseJson(result);
         if (!result.ok) {
           const code = isRecord(payload) && typeof payload.message === "string" ? payload.message : "JOB_UPDATE_FAILED";
-          const status = code === "JOB_NOT_FOUND" ? 404 : ["DRIVER_NOT_APPROVED","ORDER_NOT_READY_FOR_PICKUP","INVALID_JOB_TRANSITION"].includes(code) ? 409 : 503;
+          const status = code === "JOB_NOT_FOUND" ? 404 : ["DRIVER_NOT_APPROVED","DRIVER_HAS_ACTIVE_JOB","ORDER_NOT_READY_FOR_PICKUP","INVALID_JOB_TRANSITION","CASH_COLLECTION_CONFIRMATION_REQUIRED","CASH_CONFIRMATION_ONLY_ON_COMPLETION","INVALID_JOB_KIND"].includes(code) ? 409 : 503;
           return response({ error: { code, request_id: requestId } }, status, requestId, origin, env);
         }
         return response({ data: payload }, 200, requestId, origin, env);
