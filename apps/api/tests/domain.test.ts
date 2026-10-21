@@ -60,3 +60,19 @@ test("food order follows restaurant acceptance before courier assignment", () =>
   assert.equal(canTransitionFoodOrder("ready_for_pickup", "courier_assigned"), true);
   assert.equal(canTransitionFoodOrder("delivered", "picked_up"), false);
 });
+
+test("estimated fare uses exact integer rounding for large valid components", () => {
+  const quote = calculateRideQuote({
+    routeKey: "large-but-safe",
+    distanceMeters: 500,
+    durationSeconds: 0,
+    estimateRule: {
+      ...estimateRule,
+      baseFareCents: 0,
+      minimumFareCents: 0,
+      perKmCents: Number.MAX_SAFE_INTEGER,
+      perMinuteCents: 0,
+    },
+  });
+  assert.equal(quote.amountCents, 4503599627370496);
+});
