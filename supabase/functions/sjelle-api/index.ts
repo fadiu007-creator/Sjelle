@@ -2178,6 +2178,7 @@ const worker = {
       error: {
         code: "NOT_FOUND",
         message: "This endpoint is not implemented.",
+        path: url.pathname,
         request_id: requestId,
       },
     }, 404, requestId, origin, env);
