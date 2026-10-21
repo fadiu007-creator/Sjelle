@@ -705,3 +705,21 @@ test("driver readiness rejection from the job RPC is reported as a conflict", as
     assert.equal(body.error.code, "DRIVER_NOT_APPROVED");
   } finally { globalThis.fetch = originalFetch; }
 });
+
+test("cash collection rule violations from the job RPC return a conflict", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    if (url.includes("/rpc/sjelle_driver_update_job")) return new Response(JSON.stringify({ message: "CASH_COLLECTION_CONFIRMATION_REQUIRED" }), { status: 400, headers: { "content-type": "application/json" } });
+    throw new Error("Unexpected database request: " + url);
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/jobs/ride/33333333-3333-4333-8333-333333333333/status", { method: "POST", headers: { authorization: "Bearer test-token", "content-type": "application/json" }, body: JSON.stringify({ status: "driver_arriving" }) }), {
+      SUPABASE_URL: "https://example.supabase.co", SUPABASE_PUBLISHABLE_KEY: "test-publishable", SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 409);
+    assert.equal(body.error.code, "CASH_COLLECTION_CONFIRMATION_REQUIRED");
+  } finally { globalThis.fetch = originalFetch; }
+});
