@@ -1,4 +1,4 @@
-const API = "/api/v1";
+const API = "https://saavqlbwffrwxingbnri.supabase.co/functions/v1/sjelle-api/api/v1";
 const citySelect = document.querySelector("#city-select");
 const cityStatus = document.querySelector("#city-status");
 const results = document.querySelector("#restaurant-results");
