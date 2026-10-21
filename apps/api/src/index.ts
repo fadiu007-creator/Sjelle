@@ -1105,13 +1105,23 @@ export default {
             return response({ error: { code: "CITY_SERVICE_UNAVAILABLE", request_id: requestId } }, 409, requestId, origin, env);
           }
         }
-        const update = await databaseRequest(env, "sjelle_driver_profiles?user_id=eq." + encodeURIComponent(user.id), {
-          method: "PATCH", headers: { prefer: "return=representation" },
-          body: JSON.stringify({ online: body.online, selected_mode: mode, updated_at: new Date().toISOString() }),
+        // The database RPC locks the driver row and serializes this update with
+        // ride/delivery assignment triggers; the earlier reads are only for clear UX errors.
+        const update = await databaseRequest(env, "rpc/sjelle_set_driver_availability", {
+          method: "POST",
+          body: JSON.stringify({ p_driver_id: user.id, p_online: body.online, p_mode: mode }),
         });
-        const payload = await parseJson(update);
-        if (!update.ok) return response({ error: { code: "AVAILABILITY_UPDATE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
-        return response({ data: Array.isArray(payload) ? payload[0] : payload }, 200, requestId, origin, env);
+        const payload = await parseJson(update) as unknown;
+        if (!update.ok) {
+          const detail = isRecord(payload) ? String(payload.message ?? payload.error ?? "") : "";
+          if (detail.includes("DRIVER_HAS_ACTIVE_JOB")) {
+            return response({ error: { code: "DRIVER_HAS_ACTIVE_JOB", message: "Finish or cancel the active job before going offline or changing mode.", request_id: requestId } }, 409, requestId, origin, env);
+          }
+          if (detail.includes("DRIVER_NOT_APPROVED")) return response({ error: { code: "DRIVER_NOT_APPROVED", request_id: requestId } }, 409, requestId, origin, env);
+          if (detail.includes("DRIVER_APPLICATION_REQUIRED")) return response({ error: { code: "DRIVER_APPLICATION_REQUIRED", request_id: requestId } }, 409, requestId, origin, env);
+          return response({ error: { code: "AVAILABILITY_UPDATE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        }
+        return response({ data: payload }, 200, requestId, origin, env);
       } catch { return response({ error: { code: "AVAILABILITY_UPDATE_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
     }
 
