@@ -32,6 +32,15 @@ test("CORS preflight is empty and only reflects the configured origin", async ()
   assert.equal(denied.headers.get("access-control-allow-origin"), null);
 });
 
+test("small API request bodies remain readable after size enforcement", async () => {
+  const result = await worker.fetch(new Request("https://api.example/api/v1/not-a-route", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ok: true }),
+  }), env);
+  assert.equal(result.status, 404);
+});
+
 test("oversized API bodies are rejected before parsing or backend access", async () => {
   const body = "x".repeat(2 * 1024 * 1024 + 1);
   const request = new Request("https://api.example/api/v1/auth/signup", {
