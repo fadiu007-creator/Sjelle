@@ -100,3 +100,63 @@ $("#service-area-form").addEventListener("submit",async e=>{
  try{await api("/admin/cities/"+currentCity.slug+"/service-areas",{method:"POST",body:JSON.stringify({name:f.get("name"),boundary_geojson:polygon})});e.currentTarget.reset();await loadCities();alertMsg("Zona u krijua joaktive. Kontrollo kufijtë dhe aktivizoje para se të hapësh qytetin.","success");}
  catch(err){alertMsg("Zona nuk u krijua: "+err.message,"error");}
 });
+
+
+function localDateInput(date){
+ const y=date.getFullYear(),m=String(date.getMonth()+1).padStart(2,"0"),d=String(date.getDate()).padStart(2,"0");
+ return y+"-"+m+"-"+d;
+}
+function renderReconciliationSummary(summary,meta){
+ const root=$("#reconciliation-summary");root.replaceChildren();
+ const note=document.createElement("p");note.className="portal-muted";
+ note.textContent="Periudha "+meta.from+" — "+meta.to+" · "+meta.returned+" hyrje"+(meta.possibly_truncated?" · KUJDES: u arrit kufiri prej 1,000 hyrjesh; ky nuk është raport i plotë.":"");
+ root.append(note);
+ for(const item of summary||[]){
+  const c=makeCard(item.account_type,String(item.entry_count)+" hyrje · "+(Number(item.net_amount_cents)/100).toFixed(2)+" € neto");
+  root.append(c);
+ }
+}
+function renderReconciliationEntries(rows,meta){
+ const root=$("#reconciliation-entries");root.replaceChildren();
+ const entries=(rows||[]).slice(0,100);
+ if(!entries.length){root.append(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Nuk ka hyrje financiare në këtë periudhë."}));return;}
+ for(const row of entries){
+  const related=row.related_ride_id?"Udhëtimi "+row.related_ride_id:row.related_order_id?"Porosia "+row.related_order_id:"Pa lidhje";
+  const signed=(Number(row.amount_cents)/100).toFixed(2)+" "+(Number(row.amount_cents)<0?"€ (dalje)":"€ (hyrje)");
+  const c=makeCard(row.entry_type||row.account_type,related+" · "+signed+" · "+new Date(row.created_at).toLocaleString());
+  const detail=document.createElement("p");detail.className="portal-muted";detail.textContent=row.account_type+" · "+row.currency+" · idempotency: "+row.idempotency_key;c.append(detail);
+  root.append(c);
+ }
+ if((rows||[]).length>entries.length){
+  const note=document.createElement("p");note.className="portal-muted";
+  note.textContent="Po shfaqen "+entries.length+" hyrjet e para nga "+rows.length+" të kthyera. Përdor një periudhë më të shkurtër për të kontrolluar detajet.";
+  root.append(note);
+ }
+ if(meta?.possibly_truncated){
+  const warning=document.createElement("p");warning.className="portal-alert";warning.dataset.kind="error";
+  warning.textContent="Raporti ka arritur kufirin e API-së (1,000 hyrje). Për shifra përfundimtare duhet ndarë periudha në intervale më të shkurtra.";
+  root.prepend(warning);
+ }
+}
+async function loadReconciliation(){
+ const form=$("#reconciliation-form");const from=form.elements.from.value,to=form.elements.to.value;
+ const summary=$("#reconciliation-summary"),entries=$("#reconciliation-entries");
+ summary.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Po ngarkohet raporti…"}));entries.replaceChildren();
+ try{
+  const result=await api("/admin/reconciliation?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to));
+  renderReconciliationSummary(result.summary||[],result.meta||{from,to,returned:(result.data||[]).length});
+  renderReconciliationEntries(result.data||[],result.meta||{});
+  alertMsg("Raporti financiar u ngarkua. Kontrollo nëse periudha është e plotë para se të marrësh vendime.","success");
+ }catch(err){
+  summary.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Raporti nuk mund të ngarkohet: "+err.message}));
+  alertMsg("Rakordimi dështoi: "+err.message,"error");
+ }
+}
+const reconciliationForm=$("#reconciliation-form");
+if(reconciliationForm){
+ const now=new Date(),monthAgo=new Date(now);monthAgo.setDate(monthAgo.getDate()-29);
+ reconciliationForm.elements.from.value=localDateInput(monthAgo);
+ reconciliationForm.elements.to.value=localDateInput(now);
+ reconciliationForm.addEventListener("submit",e=>{e.preventDefault();loadReconciliation();});
+ $("#reconciliation-refresh").addEventListener("click",loadReconciliation);
+}
