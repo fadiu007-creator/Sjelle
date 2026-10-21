@@ -49,6 +49,12 @@ Database triggers `sjelle_guard_ride_driver_assignment` and `sjelle_guard_delive
 - [ ] Test that an active ride blocks delivery assignment and an active delivery blocks ride assignment.
 - [ ] Confirm the driver can go offline and switch modes after the active job reaches a terminal state.
 
+## Database-enforced cash confirmation
+
+The `sjelle_driver_update_job` RPC now independently rejects terminal ride/delivery transitions unless `p_cash_collected=true`, and rejects cash confirmation on non-terminal transitions. This duplicates the API's validation at the database boundary as defense in depth. The RPC remains executable only by `service_role`.
+
+This is still a driver declaration, not proof that money changed hands. Reconciliation, receipts and commission accounting remain separate work.
+
 ## Cash-control limitation
 
 A boolean sent by a driver is a declaration, not proof of payment. The current API guard prevents obvious premature/missing confirmations, but must not be treated as a cash ledger, commission calculation, or reconciliation system.
