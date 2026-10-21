@@ -774,3 +774,31 @@ test("city deactivation does not require a readiness confirmation", async () => 
     assert.deepEqual(body.data, { id: cityId, active: false, rides_enabled: false, food_enabled: false });
   } finally { globalThis.fetch = originalFetch; }
 });
+
+test("city activation is blocked until a valid active service area exists", async () => {
+  const originalFetch = globalThis.fetch;
+  const cityId = "22222222-2222-4222-8222-222222222222";
+  const requestedUrls: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    requestedUrls.push(url);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    if (url.includes("/sjelle_user_roles?") && url.includes("role=eq.admin")) return new Response(JSON.stringify([{ role: "admin" }]), { status: 200, headers: { "content-type": "application/json" } });
+    if (url.includes("/sjelle_cities?slug=eq.prishtina")) return new Response(JSON.stringify([{ id: cityId }]), { status: 200, headers: { "content-type": "application/json" } });
+    if (url.includes("/sjelle_service_areas?city_id=eq." + cityId)) return new Response(JSON.stringify([]), { status: 200, headers: { "content-type": "application/json" } });
+    throw new Error("Unexpected database request: " + url + " " + String(init?.method || "GET"));
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/admin/cities/prishtina/services", {
+      method: "PATCH",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ active: true, rides_enabled: true, food_enabled: false, confirm_ready: true, reason: "Pilot coverage is being prepared" }),
+    }), {
+      SUPABASE_URL: "https://example.supabase.co", SUPABASE_PUBLISHABLE_KEY: "test-publishable", SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 409);
+    assert.equal(body.error.code, "NO_ACTIVE_SERVICE_AREA");
+    assert.equal(requestedUrls.some(url => url.includes("/sjelle_cities?id=eq." + cityId) && url.includes("PATCH")), false);
+  } finally { globalThis.fetch = originalFetch; }
+});
