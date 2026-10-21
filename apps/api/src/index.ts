@@ -1670,6 +1670,13 @@ export default {
             const menuResponse = await databaseRequest(env, "sjelle_menu_items?restaurant_id=" + restaurantIds + "&available=eq.true&select=id&limit=1");
             const menuItems = await parseJson(menuResponse) as unknown[];
             if (!menuResponse.ok || !menuItems.length) return response({ error: { code: "NO_READY_RESTAURANTS", message: "At least one approved restaurant inside the service area must have an available menu item.", request_id: requestId } }, 409, requestId, origin, env);
+            const deliveryDriversResponse = await databaseRequest(env, "sjelle_driver_profiles?city_id=eq." + encodeURIComponent(cityId) + "&review_status=eq.approved&selected_mode=eq.delivery&select=user_id&limit=100");
+            const deliveryDrivers = await parseJson(deliveryDriversResponse) as Array<{ user_id: string }>;
+            const deliveryDriverIds = Array.isArray(deliveryDrivers) ? deliveryDrivers.filter(driver => isRecord(driver) && typeof driver.user_id === "string").map(driver => encodeURIComponent(String(driver.user_id))) : [];
+            if (!deliveryDriversResponse.ok || !deliveryDriverIds.length) return response({ error: { code: "NO_APPROVED_DELIVERY_DRIVERS", message: "At least one approved delivery driver is required before food delivery can be enabled.", request_id: requestId } }, 409, requestId, origin, env);
+            const deliveryVehiclesResponse = await databaseRequest(env, "sjelle_vehicles?driver_id=in.(" + deliveryDriverIds.join(",") + ")&review_status=eq.approved&select=id&limit=1");
+            const deliveryVehicles = await parseJson(deliveryVehiclesResponse) as unknown[];
+            if (!deliveryVehiclesResponse.ok || !Array.isArray(deliveryVehicles) || !deliveryVehicles.length) return response({ error: { code: "NO_APPROVED_DELIVERY_VEHICLES", message: "At least one approved vehicle assigned to an approved delivery driver is required before food delivery can be enabled.", request_id: requestId } }, 409, requestId, origin, env);
           }
           if (body.rides_enabled) {
             const [routeResponse, driverResponse] = await Promise.all([
