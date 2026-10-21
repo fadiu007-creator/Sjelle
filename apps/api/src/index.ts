@@ -1650,7 +1650,7 @@ export default {
       let body: unknown;
       try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
       if (!isRecord(body) || typeof body.active !== "boolean" || typeof body.rides_enabled !== "boolean" || typeof body.food_enabled !== "boolean"
-        || body.confirm_ready !== true || typeof body.reason !== "string" || body.reason.trim().length < 8 || body.reason.length > 500
+        || (body.active && body.confirm_ready !== true) || typeof body.reason !== "string" || body.reason.trim().length < 8 || body.reason.length > 500
         || (body.active && !body.rides_enabled && !body.food_enabled)) {
         return response({ error: { code: "INVALID_CITY_ACTIVATION", message: "Provide explicit service flags, confirm_ready=true and an operational readiness reason.", request_id: requestId } }, 400, requestId, origin, env);
       }
