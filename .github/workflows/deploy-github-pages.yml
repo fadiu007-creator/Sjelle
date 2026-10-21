@@ -7,6 +7,7 @@ on:
       - "apps/customer/**"
       - "apps/api/**"
       - "supabase/functions/**"
+      - "scripts/**"
       - ".github/workflows/deploy-github-pages.yml"
   workflow_dispatch:
 
