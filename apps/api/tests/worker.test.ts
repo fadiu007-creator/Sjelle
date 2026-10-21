@@ -561,3 +561,53 @@ test("admin reconciliation rejects invalid date ranges before reading ledger ent
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("admin reconciliation returns signed ledger totals grouped by account type", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    requests.push(url);
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.includes("/rest/v1/sjelle_user_roles?")) {
+      return new Response(JSON.stringify([{ role: "admin" }]), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.includes("/rest/v1/sjelle_ledger_entries?")) {
+      return new Response(JSON.stringify([
+        { id: "1", related_ride_id: "ride-1", related_order_id: null, account_type: "customer_cash_due", account_user_id: "customer-1", amount_cents: "-850", currency: "EUR", entry_type: "cash_collection_customer_due_cleared", idempotency_key: "ride:1:customer", metadata: {}, created_at: "2026-10-21T10:00:00Z" },
+        { id: "2", related_ride_id: "ride-1", related_order_id: null, account_type: "driver_cash_collected", account_user_id: "driver-1", amount_cents: "850", currency: "EUR", entry_type: "cash_collection_driver_received", idempotency_key: "ride:1:driver", metadata: {}, created_at: "2026-10-21T10:00:00Z" },
+      ]), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    throw new Error("Unexpected reconciliation request: " + url);
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/admin/reconciliation?from=2026-10-21&to=2026-10-21", {
+      method: "GET",
+      headers: { authorization: "Bearer test-token" },
+    }), {
+      APP_ENV: "test",
+      ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    const payload = await result.json() as { data?: unknown[]; summary?: Array<{ account_type: string; entry_count: number; net_amount_cents: number }>; meta?: { possibly_truncated: boolean } };
+    assert.equal(result.status, 200);
+    assert.equal(payload.data?.length, 2);
+    assert.deepEqual(payload.summary, [
+      { account_type: "customer_cash_due", entry_count: 1, net_amount_cents: -850 },
+      { account_type: "driver_cash_collected", entry_count: 1, net_amount_cents: 850 },
+    ]);
+    assert.equal(payload.meta?.possibly_truncated, false);
+    assert.equal(requests.some(url => url.includes("sjelle_ledger_entries") && url.includes("limit=1000")), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
