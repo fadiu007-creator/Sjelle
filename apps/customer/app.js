@@ -28,7 +28,7 @@ async function getJson(path) {
   let body;
   try { body = await response.json(); } catch { body = null; }
   if (!response.ok) {
-    const error = new Error(body?.error?.message || body?.error?.code || "Kërkesa dështoi.");
+    const error = new Error(body?.error?.message || body?.error?.code || "Kërkesa s’u krye.");
     error.status = response.status;
     throw error;
   }
@@ -50,7 +50,7 @@ function showError(message) {
   const wrap = node("div", "error-state");
   wrap.append(node("span", "empty-icon", "!"));
   const copy = node("div");
-  copy.append(node("b", "", "Nuk u lidhëm me shërbimin"), node("p", "", message));
+  copy.append(node("b", "", "S’u lidhëm me shërbimin"), node("p", "", message));
   wrap.append(copy);
   results.append(wrap);
 }
@@ -63,7 +63,7 @@ function cityLabel(city) {
 function updateCityStatus() {
   const city = state.cities.find(item => item.slug === state.selectedCity);
   if (!city) {
-    cityStatus.textContent = "Nuk u ngarkuan qytetet. Provo përsëri më vonë.";
+    cityStatus.textContent = "Qytetet s’u ngarkuan. Provo prapë pak më vonë.";
     return;
   }
   const services = [];
@@ -116,7 +116,7 @@ function renderRestaurant(restaurant) {
 async function loadRestaurants() {
   if (state.service !== "food") return;
   if (!state.selectedCity) {
-    showEmpty("Zgjedh qytetin tënd", "Zgjedh një qytet për të kontrolluar restorantet.", "⌖");
+    showEmpty("Zgjidhe qytetin tënd", "Zgjedh një qytet për të kontrolluar restorantet.", "⌖");
     return;
   }
   showLoading();
@@ -292,7 +292,7 @@ function persistSession(session) {
 
 function renderAccountState() {
   const signedIn = Boolean(state.session?.access_token);
-  accountOpen.textContent = signedIn ? "Llogaria" : "Hyr / Regjistrohu";
+  accountOpen.textContent = signedIn ? "Llogaria" : "Kyçu / Regjistrohu";
   accountForm.hidden = signedIn;
   accountSignedIn.hidden = !signedIn;
   if (signedIn) accountSummary.textContent = "Je kyçur si " + (state.session.user?.email || "përdorues Sjelle") + ".";
@@ -321,7 +321,7 @@ async function apiRequest(path, options = {}, allowRefresh = true) {
     persistSession(null);
   }
   if (!response.ok) {
-    const error = new Error(body?.error?.message || body?.error?.code || "Kërkesa dështoi.");
+    const error = new Error(body?.error?.message || body?.error?.code || "Kërkesa s’u krye.");
     error.code = body?.error?.code;
     error.status = response.status;
     throw error;
@@ -341,11 +341,11 @@ function updateAuthMode() {
   authNameWrap.hidden = !signup;
   accountForm.elements.display_name.required = signup;
   accountForm.elements.password.autocomplete = signup ? "new-password" : "current-password";
-  authSubmit.textContent = signup ? "Krijo llogari" : "Hyr";
+  authSubmit.textContent = signup ? "Regjistrohu" : "Hyr";
   document.querySelectorAll("[data-auth-mode]").forEach(button => {
     button.classList.toggle("is-active", button.dataset.authMode === state.authMode);
   });
-  document.querySelector("#account-title").textContent = signup ? "Krijo llogarinë tënde" : "Mirë se erdhe";
+  document.querySelector("#account-title").textContent = signup ? "Regjistrohunë tënde" : "Mirë se erdhe";
   showMessage(authMessage, "");
 }
 
@@ -618,8 +618,8 @@ async function findRideAddress(which) {
   const query = String(rideQuoteForm.elements[which + "_query"].value || "").trim();
   const root = document.querySelector("#" + which + "-suggestions");
   if (query.length < 3) { showMessage(rideQuoteMessage, "Shkruaj të paktën 3 karaktere për adresën."); return; }
-  if (!state.selectedCity) { showMessage(rideQuoteMessage, "Zgjedh qytetin fillimisht.", "error"); return; }
-  root.replaceChildren(node("p", "menu-empty", "Po kërkojmë adresën…"));
+  if (!state.selectedCity) { showMessage(rideQuoteMessage, "Zgjidhe qytetin fillimisht.", "error"); return; }
+  root.replaceChildren(node("p", "menu-empty", "Po e kërkojmë adresën…"));
   try {
     const result = await apiRequest("/geocode", { method: "POST", body: JSON.stringify({ city: state.selectedCity, query }) });
     const suggestions = Array.isArray(result.data) ? result.data : [];
@@ -633,7 +633,7 @@ async function findRideAddress(which) {
         rideQuoteForm.elements[which + "_lat"].value = String(item.lat);
         rideQuoteForm.elements[which + "_lon"].value = String(item.lon);
         rideQuoteForm.elements[which + "_query"].value = item.label;
-        root.replaceChildren(node("p", "menu-empty", "Adresa u zgjodh."));
+        root.replaceChildren(node("p", "menu-empty", "E zgjodhe adresën."));
         showMessage(rideQuoteMessage, "Adresa " + (which === "pickup" ? "e nisjes" : "e destinacionit") + " u zgjodh.", "success");
       });
       root.append(choice);
@@ -641,7 +641,7 @@ async function findRideAddress(which) {
   } catch (error) {
     const message = error.code === "GEOCODING_NOT_CONFIGURED"
       ? "Shërbimi i kërkimit të adresave nuk është konfiguruar ende."
-      : "Nuk mundëm të kërkojmë adresën. " + (error.message || "");
+      : "S’arritëm ta kërkojmë adresën. " + (error.message || "");
     root.replaceChildren(node("p", "menu-empty", message));
     showMessage(rideQuoteMessage, message, "error");
   }
@@ -782,7 +782,7 @@ const supportSubmit = document.querySelector("#support-submit");
 const supportMessage = document.querySelector("#support-message");
 const supportTickets = document.querySelector("#support-tickets");
 const supportCategoryLabels = { ride:"Udhëtim", food_order:"Porosi ushqimi", payment:"Pagesa", safety:"Siguria", driver:"Shoferi", restaurant:"Restoranti", account:"Llogaria", other:"Tjetër" };
-const supportStatusLabels = { open:"E hapur", in_progress:"Në shqyrtim", resolved:"E zgjidhur", closed:"E mbyllur" };
+const supportStatusLabels = { open:"E hapur", in_progress:"Në verifikim", resolved:"E zgjidhur", closed:"E mbyllur" };
 
 supportOpen.addEventListener("click", () => {
   if (!state.session?.access_token) { openAccount("login"); return; }
@@ -836,7 +836,7 @@ async function loadSupportTickets() {
       supportTickets.append(card);
     }
   } catch (error) {
-    supportTickets.replaceChildren(node("p", "menu-empty", "Kërkesat nuk mund të ngarkohen: " + (error.message || "gabim i panjohur")));
+    supportTickets.replaceChildren(node("p", "menu-empty", "Kërkesat s’u ngarkuan: " + (error.message || "gabim i panjohur")));
   }
 }
 
@@ -853,24 +853,24 @@ document.querySelector("#find-delivery-address").addEventListener("click",async(
  if(!state.session?.access_token){openAccount("login");return;}
  const query=String(deliveryAddressInput.value||"").trim();
  if(query.length<3){showMessage(checkoutMessage,"Shkruaj të paktën 3 karaktere për adresën.");return;}
- deliveryAddressSuggestions.replaceChildren(node("p","menu-empty","Po kërkojmë adresën…"));
+ deliveryAddressSuggestions.replaceChildren(node("p","menu-empty","Po e kërkojmë adresën…"));
  try{
   const result=await apiRequest("/geocode",{method:"POST",body:JSON.stringify({city:state.selectedCity,query})});
   deliveryAddressSuggestions.replaceChildren();
   const suggestions=Array.isArray(result.data)?result.data:[];
-  if(!suggestions.length){deliveryAddressSuggestions.append(node("p","menu-empty","Nuk u gjet adresë në Kosovë. Provo një adresë më të saktë."));return;}
+  if(!suggestions.length){deliveryAddressSuggestions.append(node("p","menu-empty","S’u gjet adresë në Kosovë. Provo me një adresë më të saktë."));return;}
   for(const item of suggestions){
    const choice=node("button","",item.label);choice.type="button";
    choice.addEventListener("click",()=>{
     deliveryAddressInput.value=item.label;
     checkoutForm.elements.lat.value=String(item.lat);
     checkoutForm.elements.lon.value=String(item.lon);
-    deliveryAddressSuggestions.replaceChildren(node("p","menu-empty","Adresa u zgjodh."));
-    showMessage(checkoutMessage,"Adresa u zgjodh. Kontrollo koordinatat para se të porositësh.","success");
+    deliveryAddressSuggestions.replaceChildren(node("p","menu-empty","E zgjodhe adresën."));
+    showMessage(checkoutMessage,"E zgjodhe adresën. Kontrollo koordinatat para se të porositësh.","success");
    });
    deliveryAddressSuggestions.append(choice);
   }
- }catch(error){showMessage(checkoutMessage,error.code==="GEOCODING_NOT_CONFIGURED"?"Kërkimi i adresave nuk është konfiguruar ende.":error.message||"Nuk mundëm të kërkojmë adresën.","error");deliveryAddressSuggestions.replaceChildren();}
+ }catch(error){showMessage(checkoutMessage,error.code==="GEOCODING_NOT_CONFIGURED"?"Kërkimi i adresave nuk është konfiguruar ende.":error.message||"S’arritëm ta kërkojmë adresën.","error");deliveryAddressSuggestions.replaceChildren();}
 });
 deliveryAddressInput.addEventListener("input",()=>{
  checkoutForm.elements.lat.value="";
