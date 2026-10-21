@@ -225,6 +225,9 @@ const worker = {
   async fetch(request: Request, env: Env): Promise<Response> {
     const requestId = crypto.randomUUID();
     const url = new URL(request.url);
+    // Supabase may expose the full function prefix in Request.url; normalize defensively.
+    const edgePrefix = "/functions/v1/sjelle-api";
+    if (url.pathname.startsWith(edgePrefix)) url.pathname = url.pathname.slice(edgePrefix.length) || "/";
     const origin = request.headers.get("origin");
 
     if (request.method === "OPTIONS") {
