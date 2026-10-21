@@ -50,8 +50,8 @@ try {
     { timeout: 15000 },
   );
   const cityOptions = await page.locator("#city-select option").count();
-  assert.ok(cityOptions >= 2, "homepage should render city options from the live API");
-  console.log(`PASS city selector rendered ${cityOptions - 1} city options`);
+  assert.equal(cityOptions, 6, "homepage should render all six configured Kosovo launch cities from the live API");
+  console.log(`PASS city selector rendered all ${cityOptions} configured launch cities`);
 
   const signupLink = page.locator('.hero-actions a[href*="account=signup"]');
   await signupLink.waitFor({ state: "visible" });
