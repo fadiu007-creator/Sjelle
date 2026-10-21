@@ -33,6 +33,9 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npm test
       - run: npm run typecheck
+      - name: Guard API and deployed Edge Function parity
+        working-directory: .
+        run: node scripts/check-critical-api-parity.mjs
       - name: Check customer and portal JavaScript syntax
         run: |
           node --check ../customer/app.js
