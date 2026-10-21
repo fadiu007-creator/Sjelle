@@ -246,8 +246,8 @@ async function start() {
   } catch {
     citySelect.replaceChildren(node("option", "", "Qytetet nuk u ngarkuan"));
     citySelect.disabled = true;
-    cityStatus.textContent = "API nuk është lidhur ende. Konfiguro lidhjen e backend-it në Cloudflare.";
-    showError("Nuk ka lidhje me API-në e Sjelle. Kontrollo konfigurimin e Worker-it.");
+    cityStatus.textContent = "API nuk është lidhur ende. Kontrollo konfigurimin e Supabase API-së.";
+    showError("Nuk ka lidhje me API-në e Sjelle. Kontrollo nëse Supabase API është në dispozicion.");
   }
 }
 
