@@ -748,3 +748,29 @@ test("city activation requires an explicit positive readiness confirmation", asy
     assert.equal(requestedUrls.some(url => url.includes("/sjelle_cities?slug=")), false);
   } finally { globalThis.fetch = originalFetch; }
 });
+
+test("city deactivation does not require a readiness confirmation", async () => {
+  const originalFetch = globalThis.fetch;
+  const cityId = "22222222-2222-4222-8222-222222222222";
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    if (url.includes("/sjelle_user_roles?") && url.includes("role=eq.admin")) return new Response(JSON.stringify([{ role: "admin" }]), { status: 200, headers: { "content-type": "application/json" } });
+    if (url.includes("/sjelle_cities?slug=eq.prishtina")) return new Response(JSON.stringify([{ id: cityId }]), { status: 200, headers: { "content-type": "application/json" } });
+    if (url.includes("/sjelle_cities?id=eq." + cityId) && init?.method === "PATCH") return new Response(JSON.stringify([{ id: cityId, active: false, rides_enabled: false, food_enabled: false }]), { status: 200, headers: { "content-type": "application/json" } });
+    if (url.endsWith("/sjelle_audit_logs") && init?.method === "POST") return new Response(null, { status: 201 });
+    throw new Error("Unexpected database request: " + url);
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/admin/cities/prishtina/services", {
+      method: "PATCH",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ active: false, rides_enabled: false, food_enabled: false, confirm_ready: false, reason: "Service temporarily paused" }),
+    }), {
+      SUPABASE_URL: "https://example.supabase.co", SUPABASE_PUBLISHABLE_KEY: "test-publishable", SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { data: { active: boolean; rides_enabled: boolean; food_enabled: boolean } };
+    assert.equal(response.status, 200);
+    assert.deepEqual(body.data, { id: cityId, active: false, rides_enabled: false, food_enabled: false });
+  } finally { globalThis.fetch = originalFetch; }
+});
