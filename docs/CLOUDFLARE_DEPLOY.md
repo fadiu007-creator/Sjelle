@@ -1,27 +1,69 @@
-# Cloudflare deployment
+# Deployment from GitHub (recommended)
 
-Sjelle uses Cloudflare Workers with the static customer app in `apps/customer/`. The Worker API and customer assets deploy together from `apps/api/wrangler.toml`. No Vercel deployment is used.
+You can keep all code changes and the deployment button in GitHub. GitHub Actions deploys the Worker to Cloudflare; you do not need to install Wrangler or run terminal commands on your phone/computer.
 
-## Required setup
+## What GitHub-only hosting can and cannot do
 
-1. Add GitHub Actions repository secrets:
-   - `CLOUDFLARE_API_TOKEN` — a Cloudflare API token with permission to deploy Workers and manage Worker settings/assets for the target account.
-   - `CLOUDFLARE_ACCOUNT_ID` — the Cloudflare account ID.
-2. In Cloudflare Worker settings, configure both `sjelle-api-staging` and `sjelle-api-production` separately:
-   - `SUPABASE_URL=https://saavqlbwffrwxingbnri.supabase.co`
-   - `SUPABASE_PUBLISHABLE_KEY` as a Worker variable
-   - `SUPABASE_SERVICE_ROLE_KEY` as a secret
-   - `ALLOWED_ORIGIN` to the exact public origin serving the customer app
-   - `ROUTING_API_URL` to an OSRM-compatible routing service base URL (required for address-based quotes)
-   - `ROUTING_API_KEY` as a secret if your routing provider requires a bearer token
-   - `GEOCODING_API_URL` to a Nominatim-compatible geocoding service base URL (required for address search)
-   - `GEOCODING_API_KEY` as a secret if your geocoder requires a bearer token
-3. Confirm the deployed Worker environment has the expected assets binding and test `/api/v1/health`, `/api/v1/ready`, and `/api/v1/cities`.
+GitHub Pages serves static files only. Sjelle's real ride/order APIs, authentication-aware operations, dispatch and scheduled recovery run on a Cloudflare Worker and use the existing Supabase project. Publishing `apps/customer/` alone to GitHub Pages will not deploy the API, and the current app uses root-relative paths and same-origin `/api/v1` calls. Do not treat a Pages build as a working production deployment.
 
-Never put the Supabase service-role key in GitHub source, a client bundle, or a non-secret Worker variable.
+Recommended arrangement: GitHub repository + GitHub Actions for deployment + Cloudflare Worker for app/API + existing Supabase `zikos` project. No Vercel and no new Supabase project.
 
-## Deploy
+## One-time setup
 
-Open GitHub Actions → **Deploy Sjelle to Cloudflare** → **Run workflow**. Choose `staging` first and provide the exact HTTPS URL for that Worker (without a trailing slash). The workflow runs API tests and TypeScript type checking before deployment, then checks `/api/v1/health` and `/api/v1/ready`. Readiness must confirm database connectivity and that the routing, geocoding, publishable-key and allowed-origin settings are present. A provider URL being configured does not prove its coverage or uptime; test real addresses in staging before launch. Choose production only after staging is checked.
+### 1. Create a Cloudflare API token
 
-The readiness endpoint now requires the Supabase URL/service-role key, publishable key, allowed customer origin, routing URL and geocoding URL, then confirms database connectivity. Provider API keys are only required when the chosen provider needs them. The workflow is manual by design; commits do not automatically deploy to a live Worker. Deployment has not been run from this repository yet.
+1. Sign in to the Cloudflare dashboard and open **My Profile → API Tokens**.
+2. Choose **Create Token** and use a Workers deployment template if offered.
+3. Scope it to the Cloudflare account that owns the Sjelle Worker. Grant only the permissions required to deploy Workers and Worker assets; do not use the Global API Key.
+4. Copy the token once and keep it private.
+
+### 2. Add two GitHub Actions secrets
+
+1. Open `https://github.com/fadiu007-creator/Sjelle/settings/secrets/actions`.
+2. Select **New repository secret**.
+3. Add `CLOUDFLARE_API_TOKEN` with the token from step 1.
+4. Add `CLOUDFLARE_ACCOUNT_ID` with the Account ID shown on the Cloudflare account overview.
+5. Never add the Supabase service-role key to source code, GitHub Pages variables, or browser-visible settings.
+
+### 3. Configure the Cloudflare Worker bindings
+
+In Cloudflare, open **Workers & Pages**. Configure both Worker environments, `sjelle-api-staging` and `sjelle-api-production`, separately. In each environment's **Settings → Variables and Secrets**, add:
+
+- `SUPABASE_URL` — `https://saavqlbwffrwxingbnri.supabase.co`
+- `SUPABASE_PUBLISHABLE_KEY` — regular variable; use the publishable key from the existing `zikos` project
+- `SUPABASE_SERVICE_ROLE_KEY` — **secret**; use the service-role key from the existing `zikos` project
+- `ALLOWED_ORIGIN` — exact origin of the Worker website, e.g. `https://sjelle-api-staging.<your-subdomain>.workers.dev` for staging; use the production Worker origin in production
+- `ROUTING_API_URL` — URL of a real OSRM-compatible routing service
+- `GEOCODING_API_URL` — URL of a real Nominatim-compatible geocoder
+
+If the chosen routing/geocoding provider requires API keys, add `ROUTING_API_KEY` and/or `GEOCODING_API_KEY` as **secrets**. Do not use public demo endpoints for production traffic. Save settings for each environment. Keep `SUPABASE_SERVICE_ROLE_KEY` secret and server-side only.
+
+If you do not yet have a reliable routing/geocoding provider, do not activate rides publicly; the readiness check is expected to fail until these integrations are configured.
+
+## Deploy through GitHub Actions
+
+1. Open the repository's **Actions** tab: `https://github.com/fadiu007-creator/Sjelle/actions`.
+2. Choose **Deploy Sjelle to Cloudflare** from the workflow list.
+3. Press **Run workflow**.
+4. Select `staging` first.
+5. In `worker_url`, enter the exact HTTPS URL of the staging Worker, without a trailing slash. Use the URL shown for `sjelle-api-staging` in Cloudflare; do not guess it.
+6. Start the workflow and open its run to follow each step. It runs API tests and TypeScript checks, checks portal JavaScript syntax, performs a Wrangler dry run, deploys, then probes the homepage, portals, health, cities and readiness endpoints.
+7. If a step fails, open the failed step's log. Fix missing secrets/bindings or code errors, commit the fix to `main`, then run the workflow again.
+8. Test staging: create a test customer, verify sign-in, check city availability, and test customer/driver/merchant/admin flows with controlled test accounts. Keep all launch cities disabled during testing.
+9. Only after staging checks pass, run the same workflow with `production` and the exact production Worker URL.
+
+## How to interpret the result
+
+- **Green workflow:** the deploy command succeeded and the configured smoke checks passed. It is stronger than a Pages build, but still does not prove every ride/order journey or operational process works.
+- **Failed at missing Cloudflare secrets:** complete step 2.
+- **Failed at readiness:** inspect Worker bindings and provider configuration in step 3.
+- **Failed at homepage/portal checks:** inspect the deployment log and verify the Worker URL and asset deployment.
+- **Failed routing/geocoding checks:** configure supported providers and test them in staging; do not bypass the readiness check just to force deployment.
+
+## Important launch gates
+
+Keep all six candidate cities inactive until pricing, real service-area polygons, drivers, restaurants, menus, support coverage and local compliance have been reviewed. Current payment support is cash only; do not advertise card payments. Deployment success alone is not permission to start accepting public bookings.
+
+## Current status
+
+The deployment workflow is manual by design. A successful GitHub Pages workflow does not deploy the API. Run **Deploy Sjelle to Cloudflare** as described above to publish the complete app.
