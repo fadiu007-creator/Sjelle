@@ -770,6 +770,77 @@ async function loadMyRides(){
 setInterval(()=>{if(document.visibilityState==='visible'&&state.session?.access_token&&document.querySelector('#account-dialog')?.open){loadMyOrders();loadMyRides();}},20000);
 
 
+const supportOpen = document.querySelector("#support-open");
+const supportForm = document.querySelector("#support-form");
+const supportSubmit = document.querySelector("#support-submit");
+const supportMessage = document.querySelector("#support-message");
+const supportTickets = document.querySelector("#support-tickets");
+const supportCategoryLabels = { ride:"Udhëtim", food_order:"Porosi ushqimi", payment:"Pagesa", safety:"Siguria", driver:"Shoferi", restaurant:"Restoranti", account:"Llogaria", other:"Tjetër" };
+const supportStatusLabels = { open:"E hapur", in_progress:"Në shqyrtim", resolved:"E zgjidhur", closed:"E mbyllur" };
+
+supportOpen.addEventListener("click", () => {
+  if (!state.session?.access_token) { openAccount("login"); return; }
+  supportForm.hidden = !supportForm.hidden;
+  if (!supportForm.hidden) supportForm.elements.description.focus();
+});
+supportForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  if (!state.session?.access_token) { openAccount("login"); return; }
+  const category = String(supportForm.elements.category.value || "");
+  const description = String(supportForm.elements.description.value || "").trim();
+  if (description.length < 10 || description.length > 3000) {
+    showMessage(supportMessage, "Përshkrimi duhet të ketë 10–3000 karaktere.", "error");
+    return;
+  }
+  supportSubmit.disabled = true;
+  showMessage(supportMessage, "Po dërgohet kërkesa…");
+  try {
+    await apiRequest("/support-tickets", { method: "POST", body: JSON.stringify({ category, description }) });
+    supportForm.reset();
+    supportForm.hidden = true;
+    showMessage(supportMessage, "Kërkesa u dërgua. Mund ta shohësh më poshtë.", "success");
+    await loadSupportTickets();
+  } catch (error) {
+    showMessage(supportMessage, error.message || "Kërkesa nuk u dërgua. Provo përsëri.", "error");
+  } finally {
+    supportSubmit.disabled = false;
+  }
+});
+async function loadSupportTickets() {
+  if (!state.session?.access_token) {
+    supportTickets.replaceChildren();
+    return;
+  }
+  supportTickets.replaceChildren(node("p", "menu-empty", "Po ngarkojmë kërkesat…"));
+  try {
+    const result = await apiRequest("/support-tickets");
+    const tickets = Array.isArray(result.data) ? result.data : [];
+    if (!tickets.length) {
+      supportTickets.replaceChildren(node("p", "menu-empty", "Nuk ke kërkesa për ndihmë ende."));
+      return;
+    }
+    supportTickets.replaceChildren();
+    for (const ticket of tickets) {
+      const card = node("article", "my-order-card support-ticket-card");
+      card.append(node("div", "my-order-heading", supportCategoryLabels[ticket.category] || "Kërkesë për ndihmë"));
+      card.append(node("span", "order-status", supportStatusLabels[ticket.status] || "E hapur"));
+      card.append(node("p", "support-ticket-description", ticket.description || ""));
+      const created = ticket.created_at ? new Date(ticket.created_at) : null;
+      if (created && !Number.isNaN(created.getTime())) card.append(node("small", "support-ticket-date", created.toLocaleString("sq-XK")));
+      supportTickets.append(card);
+    }
+  } catch (error) {
+    supportTickets.replaceChildren(node("p", "menu-empty", "Kërkesat nuk mund të ngarkohen: " + (error.message || "gabim i panjohur")));
+  }
+}
+
+const originalRenderAccountState = renderAccountState;
+renderAccountState = function() {
+  originalRenderAccountState();
+  if (state.session?.access_token && supportTickets) loadSupportTickets();
+  else if (supportTickets) supportTickets.replaceChildren();
+};
+
 const deliveryAddressInput = document.querySelector('#checkout-form [name="address"]');
 const deliveryAddressSuggestions = document.querySelector("#delivery-address-suggestions");
 document.querySelector("#find-delivery-address").addEventListener("click",async()=>{
