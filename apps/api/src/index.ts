@@ -1980,6 +1980,51 @@ export default {
       }catch{return response({error:{code:"RESTAURANT_REVIEW_FAILED",request_id:requestId}},503,requestId,origin,env);}
     }
 
+    if (url.pathname === "/api/v1/admin/support-tickets" && request.method === "GET") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); }
+      catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try { if (!await hasSjelleRole(env, user.id, "admin")) return response({ error: { code: "FORBIDDEN", request_id: requestId } }, 403, requestId, origin, env); }
+      catch { return response({ error: { code: "ROLE_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+      try {
+        const status = url.searchParams.get("status");
+        if (status && !["open", "in_progress", "resolved", "closed"].includes(status)) return response({ error: { code: "INVALID_SUPPORT_STATUS", request_id: requestId } }, 400, requestId, origin, env);
+        const query = "sjelle_support_tickets?select=id,requester_id,ride_id,order_id,category,description,status,assigned_to,created_at,updated_at"
+          + (status ? "&status=eq." + encodeURIComponent(status) : "")
+          + "&order=created_at.desc&limit=100";
+        const result = await databaseRequest(env, query);
+        if (!result.ok) return response({ error: { code: "ADMIN_SUPPORT_TICKETS_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const rows = await parseJson(result);
+        return response({ data: Array.isArray(rows) ? rows : [] }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "ADMIN_SUPPORT_TICKETS_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
+    const adminSupportTicketMatch = url.pathname.match(/^\/api\/v1\/admin\/support-tickets\/([0-9a-f-]{36})$/i);
+    if (adminSupportTicketMatch && request.method === "PATCH") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); }
+      catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try { if (!await hasSjelleRole(env, user.id, "admin")) return response({ error: { code: "FORBIDDEN", request_id: requestId } }, 403, requestId, origin, env); }
+      catch { return response({ error: { code: "ROLE_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+      let body: unknown;
+      try { body = await request.json(); }
+      catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
+      if (!isRecord(body) || !["open", "in_progress", "resolved", "closed"].includes(String(body.status))) return response({ error: { code: "INVALID_SUPPORT_STATUS", request_id: requestId } }, 400, requestId, origin, env);
+      try {
+        const patch = { status: String(body.status), assigned_to: user.id, updated_at: new Date().toISOString() };
+        const result = await databaseRequest(env, "sjelle_support_tickets?id=eq." + encodeURIComponent(adminSupportTicketMatch[1]), {
+          method: "PATCH", headers: { prefer: "return=representation" }, body: JSON.stringify(patch),
+        });
+        const rows = await parseJson(result);
+        if (!result.ok) return response({ error: { code: "ADMIN_SUPPORT_TICKET_UPDATE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        if (!Array.isArray(rows) || !rows.length) return response({ error: { code: "SUPPORT_TICKET_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+        await databaseRequest(env, "sjelle_audit_logs", { method: "POST", body: JSON.stringify({ actor_id: user.id, action: "support_ticket.updated", target_type: "support_ticket", target_id: adminSupportTicketMatch[1], metadata: { status: patch.status } }) });
+        return response({ data: rows[0] as Record<string, unknown> }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "ADMIN_SUPPORT_TICKET_UPDATE_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
     if (url.pathname === "/api/v1/support-tickets" && (request.method === "GET" || request.method === "POST")) {
       let user: AuthUser | null;
       try { user = await requireUser(request, env); }
