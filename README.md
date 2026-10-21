@@ -49,7 +49,7 @@ Sjelle is a Kosovo-first ride-hailing and food-delivery platform. One customer e
 
 ## Deployment
 
-See [Cloudflare deployment instructions](docs/CLOUDFLARE_DEPLOY.md) and [operations bootstrap](docs/OPERATIONS_BOOTSTRAP.md). Deployment is manual and has not yet been run from this repository.
+Use [Deploy from GitHub Actions](docs/CLOUDFLARE_DEPLOY.md) and [operations bootstrap](docs/OPERATIONS_BOOTSTRAP.md). GitHub Actions is the deployment control panel; it deploys the API and assets to Cloudflare. GitHub Pages alone cannot run the API. Deployment is manual and must be run against staging before production.
 
 ## Local API development
 
