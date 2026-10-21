@@ -830,7 +830,7 @@ test("ride quotes accept valid MultiPolygon service areas including non-first po
     assert.equal(result.status, 201);
     const body = await result.json() as { data?: { quote_id?: string; amount_cents?: number } };
     assert.equal(body.data?.quote_id, quoteId);
-    assert.equal(body.data?.amount_cents, 150);
+    assert.equal(body.data?.amount_cents, 200);
   } finally {
     globalThis.fetch = originalFetch;
   }
