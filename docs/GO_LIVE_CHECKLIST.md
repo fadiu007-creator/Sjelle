@@ -4,25 +4,22 @@ Sjelle is deployed at https://fadiu007-creator.github.io/Sjelle/ and its API run
 
 ## Current verified state
 
-- The static site and Supabase Edge Function API are deployed. API CI and live API smoke checks passed on the latest code change.
-- The browser smoke test exposed a stale English-era signup-label assertion after the Kosovo Albanian localization; the assertion has been corrected and the updated deployment/browser run is being verified.
-- All six candidate cities (Prishtina, Ferizaj, Prizren, Gjilan, Mitrovica and Peja) exist and remain disabled for rides and food delivery.
-- Current live database check: one driver application is pending review and offline; there are no vehicles, restaurants, menu items or service-area polygons, and no Sjelle administrator role is assigned.
-- The requested aa@aa.aa address is not currently a confirmed Supabase Auth account. Create and confirm that account before running the first-admin bootstrap SQL.
+- The static site and Supabase Edge Function API are deployed. The latest recorded API CI run passed; the custom Pages workflow and live smoke checks should be checked after each deployment.
+- `fatmirsejdiu007@gmail.com` is a confirmed Supabase Auth account and now has the `admin` role in `public.sjelle_user_roles`. Sign in to the admin portal and verify access with a fresh session.
+- All six candidate cities (Prishtina, Ferizaj, Prizren, Gjilan, Mitrovica and Peja) remain disabled for rides and food delivery.
+- Six **inactive draft reference boundaries** have been added for the six candidate cities from the public GeoJSON-Kosova municipality dataset. They are simplified reference polygons, not approved operational coverage. The source includes OSM-derived geoBoundaries data: https://github.com/Learti82/GeoJSON-Kosova. Review each boundary in the admin portal, especially the Mitrovica city mapping, and replace it with the intended operational zone before activation.
+- Current live database check: one driver application is pending review and offline; there are no vehicles, restaurants or menu items. No active city pricing versions or active service areas are configured.
 - Live authenticated end-to-end ride and food-order lifecycle testing is still required; public service must remain disabled until supply and operating gates are met.
 
-## 1. Create the first administrator safely
+## 1. First administrator
 
-1. Open the public Sjelle site and create an account using an email you control.
-2. Confirm that account through Supabase Auth.
-3. In Supabase Dashboard, select the existing project `zikos` (ref `saavqlbwffrwxingbnri`) and open **SQL Editor**.
-4. Open `supabase/operations/first-admin.sql` in this repository. Replace the placeholder with the exact confirmed account email, then run it manually.
-5. Verify that the expected email has the `admin` role in `public.sjelle_user_roles`. Do not grant the role to unrelated users in the shared Supabase project.
-6. Sign in to https://fadiu007-creator.github.io/Sjelle/admin/ and verify the admin dashboard loads data from the live API.
+The first admin role has been assigned to the confirmed `fatmirsejdiu007@gmail.com` account in the existing Supabase project. Next, sign in at https://fadiu007-creator.github.io/Sjelle/admin/ with a fresh session and verify that the dashboard loads live city, pricing and service-area data. If the session was already open when the role was granted, sign out and sign back in before testing.
 
-The bootstrap SQL fails closed if the placeholder is unchanged or the email is not a confirmed Auth account. It does not modify roles or tables belonging to other applications.
+The reusable `supabase/operations/first-admin.sql` bootstrap remains fail-closed and should only be used for another confirmed account after changing its placeholder. It touches only `public.sjelle_user_roles`.
 
 ## 2. Launch one city at a time
+
+The six municipality polygons currently stored in `sjelle_service_areas` are inactive draft references. They are simplified to fit the API's validation limits and are not a substitute for defining the actual dispatch/delivery coverage. The source municipality for the `mitrovica` slug is currently South Mitrovica; confirm that this is the intended scope. Do not activate a draft area until an operator has reviewed it and agreed to the actual service boundary.
 
 For a city to offer rides:
 - Confirm local legal/licensing, insurance, driver eligibility, support and cash-handling requirements.
