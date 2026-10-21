@@ -1,0 +1,79 @@
+name: Deploy Sjelle to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/customer/**"
+      - "apps/api/**"
+      - ".github/workflows/deploy-github-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test server-side API source
+        working-directory: apps/api
+        run: |
+          npm install --no-package-lock --no-audit --no-fund
+          npm test
+          npm run typecheck
+      - name: Check portal JavaScript syntax
+        run: |
+          node --check apps/customer/app.js
+          node --check apps/customer/driver/driver.js
+          node --check apps/customer/merchant/merchant.js
+          node --check apps/customer/admin/admin.js
+      - name: Prepare project Pages path
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, shutil
+          source = Path("apps/customer")
+          target = Path("_site")
+          if target.exists():
+              shutil.rmtree(target)
+          shutil.copytree(source, target, ignore=shutil.ignore_patterns("_headers"))
+          # GitHub project Pages is hosted below /Sjelle/, unlike a domain root.
+          for page in target.rglob("*.html"):
+              text = page.read_text(encoding="utf-8")
+              text = re.sub(r'(["\\'])/(?!/)', r'\\1/Sjelle/', text)
+              page.write_text(text, encoding="utf-8")
+          (target / ".nojekyll").touch()
+          index = target / "index.html"
+          if not index.exists():
+              raise SystemExit("Build failed: customer index.html is missing")
+          print(f"Prepared {sum(1 for p in target.rglob('*') if p.is_file())} static files")
+          PY
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
