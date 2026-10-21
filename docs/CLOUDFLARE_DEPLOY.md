@@ -22,6 +22,6 @@ Never put the Supabase service-role key in GitHub source, a client bundle, or a 
 
 ## Deploy
 
-Open GitHub Actions → **Deploy Sjelle to Cloudflare** → **Run workflow**. Choose `staging` first and provide the exact HTTPS URL for that Worker (without a trailing slash). The workflow runs API tests and TypeScript type checking before deployment, then checks `/api/v1/health` and `/api/v1/ready`. Readiness must confirm database connectivity. Choose production only after staging is checked.
+Open GitHub Actions → **Deploy Sjelle to Cloudflare** → **Run workflow**. Choose `staging` first and provide the exact HTTPS URL for that Worker (without a trailing slash). The workflow runs API tests and TypeScript type checking before deployment, then checks `/api/v1/health` and `/api/v1/ready`. Readiness must confirm database connectivity and that the routing, geocoding, publishable-key and allowed-origin settings are present. A provider URL being configured does not prove its coverage or uptime; test real addresses in staging before launch. Choose production only after staging is checked.
 
 The readiness endpoint now requires the Supabase URL/service-role key, publishable key, allowed customer origin, routing URL and geocoding URL, then confirms database connectivity. Provider API keys are only required when the chosen provider needs them. The workflow is manual by design; commits do not automatically deploy to a live Worker. Deployment has not been run from this repository yet.
