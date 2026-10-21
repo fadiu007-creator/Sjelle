@@ -917,25 +917,27 @@ export default {
         if (!cityResponse.ok) return response({ error: { code: "CITY_LOOKUP_FAILED", request_id: requestId } }, 503, requestId, origin, env);
         const cities = await parseJson(cityResponse) as Array<{ id: string; slug: string }>;
         if (!cities.length) return response({ error: { code: "CITY_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
-        const existingResponse = await databaseRequest(env, "sjelle_driver_profiles?user_id=eq." + encodeURIComponent(user.id) + "&select=user_id,review_status,city_id,selected_mode&limit=1");
-        const existingProfiles = await parseJson(existingResponse) as Array<{ user_id: string; review_status: string; city_id: string; selected_mode: string | null }>;
-        if (!existingResponse.ok) return response({ error: { code: "DRIVER_APPLICATION_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
-        if (existingProfiles.length) return response({ error: { code: "DRIVER_APPLICATION_EXISTS", message: "A driver application already exists for this account. Contact Sjelle support if your city or mode needs to change.", request_id: requestId } }, 409, requestId, origin, env);
-        // Insert, never upsert: a concurrent duplicate application must not overwrite
-        // an existing driver's city or selected mode after the preflight check.
-        const profileResponse = await databaseRequest(env, "sjelle_driver_profiles", {
-          method: "POST", headers: { prefer: "return=representation" },
-          body: JSON.stringify({ user_id: user.id, city_id: cities[0].id, selected_mode: body.mode, online: false }),
+        // Profile and role are inserted in one database transaction so a failed
+        // role write cannot leave a half-created driver application.
+        const applicationResponse = await databaseRequest(env, "rpc/sjelle_apply_for_driver", {
+          method: "POST",
+          body: JSON.stringify({
+            p_user_id: user.id,
+            p_city_id: cities[0].id,
+            p_selected_mode: body.mode,
+          }),
         });
-        if (!profileResponse.ok) {
-          if (profileResponse.status === 409) return response({ error: { code: "DRIVER_APPLICATION_EXISTS", request_id: requestId } }, 409, requestId, origin, env);
+        const applicationPayload = await parseJson(applicationResponse);
+        if (!applicationResponse.ok) {
+          const detail = isRecord(applicationPayload) ? String(applicationPayload.message ?? "") : "";
+          if (applicationResponse.status === 409 || detail.includes("duplicate key") || detail.includes("DRIVER_APPLICATION_EXISTS")) {
+            return response({ error: { code: "DRIVER_APPLICATION_EXISTS", request_id: requestId } }, 409, requestId, origin, env);
+          }
+          if (detail.includes("INVALID_DRIVER_APPLICATION")) {
+            return response({ error: { code: "INVALID_DRIVER_APPLICATION", request_id: requestId } }, 400, requestId, origin, env);
+          }
           return response({ error: { code: "DRIVER_APPLICATION_FAILED", request_id: requestId } }, 503, requestId, origin, env);
         }
-        const roleResponse = await databaseRequest(env, "sjelle_user_roles?on_conflict=user_id,role", {
-          method: "POST", headers: { prefer: "resolution=ignore-duplicates,return=minimal" },
-          body: JSON.stringify({ user_id: user.id, role: "driver" }),
-        });
-        if (!roleResponse.ok) return response({ error: { code: "DRIVER_ROLE_SETUP_FAILED", request_id: requestId } }, 503, requestId, origin, env);
         return response({ data: { application_status: "pending", city: cities[0].slug, mode: body.mode, online: false } }, 201, requestId, origin, env);
       } catch { return response({ error: { code: "DRIVER_APPLICATION_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
     }
