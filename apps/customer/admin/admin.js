@@ -36,53 +36,6 @@ async function loadRestaurantQueue(){
 $("#restaurants-refresh").addEventListener("click",loadRestaurantQueue);
 loadRestaurantQueue();
 
-function utcDateInput(date){return date.toISOString().slice(0,10);}
-function initReconciliationDates(){
- const today=new Date();const from=new Date(today.getTime()-29*86400000);
- $("#reconciliation-from").value=utcDateInput(from);
- $("#reconciliation-to").value=utcDateInput(today);
-}
-function renderReconciliationSummary(rows){
- const root=$("#reconciliation-summary");root.replaceChildren();
- if(!rows.length){root.append(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Nuk ka lëvizje financiare për këtë periudhë."}));return;}
- for(const row of rows){
-  const amount=Number(row.net_amount_cents);
-  const card=makeCard(row.account_type.replaceAll("_"," "),String(row.entry_count)+" hyrje · neto "+(amount/100).toFixed(2)+" €");
-  root.append(card);
- }
-}
-async function loadReconciliation(){
- const form=$("#reconciliation-form");const from=form.elements.from.value;const to=form.elements.to.value;
- const entries=$("#reconciliation-entries");const summary=$("#reconciliation-summary");
- entries.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Po ngarkojmë librin financiar…"}));summary.replaceChildren();
- try{
-  const result=await api("/admin/reconciliation?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to));
-  renderReconciliationSummary(result.summary||[]);
-  entries.replaceChildren();
-  if(result.meta?.possibly_truncated){
-   entries.append(Object.assign(document.createElement("p"),{className:"portal-alert",textContent:"Kujdes: u kthyen 1,000 hyrje. Rezultati mund të jetë i paplotë; ngushto periudhën për rakordim të plotë."}));
-  }
-  const rows=result.data||[];
-  if(!rows.length){entries.append(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Nuk ka hyrje për periudhën e zgjedhur."}));return;}
-  for(const row of rows){
-   const amount=Number(row.amount_cents)/100;
-   const title=(amount<0?"−":"+")+Math.abs(amount).toFixed(2)+" € · "+String(row.account_type||"").replaceAll("_"," ");
-   const relation=row.related_ride_id?"Udhëtim: "+row.related_ride_id:row.related_order_id?"Porosi: "+row.related_order_id:"Pa lidhje";
-   const card=makeCard(title,String(row.entry_type||"").replaceAll("_"," ")+" · "+relation);
-   const meta=document.createElement("p");
-   meta.textContent=new Date(row.created_at).toLocaleString()+" · llogaria: "+(row.account_user_id?String(row.account_user_id).slice(0,8)+"…":"—")+" · EUR";
-   card.append(meta);entries.append(card);
-  }
-  if(!result.meta?.possibly_truncated)alertMsg("U ngarkuan "+rows.length+" hyrje të librit financiar.", "success");
- }catch(err){
-  entries.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Libri financiar nuk mund të ngarkohet: "+err.message}));
-  alertMsg("Rakordimi nuk mund të ngarkohet: "+err.message,"error");
- }
-}
-$("#reconciliation-form").addEventListener("submit",e=>{e.preventDefault();loadReconciliation();});
-$("#reconciliation-refresh").addEventListener("click",loadReconciliation);
-initReconciliationDates();
-
 function renderServiceAreas(){
  const root=$("#service-area-list");if(!root)return;root.replaceChildren();
  const areas=currentCity?.service_areas||[];
