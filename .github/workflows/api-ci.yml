@@ -7,6 +7,7 @@ on:
       - "apps/customer/**"
       - "supabase/functions/**"
       - "supabase/migrations/**"
+      - "scripts/**"
       - ".github/workflows/api-ci.yml"
   pull_request:
     paths:
