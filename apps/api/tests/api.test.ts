@@ -723,3 +723,28 @@ test("cash collection rule violations from the job RPC return a conflict", async
     assert.equal(body.error.code, "CASH_COLLECTION_CONFIRMATION_REQUIRED");
   } finally { globalThis.fetch = originalFetch; }
 });
+
+test("city activation requires an explicit positive readiness confirmation", async () => {
+  const originalFetch = globalThis.fetch;
+  const requestedUrls: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    requestedUrls.push(url);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    if (url.includes("/sjelle_user_roles?") && url.includes("role=eq.admin")) return new Response(JSON.stringify([{ role: "admin" }]), { status: 200, headers: { "content-type": "application/json" } });
+    throw new Error("Unexpected database request: " + url);
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/admin/cities/prishtina/services", {
+      method: "PATCH",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ active: true, rides_enabled: true, food_enabled: false, confirm_ready: false, reason: "Readiness is not confirmed" }),
+    }), {
+      SUPABASE_URL: "https://example.supabase.co", SUPABASE_PUBLISHABLE_KEY: "test-publishable", SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 400);
+    assert.equal(body.error.code, "INVALID_CITY_ACTIVATION");
+    assert.equal(requestedUrls.some(url => url.includes("/sjelle_cities?slug=")), false);
+  } finally { globalThis.fetch = originalFetch; }
+});
