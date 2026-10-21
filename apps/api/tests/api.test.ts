@@ -183,3 +183,70 @@ test("admin route configuration requires an authenticated admin", async () => {
   assert.equal(response.status, 401);
   assert.equal(body.error.code, "UNAUTHENTICATED");
 });
+
+
+test("driver cannot go offline while an assigned ride is active", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    calls.push(url);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    if (url.includes("sjelle_driver_profiles?")) {
+      return new Response(JSON.stringify([{ user_id: "11111111-1111-4111-8111-111111111111", review_status: "approved", city_id: "22222222-2222-4222-8222-222222222222", selected_mode: "ride" }]), { status: 200 });
+    }
+    if (url.includes("sjelle_rides?")) return new Response(JSON.stringify([{ id: "33333333-3333-4333-8333-333333333333" }]), { status: 200 });
+    if (url.includes("sjelle_delivery_jobs?")) return new Response("[]", { status: 200 });
+    if (init?.method === "PATCH") throw new Error("availability must not be updated while a job is active");
+    return new Response("[]", { status: 200 });
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/availability", {
+      method: "PATCH",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ online: false }),
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 409);
+    assert.equal(body.error.code, "DRIVER_HAS_ACTIVE_JOB");
+    assert.ok(calls.some(url => url.includes("sjelle_rides?")));
+    assert.ok(calls.some(url => url.includes("sjelle_delivery_jobs?")));
+    assert.equal(calls.some(url => url.includes("sjelle_driver_profiles?") && url.includes("PATCH")), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("driver availability reports a backend error if active-job checks fail", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    if (url.includes("sjelle_driver_profiles?")) {
+      return new Response(JSON.stringify([{ user_id: "11111111-1111-4111-8111-111111111111", review_status: "approved", city_id: "22222222-2222-4222-8222-222222222222", selected_mode: "ride" }]), { status: 200 });
+    }
+    if (url.includes("sjelle_rides?")) return new Response("database unavailable", { status: 503 });
+    if (url.includes("sjelle_delivery_jobs?")) return new Response("[]", { status: 200 });
+    return new Response("[]", { status: 200 });
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/availability", {
+      method: "PATCH",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ online: false }),
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 503);
+    assert.equal(body.error.code, "ACTIVE_JOB_CHECK_FAILED");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
