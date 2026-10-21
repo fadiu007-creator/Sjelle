@@ -521,3 +521,76 @@ test("driver job status rejects explicit false cash confirmation for terminal tr
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("successful ride completion sends cash confirmation to the atomic database RPC", async () => {
+  const originalFetch = globalThis.fetch;
+  let rpcBody: Record<string, unknown> | null = null;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    }
+    if (url.includes("/rpc/sjelle_driver_update_job")) {
+      assert.equal(init?.method, "POST");
+      rpcBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({ id: "33333333-3333-4333-8333-333333333333", status: "completed" }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error("Unexpected database request: " + url);
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/jobs/ride/33333333-3333-4333-8333-333333333333/status", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ status: "completed", cash_collected: true }),
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(rpcBody, {
+      p_driver_id: "11111111-1111-4111-8111-111111111111",
+      p_job_kind: "ride",
+      p_job_id: "33333333-3333-4333-8333-333333333333",
+      p_next_status: "completed",
+      p_cash_collected: true,
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("driver job RPC conflicts are returned as conflicts instead of backend outages", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    }
+    if (url.includes("/rpc/sjelle_driver_update_job")) {
+      return new Response(JSON.stringify({ message: "INVALID_JOB_TRANSITION" }), {
+        status: 409, headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error("Unexpected database request: " + url);
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/jobs/ride/33333333-3333-4333-8333-333333333333/status", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ status: "driver_arriving" }),
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 409);
+    assert.equal(body.error.code, "INVALID_JOB_TRANSITION");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
