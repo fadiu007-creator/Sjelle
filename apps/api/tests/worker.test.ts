@@ -337,3 +337,37 @@ test("ride quotes reject destinations outside active service areas before routin
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("driver location rejects coordinates outside Kosovo before database access", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    requests.push(url);
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error("Invalid driver coordinates must be rejected before database access");
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/driver/location", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ latitude: 0, longitude: 0, accuracy_m: 10 }),
+    }), {
+      APP_ENV: "test",
+      ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(result.status, 400);
+    assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "INVALID_LOCATION");
+    assert.equal(requests.filter(url => url.includes("/rest/v1/")).length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
