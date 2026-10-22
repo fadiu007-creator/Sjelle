@@ -35,5 +35,9 @@ for (const [file, source] of [[apiPath, api], [edgePath, edge]]) {
 assert.ok(adminJs.includes("cityConfirmInput.required=cityActiveInput.checked"), "admin portal must require readiness confirmation only when activating a city");
 assert.ok(adminJs.includes("if(!cityActiveInput.checked)cityConfirmInput.checked=false"), "deactivating a city must clear readiness confirmation");
 assert.ok(!adminHtml.includes('name="confirm_ready" type="checkbox" required'), "readiness confirmation must not block safe deactivation in HTML");
+assert.ok(adminHtml.includes('id="city-readiness"'), "admin portal must expose a city readiness summary");
+assert.ok(adminJs.includes("function renderCityReadiness()"), "admin portal must render the city readiness summary");
+assert.ok(adminJs.includes("currentCity.pricing?.active"), "readiness summary must check active city pricing");
+assert.ok(adminJs.includes("area.active&&area.boundary_geojson"), "readiness summary must check active service-area geometry");
 
 console.log("Critical API/Edge Function and admin activation parity checks passed.");
