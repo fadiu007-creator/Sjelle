@@ -14,7 +14,7 @@ Sjelle is deployed at https://fadiu007-creator.github.io/Sjelle/ and its API run
 
 ## 1. First administrator
 
-The first admin role has been assigned to the confirmed `fatmirsejdiu007@gmail.com` account in the existing Supabase project. Next, sign in at https://fadiu007-creator.github.io/Sjelle/admin/ with a fresh session and verify that the dashboard loads live city, pricing and service-area data. If the session was already open when the role was granted, sign out and sign back in before testing.
+The first admin role has been assigned to the confirmed `fatmirsejdiu007@gmail.com` account in the existing Supabase project. Next, sign in at https://fadiu007-creator.github.io/Sjelle/admin/ with a fresh session and verify that the dashboard loads live city, pricing and service-area data. If the session was already open when the role was granted, sign out and sign back in before testing. The city panel now includes a live configuration summary for city activation, active service-area geometry, active pricing and enabled services. This is a visibility aid only: driver/vehicle and restaurant/menu readiness must still pass the server-side activation checks.
 
 The reusable `supabase/operations/first-admin.sql` bootstrap remains fail-closed and should only be used for another confirmed account after changing its placeholder. It touches only `public.sjelle_user_roles`.
 
