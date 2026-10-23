@@ -1483,7 +1483,7 @@ const worker = {
         const driver = await databaseRequest(env, "sjelle_driver_profiles?user_id=eq." + encodeURIComponent(user.id) + "&select=online,review_status&limit=1");
         const profiles = await parseJson(driver) as Array<{ online: boolean; review_status: string }>;
         if (!driver.ok) return response({ error: { code: "DRIVER_PROFILE_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
-        if (!profiles[0] || !profiles[0].online || profiles[0].review_status !== "approved") return response({ error: { code: "DRIVER_NOT_ONLINE", request_id: requestId } }, 409, requestId, origin, env);
+        if (!profiles[0] || profiles[0].review_status !== "approved") return response({ error: { code: "DRIVER_NOT_APPROVED", message: "Only an approved driver can submit GPS location.", request_id: requestId } }, 409, requestId, origin, env);
         const result = await databaseRequest(env, "sjelle_driver_locations?on_conflict=driver_id", {
           method: "POST", headers: { prefer: "resolution=merge-duplicates,return=minimal" },
           body: JSON.stringify({ driver_id: user.id, latitude: body.latitude, longitude: body.longitude,
