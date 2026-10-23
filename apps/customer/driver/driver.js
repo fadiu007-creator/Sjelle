@@ -15,7 +15,22 @@ function renderDocuments(){const root=$("#document-list");root.replaceChildren()
 $("#driver-application").addEventListener("submit",async e=>{e.preventDefault();try{const f=new FormData(e.currentTarget);await api("/driver/apply",{method:"POST",body:JSON.stringify({city:f.get("city"),mode:f.get("mode")})});showAlert("Aplikimi u dërgua. Tani regjistro automjetin dhe ngarko dokumentet.","success");await refreshProfile();}catch(err){showAlert("Aplikimi dështoi: "+err.message,"error");}});
 $("#vehicle-form").addEventListener("submit",async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{await api("/driver/vehicles",{method:"POST",body:JSON.stringify({vehicle_type:f.get("vehicle_type"),registration_number:f.get("registration_number"),make:f.get("make"),model:f.get("model"),color:f.get("color"),capacity:Number(f.get("capacity"))})});e.currentTarget.reset();showAlert("Automjeti u regjistrua për shqyrtim.","success");await refreshProfile();}catch(err){showAlert("Automjeti nuk u regjistrua: "+err.message,"error");}});
 $("#document-form").addEventListener("submit",async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{await api("/driver/documents",{method:"POST",body:f});e.currentTarget.reset();showAlert("Dokumenti u ngarkua në hapësirë private dhe pret shqyrtimin.","success");await refreshProfile();}catch(err){showAlert("Ngarkimi dështoi: "+err.message,"error");}});
-async function setAvailability(online){try{await api("/driver/availability",{method:"PATCH",body:JSON.stringify({online,mode:$("#driver-mode").value})});showAlert(online?"Je online. Po kërkojmë vendndodhjen për dispatch.":"Je offline.","success");await refreshProfile();if(online)refreshLocationSilently();}catch(e){showAlert("Nuk mund të ndryshohet statusi: "+e.message,"error");}}
+async function setAvailability(online){
+ try{
+  if(online){
+   if(!navigator.geolocation)throw new Error("Ky shfletues nuk e mbështet GPS-in. Provo Chrome në HTTPS.");
+   const position=await new Promise((resolve,reject)=>navigator.geolocation.getCurrentPosition(resolve,error=>{
+    const messages={1:"Lejo Location për Sjelle te cilësimet e shfletuesit.",2:"Telefoni nuk e gjeti GPS-in. Aktivizo Location dhe provo përsëri.",3:"Kërkimi i GPS-it zgjati shumë. Provo përsëri."};
+    reject(new Error(messages[error.code]||"GPS nuk është i disponueshëm."));
+   },{enableHighAccuracy:true,timeout:10000,maximumAge:5000}));
+   await api("/driver/location",{method:"POST",body:JSON.stringify({latitude:position.coords.latitude,longitude:position.coords.longitude,accuracy_m:position.coords.accuracy})});
+  }
+  await api("/driver/availability",{method:"PATCH",body:JSON.stringify({online,mode:$("#driver-mode").value})});
+  showAlert(online?"GPS u verifikua. Je online dhe mund të marrësh oferta.":"Je offline.","success");
+  await refreshProfile();
+  if(online)refreshLocationSilently();
+ }catch(e){showAlert("Nuk mund të ndryshohet statusi: "+e.message,"error");}
+}
 $("#driver-online").addEventListener("click",()=>setAvailability(true));$("#driver-offline").addEventListener("click",()=>setAvailability(false));
 $("#driver-location").addEventListener("click",()=>{if(!navigator.geolocation){showAlert("Shfletuesi nuk mbështet vendndodhjen.","error");return;}showAlert("Po marrim vendndodhjen…");navigator.geolocation.getCurrentPosition(async p=>{try{await api("/driver/location",{method:"POST",body:JSON.stringify({latitude:p.coords.latitude,longitude:p.coords.longitude,accuracy_m:p.coords.accuracy})});showAlert("Vendndodhja u dërgua.","success");if(driverMap){const ll=[p.coords.latitude,p.coords.longitude];if(!driverMarker)driverMarker=L.circleMarker(ll,{radius:9,color:"#244c40",fillColor:"#d6f27a",fillOpacity:1}).addTo(driverMap).bindPopup("Vendndodhja jote");else driverMarker.setLatLng(ll);driverMap.setView(ll,14);$("#driver-map-live-status").textContent="GPS u përditësua";}await loadOffers();}catch(e){showAlert("Vendndodhja nuk u dërgua: "+e.message,"error");}},()=>showAlert("Nuk u lejua ose nuk u mor vendndodhja.","error"),{enableHighAccuracy:true,timeout:10000,maximumAge:30000});});
 async function loadOffers(){try{const r=await api("/driver/offers");state.offers=r.data||[];renderOffers();}catch(e){$("#driver-offers").textContent=e.message;}}
