@@ -1421,18 +1421,24 @@ const worker = {
 
         if (body.online && profile.review_status !== "approved") return response({ error: { code: "DRIVER_NOT_APPROVED", request_id: requestId } }, 409, requestId, origin, env);
         if (body.online) {
-          const [docsResponse, vehicleResponse, cityResponse] = await Promise.all([
+          const locationCutoff = new Date(Date.now() - 120000).toISOString();
+          const [docsResponse, vehicleResponse, cityResponse, locationResponse] = await Promise.all([
             databaseRequest(env, "sjelle_driver_documents?driver_id=eq." + encodeURIComponent(user.id) + "&select=document_type,review_status,expires_at,created_at&order=created_at.desc"),
             databaseRequest(env, "sjelle_vehicles?driver_id=eq." + encodeURIComponent(user.id) + "&review_status=eq.approved&select=id&limit=1"),
             databaseRequest(env, "sjelle_cities?id=eq." + encodeURIComponent(profile.city_id) + "&select=active,rides_enabled,food_enabled&limit=1"),
+            databaseRequest(env, "sjelle_driver_locations?driver_id=eq." + encodeURIComponent(user.id) + "&recorded_at=gte." + encodeURIComponent(locationCutoff) + "&select=driver_id&limit=1"),
           ]);
           const docs = await parseJson(docsResponse) as Array<{ document_type: string; review_status: string; expires_at: string | null; created_at: string }>;
           const vehicles = await parseJson(vehicleResponse) as unknown[];
           const cities = await parseJson(cityResponse) as Array<{ active: boolean; rides_enabled: boolean; food_enabled: boolean }>;
+          const locations = await parseJson(locationResponse) as unknown[];
           const required = ["identity","driving_licence","vehicle_registration","insurance"];
-          if (!docsResponse.ok || !vehicleResponse.ok || !cityResponse.ok) return response({ error: { code: "DRIVER_READINESS_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+          if (!docsResponse.ok || !vehicleResponse.ok || !cityResponse.ok || !locationResponse.ok) return response({ error: { code: "DRIVER_READINESS_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env);
           if (!requiredDriverDocsApproved(docs) || !vehicles.length) {
             return response({ error: { code: "DRIVER_DOCUMENTS_NOT_APPROVED", message: "Identity, driving licence, vehicle registration and insurance must be approved, with at least one approved vehicle.", request_id: requestId } }, 409, requestId, origin, env);
+          }
+          if (!locations.length) {
+            return response({ error: { code: "DRIVER_LOCATION_REQUIRED", message: "Send a fresh GPS location before going online. Location must be updated within the last 2 minutes.", request_id: requestId } }, 409, requestId, origin, env);
           }
           const city = cities[0];
           if (!city || !city.active || (mode === "ride" && !city.rides_enabled) || (mode === "delivery" && !city.food_enabled)) {
