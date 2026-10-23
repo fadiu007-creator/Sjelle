@@ -2445,7 +2445,7 @@ const worker = {
     }, 404, requestId, origin, env);
   },
 
-  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+  async scheduled(_controller: unknown, env: Env, ctx: { waitUntil(promise: Promise<unknown>): void }): Promise<void> {
     if (!configured(env)) return;
     ctx.waitUntil((async () => {
       try {
