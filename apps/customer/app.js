@@ -11,7 +11,7 @@ const menuContent = document.querySelector("#menu-content");
 
 document.querySelector("#year").textContent = String(new Date().getFullYear());
 
-const state = { cities: [], selectedCity: "", service: "food", activeRestaurant: null, cart: new Map(), authMode: "login", session: null };
+const state = { cities: [], selectedCity: "", service: "ride", activeRestaurant: null, cart: new Map(), authMode: "login", session: null, rideTrackingTimers: [] };
 
 function node(tag, className, text) {
   const element = document.createElement(tag);
@@ -207,7 +207,7 @@ function chooseService(service) {
   foodPanel.hidden = service !== "food";
   ridePanel.hidden = service !== "ride";
   if (service === "food") loadRestaurants();
-  else loadRideRoutes();
+  else { loadRideRoutes(); if (rideMap) rideMap.setView(mapCityCenter(), 12); setTimeout(() => { if (rideMap) rideMap.invalidateSize(); }, 100); }
 }
 
 tabs.forEach(tab => tab.addEventListener("click", () => chooseService(tab.dataset.service)));
@@ -242,7 +242,7 @@ async function start() {
     state.selectedCity = state.cities.some(city => city.slug === "prishtina") ? "prishtina" : state.cities[0].slug;
     citySelect.value = state.selectedCity;
     updateCityStatus();
-    await loadRestaurants();
+    chooseService("ride");
   } catch {
     citySelect.replaceChildren(node("option", "", "Qytetet nuk u ngarkuan"));
     citySelect.disabled = true;
@@ -638,6 +638,14 @@ if (new URLSearchParams(window.location.search).get("account") === "login") open
 const rideQuoteForm = document.querySelector("#ride-quote-form");
 const rideQuoteMessage = document.querySelector("#ride-quote-message");
 const rideQuoteResult = document.querySelector("#ride-quote-result");
+const rideMapStatus=document.querySelector("#ride-map-status");let rideMap=null,rideMapMode="pickup",pickupMarker=null,destinationMarker=null,routeLine=null;
+function mapCityCenter(){const centers={ferizaj:[42.3702,21.1553],prishtina:[42.6629,21.1655],prizren:[42.2139,20.7397],gjilan:[42.4635,21.4694],mitrovica:[42.8856,20.8661],peja:[42.6593,20.2883]};return centers[state.selectedCity]||[42.55,20.9];}
+function initRideMap(){const el=document.querySelector("#ride-map");if(!el||!window.L||rideMap)return;rideMap=L.map(el,{zoomControl:true}).setView(mapCityCenter(),12);L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"&copy; OpenStreetMap contributors"}).addTo(rideMap);rideMap.on("click",e=>setMapPoint(rideMapMode,e.latlng.lat,e.latlng.lng));setTimeout(()=>rideMap.invalidateSize(),120);}
+function setRideMapMode(mode){rideMapMode=mode;document.querySelector("#map-pickup-mode")?.classList.toggle("is-selected",mode==="pickup");document.querySelector("#map-destination-mode")?.classList.toggle("is-selected",mode==="destination");if(rideMapStatus)rideMapStatus.textContent=mode==="pickup"?"Prek hartën për të zgjedhur pikën e nisjes.":"Prek hartën për të zgjedhur destinacionin.";}
+function updateRideMapMarkers(){if(!rideMap||!window.L)return;const f=rideQuoteForm.elements;for(const which of ["pickup","destination"]){const lat=Number(f[which+"_lat"].value),lon=Number(f[which+"_lon"].value);let m=which==="pickup"?pickupMarker:destinationMarker;if(f[which+"_lat"].value&&f[which+"_lon"].value&&Number.isFinite(lat)&&Number.isFinite(lon)){if(!m)m=L.marker([lat,lon]).addTo(rideMap).bindPopup(which==="pickup"?"Nisja":"Destinacioni");else m.setLatLng([lat,lon]);}else if(m){rideMap.removeLayer(m);m=null;}if(which==="pickup")pickupMarker=m;else destinationMarker=m;}const pts=[];if(pickupMarker)pts.push(pickupMarker.getLatLng());if(destinationMarker)pts.push(destinationMarker.getLatLng());if(routeLine){rideMap.removeLayer(routeLine);routeLine=null;}if(pts.length===2)routeLine=L.polyline(pts,{color:"#71963c",weight:4,dashArray:"7 8"}).addTo(rideMap);if(pts.length===2)rideMap.fitBounds(L.latLngBounds(pts).pad(.22),{maxZoom:15});else if(pts.length===1)rideMap.setView(pts[0],15);}
+function setMapPoint(which,lat,lon){if(lat<41.7||lat>43.4||lon<19.7||lon>22.0){if(rideMapStatus)rideMapStatus.textContent="Zgjedh një pikë brenda Kosovës.";return;}const f=rideQuoteForm.elements;const label=(which==="pickup"?"Nisja":"Destinacioni")+" në hartë ("+lat.toFixed(5)+", "+lon.toFixed(5)+")";f[which+"_query"].value=label;f[which+"_label"].value=label;f[which+"_lat"].value=String(lat);f[which+"_lon"].value=String(lon);document.querySelector("#"+which+"-suggestions").replaceChildren(node("p","menu-empty","Pika u zgjodh në hartë."));updateRideMapMarkers();if(rideMapStatus)rideMapStatus.textContent=(which==="pickup"?"Nisja":"Destinacioni")+" u zgjodh. "+(which==="pickup"?"Tani zgjidh destinacionin.":"Tani mund ta llogaritësh çmimin.");showMessage(rideQuoteMessage,label,"success");}
+document.querySelector("#map-pickup-mode")?.addEventListener("click",()=>setRideMapMode("pickup"));document.querySelector("#map-destination-mode")?.addEventListener("click",()=>setRideMapMode("destination"));document.querySelector("#map-use-location")?.addEventListener("click",()=>{if(!navigator.geolocation){rideMapStatus.textContent="GPS nuk mbështetet. Zgjidh nisjen në hartë.";return;}rideMapStatus.textContent="Po kërkojmë GPS-in…";getCurrentDevicePosition().then(p=>{setRideMapMode("pickup");setMapPoint("pickup",p.coords.latitude,p.coords.longitude);rideMap?.setView([p.coords.latitude,p.coords.longitude],16);}).catch(e=>{const m={1:"Lejo Location për Sjelle në Chrome.",2:"Telefoni s’e gjeti GPS-in. Zgjidh pikën direkt në hartë.",3:"GPS-i zgjati shumë. Provo sërish ose prek hartën."};rideMapStatus.textContent=m[e?.code]||"GPS dështoi. Zgjidh pikën në hartë.";});});
+
 
 function clearAddressSelection(which) {
   const form = rideQuoteForm;
@@ -645,6 +653,7 @@ function clearAddressSelection(which) {
   form.elements[which + "_lat"].value = "";
   form.elements[which + "_lon"].value = "";
   document.querySelector("#" + which + "-suggestions").replaceChildren();
+  updateRideMapMarkers();
 }
 
 async function findRideAddress(which) {
@@ -668,6 +677,7 @@ async function findRideAddress(which) {
         rideQuoteForm.elements[which + "_lon"].value = String(item.lon);
         rideQuoteForm.elements[which + "_query"].value = item.label;
         root.replaceChildren(node("p", "menu-empty", "E zgjodhe adresën."));
+        updateRideMapMarkers();
         showMessage(rideQuoteMessage, "Adresa " + (which === "pickup" ? "e nisjes" : "e destinacionit") + " u zgjodh.", "success");
       });
       root.append(choice);
@@ -709,6 +719,7 @@ locatePickup.addEventListener("click", () => {
     document.querySelector("#pickup-suggestions").replaceChildren(node("p", "menu-empty", "Vendndodhja u plotësua. Kontrollo që je në qytetin e zgjedhur."));
     locatePickup.textContent = "Vendndodhja u gjet ✓";
     locatePickup.disabled = false;
+    setMapPoint("pickup",position.coords.latitude,position.coords.longitude);
     showMessage(rideQuoteMessage, "Vendndodhja e nisjes u plotësua.", "success");
   }).catch(error => {
     locatePickup.disabled = false;
@@ -722,6 +733,8 @@ locatePickup.addEventListener("click", () => {
   });
 });
 rideQuoteForm.querySelector("#find-pickup").insertAdjacentElement("afterend", locatePickup);
+initRideMap();
+citySelect.addEventListener("change",()=>{if(rideMap)rideMap.setView(mapCityCenter(),12);});
 
 rideQuoteForm.addEventListener("submit", async event => {
   event.preventDefault();
@@ -801,6 +814,7 @@ const rideStatusLabels = {
 myRidesOpen.addEventListener("click",loadMyRides);
 async function loadMyRides(){
   if(!state.session?.access_token)return;
+  for(const timer of state.rideTrackingTimers)clearInterval(timer);state.rideTrackingTimers=[];
   myRides.replaceChildren(node("p","menu-empty","Po ngarkojmë udhëtimet…"));
   try{
     const result=await apiRequest("/rides");const rides=Array.isArray(result.data)?result.data:[];
@@ -811,6 +825,7 @@ async function loadMyRides(){
       c.append(node("div","my-order-heading",ride.pickup_label+" → "+ride.destination_label));
       c.append(node("span","order-status",rideStatusLabels[ride.status]||ride.status));
       c.append(node("p","","Çmimi: "+euro(ride.final_amount_cents??ride.quoted_amount_cents)+" · Para në dorë"));
+      if(["driver_assigned","driver_arriving","driver_arrived","in_progress"].includes(ride.status)&&window.L){const mapEl=node("div","ride-tracking-map");mapEl.setAttribute("aria-label","Harta live e udhëtimit");c.append(mapEl);const map=L.map(mapEl,{zoomControl:false,attributionControl:false}).setView([Number(ride.pickup_lat)||42.37,Number(ride.pickup_lon)||21.15],13);L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(map);if(typeof ride.pickup_lat==="number"&&typeof ride.pickup_lon==="number")L.marker([ride.pickup_lat,ride.pickup_lon]).addTo(map).bindPopup("Nisja");if(typeof ride.destination_lat==="number"&&typeof ride.destination_lon==="number")L.marker([ride.destination_lat,ride.destination_lon]).addTo(map).bindPopup("Destinacioni");const status=node("p","ride-tracking-status","Po lidhemi me vendndodhjen live…");c.append(status);let pin=null;setTimeout(()=>map.invalidateSize(),120);const refresh=async()=>{try{const r=await apiRequest("/rides/"+ride.id+"/driver-location");if(r.data?.available){const ll=[r.data.latitude,r.data.longitude];if(!pin)pin=L.circleMarker(ll,{radius:9,color:"#244c40",fillColor:"#d6f27a",fillOpacity:1,weight:3}).addTo(map).bindPopup("Shoferi live");else pin.setLatLng(ll);map.setView(ll,Math.max(14,map.getZoom()));status.textContent="Shoferi u përditësua "+new Date(r.data.recorded_at||Date.now()).toLocaleTimeString("sq-XK",{hour:"2-digit",minute:"2-digit"});}else status.textContent="Po presim vendndodhjen e shoferit…";}catch{status.textContent="Vendndodhja live s’është e disponueshme për momentin.";}};await refresh();state.rideTrackingTimers.push(setInterval(refresh,10000));}
       if(ride.status==="searching"){
         const cancel=node("button","secondary-button","Anulo kërkesën");cancel.type="button";
         cancel.addEventListener("click",async()=>{cancel.disabled=true;try{await apiRequest("/rides/"+ride.id+"/cancel",{method:"POST"});await loadMyRides();}catch(error){cancel.disabled=false;window.alert(error.code==="RIDE_NOT_CANCELLABLE"?"Shoferi mund ta ketë pranuar tashmë udhëtimin.":"Nuk u anulua udhëtimi: "+error.message);}});
