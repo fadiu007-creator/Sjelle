@@ -471,23 +471,22 @@ locateMeButton.addEventListener("click", () => {
   }
   locateMeButton.disabled = true;
   locateMeButton.textContent = "Po kërkojmë vendndodhjen…";
-  showMessage(checkoutMessage, "Po kërkojmë vendndodhjen e pajisjes. Nëse shfaqet kërkesa, zgjidh Lejo.");
+  showMessage(checkoutMessage, "Po kërkojmë GPS-in. Fillimisht provojmë saktësinë e lartë, pastaj një metodë alternative.");
   getCurrentDevicePosition().then(position => {
     checkoutForm.elements.lat.value = String(position.coords.latitude);
     checkoutForm.elements.lon.value = String(position.coords.longitude);
     locateMeButton.textContent = "Vendndodhja u gjet ✓";
     showMessage(checkoutMessage, "Vendndodhja u gjet. Shkruaj ose kërko adresën e saktë të dërgesës më sipër.", "success");
-    locateMeButton.disabled = false;
-  }, error => {
-    locateMeButton.disabled = false;
+  }).catch(error => {
     locateMeButton.textContent = "Provo përsëri vendndodhjen";
     const messages = {
-      1: "Qasja në vendndodhje u refuzua. Lejo Location për Chrome në cilësimet e telefonit dhe provo përsëri.",
-      2: "Vendndodhja nuk është e disponueshme. Aktivizo Location/GPS në telefon dhe provo përsëri.",
-      3: "Kërkimi i vendndodhjes zgjati shumë. Aktivizo GPS-in dhe provo përsëri në një vend me sinjal më të mirë.",
+      1: "Qasja u refuzua. Lejo Location për Chrome në cilësimet e telefonit dhe provo përsëri.",
+      2: "Telefoni nuk e gjeti vendndodhjen. Aktivizo Location/GPS dhe provo jashtë ose pranë dritares.",
+      3: "Kërkimi zgjati shumë. Kontrollo GPS-in dhe lejet e Chrome, pastaj provo përsëri.",
     };
     showMessage(checkoutMessage, messages[error?.code] || "Nuk mundëm ta gjejmë vendndodhjen. Kontrollo lejet e shfletuesit dhe GPS-in e telefonit.", "error");
-  }).catch(error => {
+  }).finally(() => { locateMeButton.disabled = false; });
+});
 
 checkoutForm.addEventListener("submit", async event => {
   event.preventDefault();
