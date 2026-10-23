@@ -14,12 +14,31 @@ const cityConfirmInput=cityServicesForm.elements.confirm_ready;
 function syncCityActivationConfirmation(){cityConfirmInput.required=cityActiveInput.checked;if(!cityActiveInput.checked)cityConfirmInput.checked=false;}
 cityActiveInput.addEventListener("change",syncCityActivationConfirmation);
 syncCityActivationConfirmation();
+function isUsableServiceAreaGeometry(value){
+ if(!value||!["Polygon","MultiPolygon"].includes(value.type)||!Array.isArray(value.coordinates)||!value.coordinates.length)return false;
+ const polygons=value.type==="Polygon"?[value.coordinates]:value.coordinates;
+ if(polygons.length>100)return false;
+ let vertices=0;
+ for(const polygon of polygons){
+  if(!Array.isArray(polygon)||!polygon.length||polygon.length>100)return false;
+  for(const ring of polygon){
+   if(!Array.isArray(ring)||ring.length<4||ring.length>500)return false;
+   vertices+=ring.length;if(vertices>10000)return false;
+   for(const point of ring){
+    if(!Array.isArray(point)||point.length!==2||!Number.isFinite(point[0])||!Number.isFinite(point[1])||point[0]<19.7||point[0]>22||point[1]<41.7||point[1]>43.4)return false;
+   }
+   const first=ring[0],last=ring[ring.length-1];
+   if(Math.abs(first[0]-last[0])>1e-6||Math.abs(first[1]-last[1])>1e-6)return false;
+  }
+ }
+ return true;
+}
 function renderCityReadiness(){
  const root=$("#city-readiness");if(!root)return;root.replaceChildren();
  if(!currentCity){root.append(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Zgjidh një qytet për të parë kontrollet."}));return;}
  const checks=[
   ["Qyteti",Boolean(currentCity.active),"Qyteti publikisht aktiv"],
-  ["Zona e shërbimit",Boolean((currentCity.service_areas||[]).some(area=>area.active&&area.boundary_geojson&&["Polygon","MultiPolygon"].includes(area.boundary_geojson.type))),"Të paktën një zonë aktive me gjeometri"],
+  ["Zona e shërbimit",Boolean((currentCity.service_areas||[]).some(area=>area.active&&isUsableServiceAreaGeometry(area.boundary_geojson))),"Të paktën një zonë aktive me gjeometri"],
   ["Tarifat",Boolean(currentCity.pricing?.active),"Konfigurimi i çmimeve aktiv"],
   ["Udhëtimet",Boolean(currentCity.rides_enabled),"Shërbimi i udhëtimeve i aktivizuar"],
   ["Dërgesat e ushqimit",Boolean(currentCity.food_enabled),"Shërbimi i ushqimit i aktivizuar"],
