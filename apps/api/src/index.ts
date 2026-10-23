@@ -1108,6 +1108,26 @@ export default {
       } catch { return response({error:{code:"RIDE_CANCEL_FAILED",request_id:requestId}},503,requestId,origin,env); }
     }
 
+    const rideDriverLocationMatch = url.pathname.match(/^\/api\/v1\/rides\/([0-9a-f-]{36})\/driver-location$/i);
+    if (rideDriverLocationMatch && request.method === "GET") {
+      let user: AuthUser | null;
+      try { user = await getAuthenticatedUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try {
+        const rideResponse = await databaseRequest(env, "sjelle_rides?id=eq." + encodeURIComponent(rideDriverLocationMatch[1]) + "&customer_id=eq." + encodeURIComponent(user.id) + "&select=id,driver_id,status&limit=1");
+        if (!rideResponse.ok) return response({ error: { code: "RIDE_TRACKING_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+        const rides = await parseJson(rideResponse) as Array<{id:string;driver_id:string|null;status:string}>;
+        if (!rides.length) return response({ error: { code: "RIDE_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+        const ride = rides[0];
+        if (!ride.driver_id || !["driver_assigned","driver_arriving","driver_arrived","in_progress"].includes(ride.status)) return response({ data: { available: false } }, 200, requestId, origin, env);
+        const cutoff = new Date(Date.now() - 120000).toISOString();
+        const locResponse = await databaseRequest(env, "sjelle_driver_locations?driver_id=eq." + encodeURIComponent(ride.driver_id) + "&updated_at=gte." + encodeURIComponent(cutoff) + "&select=latitude,longitude,heading_degrees,accuracy_m,recorded_at,updated_at&limit=1");
+        if (!locResponse.ok) return response({ error: { code: "DRIVER_LOCATION_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+        const locations = await parseJson(locResponse) as Array<{latitude:number;longitude:number;heading_degrees:number|null;accuracy_m:number|null;recorded_at:string;updated_at:string}>;
+        return response({ data: locations.length ? { available:true, ...locations[0] } : { available:false } }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "RIDE_TRACKING_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
     if (url.pathname === "/api/v1/rides" && request.method === "GET") {
       let user: AuthUser | null;
       try { user = await getAuthenticatedUser(request, env); } catch {
@@ -1116,7 +1136,7 @@ export default {
       if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
       try {
         const result = await databaseRequest(env,
-          `sjelle_rides?customer_id=eq.${encodeURIComponent(user.id)}&select=id,vehicle_type,pickup_label,destination_label,status,pricing_kind,pricing_version,quoted_amount_cents,final_amount_cents,payment_method,sjelle_cash_status,requested_at&order=requested_at.desc&limit=50`);
+          `sjelle_rides?customer_id=eq.${encodeURIComponent(user.id)}&select=id,driver_id,vehicle_type,pickup_label,pickup_lat,pickup_lon,destination_label,destination_lat,destination_lon,status,pricing_kind,pricing_version,quoted_amount_cents,final_amount_cents,payment_method,sjelle_cash_status,requested_at&order=requested_at.desc&limit=50`);
         if (!result.ok) return response({ error: { code: "RIDES_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
         const rows = await parseJson(result);
         return response({ data: Array.isArray(rows) ? rows : [] }, 200, requestId, origin, env);
