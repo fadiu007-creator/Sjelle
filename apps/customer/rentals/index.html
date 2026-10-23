@@ -109,7 +109,7 @@
     results.replaceChildren();status.textContent="Po kontrollojmë veturat e lira…";
     const params=new URLSearchParams({city:String(data.get("city")),pickup_at:pickup.toISOString(),return_at:returned.toISOString()});
     for(const key of ["category","transmission"])if(data.get(key))params.set(key,String(data.get(key)));
-    if(data.get("max_price"))params.set("max_price",String(Number(data.get("max_price"))*100));
+    if(data.get("max_price"))params.set("max_price",String(Number(data.get("max_price"))));
     try{const result=await request("/rental-vehicles?"+params.toString());const vehicles=Array.isArray(result.data)?result.data:[];
       if(!vehicles.length){status.textContent="Nuk ka vetura të publikuara për këto kritere ende. Provo qytet ose data tjera.";return;}
       status.textContent=vehicles.length+" vetura u gjetën.";results.replaceChildren(...vehicles.map(v=>vehicleCard(v,pickup.toISOString(),returned.toISOString())));
