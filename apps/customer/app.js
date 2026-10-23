@@ -439,6 +439,26 @@ function renderCart() {
   cartLines.append(total);
 }
 
+// Prefer a fresh high-accuracy GPS fix, then fall back to the network location provider if GPS is slow/unavailable.
+function getCurrentDevicePosition() {
+  return new Promise((resolve, reject) => {
+    const attempt = (highAccuracy, timeout, allowFallback) => {
+      navigator.geolocation.getCurrentPosition(
+        resolve,
+        error => {
+          if (allowFallback && error?.code !== 1) {
+            attempt(false, 15000, false);
+            return;
+          }
+          reject(error);
+        },
+        { enableHighAccuracy: highAccuracy, timeout, maximumAge: 0 }
+      );
+    };
+    attempt(true, 25000, true);
+  });
+}
+
 const locateMeButton = document.querySelector("#locate-me");
 locateMeButton.addEventListener("click", () => {
   if (!window.isSecureContext) {
@@ -452,7 +472,7 @@ locateMeButton.addEventListener("click", () => {
   locateMeButton.disabled = true;
   locateMeButton.textContent = "Po kërkojmë vendndodhjen…";
   showMessage(checkoutMessage, "Po kërkojmë vendndodhjen e pajisjes. Nëse shfaqet kërkesa, zgjidh Lejo.");
-  navigator.geolocation.getCurrentPosition(position => {
+  getCurrentDevicePosition().then(position => {
     checkoutForm.elements.lat.value = String(position.coords.latitude);
     checkoutForm.elements.lon.value = String(position.coords.longitude);
     locateMeButton.textContent = "Vendndodhja u gjet ✓";
@@ -467,12 +487,7 @@ locateMeButton.addEventListener("click", () => {
       3: "Kërkimi i vendndodhjes zgjati shumë. Aktivizo GPS-in dhe provo përsëri në një vend me sinjal më të mirë.",
     };
     showMessage(checkoutMessage, messages[error?.code] || "Nuk mundëm ta gjejmë vendndodhjen. Kontrollo lejet e shfletuesit dhe GPS-in e telefonit.", "error");
-  }, {
-    enableHighAccuracy: false,
-    timeout: 20000,
-    maximumAge: 120000,
-  });
-});
+  }).catch(error => {
 
 checkoutForm.addEventListener("submit", async event => {
   event.preventDefault();
@@ -687,7 +702,7 @@ locatePickup.addEventListener("click", () => {
   locatePickup.disabled = true;
   locatePickup.textContent = "Po kërkojmë vendndodhjen…";
   showMessage(rideQuoteMessage, "Lejo Location për këtë faqe dhe sigurohu që GPS-i i telefonit është aktiv.");
-  navigator.geolocation.getCurrentPosition(position => {
+  getCurrentDevicePosition().then(position => {
     rideQuoteForm.elements.pickup_query.value = "Vendndodhja ime";
     rideQuoteForm.elements.pickup_label.value = "Vendndodhja ime";
     rideQuoteForm.elements.pickup_lat.value = String(position.coords.latitude);
@@ -696,7 +711,7 @@ locatePickup.addEventListener("click", () => {
     locatePickup.textContent = "Vendndodhja u gjet ✓";
     locatePickup.disabled = false;
     showMessage(rideQuoteMessage, "Vendndodhja e nisjes u plotësua.", "success");
-  }, error => {
+  }).catch(error => {
     locatePickup.disabled = false;
     locatePickup.textContent = "Provo përsëri vendndodhjen";
     const messages = {
@@ -705,7 +720,7 @@ locatePickup.addEventListener("click", () => {
       3: "Kërkimi zgjati shumë. Aktivizo Location dhe provo përsëri.",
     };
     showMessage(rideQuoteMessage, messages[error?.code] || "Vendndodhja dështoi. Kërko adresën me emër rruge ose pikë reference.", "error");
-  }, { enableHighAccuracy: false, timeout: 20000, maximumAge: 120000 });
+  });
 });
 rideQuoteForm.querySelector("#find-pickup").insertAdjacentElement("afterend", locatePickup);
 
