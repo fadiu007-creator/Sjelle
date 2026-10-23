@@ -676,16 +676,36 @@ for (const which of ["pickup","destination"]) {
 const locatePickup = node("button", "secondary-button", "Përdor vendndodhjen time për nisjen");
 locatePickup.type = "button";
 locatePickup.addEventListener("click", () => {
-  if (!navigator.geolocation) { showMessage(rideQuoteMessage, "Shfletuesi nuk mbështet vendndodhjen.", "error"); return; }
-  showMessage(rideQuoteMessage, "Po marrim vendndodhjen…");
+  if (!window.isSecureContext) {
+    showMessage(rideQuoteMessage, "Vendndodhja kërkon HTTPS. Hape Sjelle në Chrome dhe provo përsëri.", "error");
+    return;
+  }
+  if (!navigator.geolocation) {
+    showMessage(rideQuoteMessage, "Ky shfletues nuk e mbështet vendndodhjen. Provo Chrome ose kërko adresën manualisht.", "error");
+    return;
+  }
+  locatePickup.disabled = true;
+  locatePickup.textContent = "Po kërkojmë vendndodhjen…";
+  showMessage(rideQuoteMessage, "Lejo Location për këtë faqe dhe sigurohu që GPS-i i telefonit është aktiv.");
   navigator.geolocation.getCurrentPosition(position => {
     rideQuoteForm.elements.pickup_query.value = "Vendndodhja ime";
     rideQuoteForm.elements.pickup_label.value = "Vendndodhja ime";
     rideQuoteForm.elements.pickup_lat.value = String(position.coords.latitude);
     rideQuoteForm.elements.pickup_lon.value = String(position.coords.longitude);
     document.querySelector("#pickup-suggestions").replaceChildren(node("p", "menu-empty", "Vendndodhja u plotësua. Kontrollo që je në qytetin e zgjedhur."));
+    locatePickup.textContent = "Vendndodhja u gjet ✓";
+    locatePickup.disabled = false;
     showMessage(rideQuoteMessage, "Vendndodhja e nisjes u plotësua.", "success");
-  }, () => showMessage(rideQuoteMessage, "Nuk mundëm të marrim vendndodhjen. Kërko adresën manualisht.", "error"), { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
+  }, error => {
+    locatePickup.disabled = false;
+    locatePickup.textContent = "Provo përsëri vendndodhjen";
+    const messages = {
+      1: "Qasja u refuzua. Në Android: Settings → Apps → Chrome → Permissions → Location → Allow; pastaj aktivizo Location në telefon.",
+      2: "Telefoni s’e gjeti vendndodhjen. Aktivizo GPS/Location dhe provo jashtë ose pranë dritares.",
+      3: "Kërkimi zgjati shumë. Aktivizo Location dhe provo përsëri.",
+    };
+    showMessage(rideQuoteMessage, messages[error?.code] || "Vendndodhja dështoi. Kërko adresën me emër rruge ose pikë reference.", "error");
+  }, { enableHighAccuracy: false, timeout: 20000, maximumAge: 120000 });
 });
 rideQuoteForm.querySelector("#find-pickup").insertAdjacentElement("afterend", locatePickup);
 
