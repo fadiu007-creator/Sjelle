@@ -1,4 +1,5 @@
 import { calculateRideQuote } from "./domain/pricing.ts";
+import { quoteRental, rentalPeriodsOverlap } from "./domain/rentals.ts";
 export interface Env {
   APP_ENV?: "development" | "staging" | "production";
   ALLOWED_ORIGIN?: string;
@@ -499,6 +500,228 @@ export default {
         return response({ data: authBody }, signup ? 201 : 200, requestId, origin, env);
       } catch {
         return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+      }
+    }
+
+
+    // Publicly discoverable rental vehicles; exclude any vehicle with a conflicting active booking.
+    if (url.pathname === "/api/v1/rental-vehicles" && request.method === "GET") {
+      const citySlug = (url.searchParams.get("city") ?? "").trim().toLowerCase();
+      const pickupAt = url.searchParams.get("pickup_at") ?? "";
+      const returnAt = url.searchParams.get("return_at") ?? "";
+      if (!/^[a-z0-9-]{2,60}$/.test(citySlug) || !pickupAt || !returnAt) {
+        return response({ error: { code: "RENTAL_SEARCH_INVALID", message: "Choose a city, pickup and return dates.", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      let quoteDates;
+      try { quoteDates = quoteRental({ pickupAt, returnAt, dailyPriceCents: 100 }); }
+      catch (error) { return response({ error: { code: "RENTAL_DATES_INVALID", message: error instanceof Error ? error.message : "Invalid dates.", request_id: requestId } }, 400, requestId, origin, env); }
+      if (!configured(env)) return response({ error: { code: "BACKEND_NOT_CONFIGURED", request_id: requestId } }, 503, requestId, origin, env);
+      try {
+        const filters = [
+          "select=id,company_id,make,model,model_year,category,transmission,fuel_type,seats,daily_price_cents,deposit_cents,mileage_limit_km,description,photo_urls,city_slug,pickup_address",
+          "city_slug=eq." + encodeURIComponent(citySlug),
+          "status=eq.approved",
+          "order=daily_price_cents.asc",
+          "limit=100",
+        ];
+        const category = url.searchParams.get("category");
+        const transmission = url.searchParams.get("transmission");
+        const maxPrice = Number(url.searchParams.get("max_price"));
+        if (category && ["mini","economy","compact","sedan","suv","van","luxury"].includes(category)) filters.push("category=eq." + encodeURIComponent(category));
+        if (transmission && ["manual","automatic"].includes(transmission)) filters.push("transmission=eq." + encodeURIComponent(transmission));
+        if (Number.isSafeInteger(maxPrice) && maxPrice > 0) filters.push("daily_price_cents=lte." + maxPrice);
+        const vehicleResponse = await databaseRequest(env, "rental_vehicles?" + filters.join("&"));
+        if (!vehicleResponse.ok) return response({ error: { code: "RENTAL_VEHICLES_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+        const vehicles = await parseJson(vehicleResponse) as Array<Record<string, unknown>>;
+        const companyIds = [...new Set(vehicles.map(v => String(v.company_id)))];
+        const approvedCompanies = new Set<string>();
+        if (companyIds.length) {
+          const companyResponse = await databaseRequest(env, "rental_companies?id=in.(" + companyIds.map(encodeURIComponent).join(",") + ")&verification_status=eq.approved&select=id");
+          if (!companyResponse.ok) return response({ error: { code: "RENTAL_PROVIDER_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+          for (const company of await parseJson(companyResponse) as Array<{id:string}>) approvedCompanies.add(company.id);
+        }
+        const activeVehicles = vehicles.filter(v => approvedCompanies.has(String(v.company_id)));
+        const ids = activeVehicles.map(v => String(v.id));
+        const busy = new Set<string>();
+        if (ids.length) {
+          const bookingsResponse = await databaseRequest(env,
+            "rental_bookings?vehicle_id=in.(" + ids.map(encodeURIComponent).join(",") + ")"
+            + "&status=in.(requested,confirmed,picked_up)&select=vehicle_id,pickup_at,return_at&limit=1000");
+          if (!bookingsResponse.ok) return response({ error: { code: "RENTAL_AVAILABILITY_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+          const bookings = await parseJson(bookingsResponse) as Array<{vehicle_id:string;pickup_at:string;return_at:string}>;
+          for (const booking of bookings) {
+            try { if (rentalPeriodsOverlap(pickupAt, returnAt, booking.pickup_at, booking.return_at)) busy.add(booking.vehicle_id); } catch { /* ignore malformed legacy rows */ }
+          }
+        }
+        return response({ data: activeVehicles.filter(v => !busy.has(String(v.id))), meta: { city: citySlug, rental_days: quoteDates.rentalDays } }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "RENTAL_SEARCH_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
+    // Customer rental request. Price is read from the approved listing and stored as a snapshot.
+    if (url.pathname === "/api/v1/rental-bookings" && request.method === "POST") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); }
+      catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      let body: unknown;
+      try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
+      if (!isRecord(body) || typeof body.vehicle_id !== "string" || typeof body.pickup_at !== "string" || typeof body.return_at !== "string") {
+        return response({ error: { code: "RENTAL_BOOKING_INVALID", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      const note = typeof body.customer_note === "string" ? body.customer_note.trim() : "";
+      if (note.length > 800) return response({ error: { code: "RENTAL_NOTE_TOO_LONG", request_id: requestId } }, 400, requestId, origin, env);
+      if (!configured(env)) return response({ error: { code: "BACKEND_NOT_CONFIGURED", request_id: requestId } }, 503, requestId, origin, env);
+      try {
+        const vehicleResult = await databaseRequest(env, "rental_vehicles?id=eq." + encodeURIComponent(body.vehicle_id) + "&status=eq.approved&select=id,company_id,owner_user_id,daily_price_cents,deposit_cents&limit=1");
+        if (!vehicleResult.ok) return response({ error: { code: "RENTAL_VEHICLE_LOOKUP_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const vehicleRows = await parseJson(vehicleResult) as Array<{id:string;company_id:string;owner_user_id:string;daily_price_cents:number;deposit_cents:number}>;
+        const vehicle = vehicleRows[0];
+        if (!vehicle) return response({ error: { code: "RENTAL_VEHICLE_NOT_AVAILABLE", message: "This vehicle is not available for booking.", request_id: requestId } }, 404, requestId, origin, env);
+        if (vehicle.owner_user_id === user.id) return response({ error: { code: "CANNOT_BOOK_OWN_VEHICLE", request_id: requestId } }, 403, requestId, origin, env);
+        const provider = await databaseRequest(env, "rental_companies?id=eq." + encodeURIComponent(vehicle.company_id) + "&verification_status=eq.approved&select=id&limit=1");
+        if (!provider.ok || !(await parseJson(provider) as Array<{id:string}>).length) return response({ error: { code: "RENTAL_PROVIDER_NOT_APPROVED", request_id: requestId } }, 409, requestId, origin, env);
+        const quote = quoteRental({ pickupAt: body.pickup_at, returnAt: body.return_at, dailyPriceCents: Number(vehicle.daily_price_cents), depositCents: Number(vehicle.deposit_cents) || 0 });
+        const conflict = await databaseRequest(env, "rental_bookings?vehicle_id=eq." + encodeURIComponent(vehicle.id)
+          + "&status=in.(requested,confirmed,picked_up)&pickup_at=lt." + encodeURIComponent(body.return_at)
+          + "&return_at=gt." + encodeURIComponent(body.pickup_at) + "&select=id&limit=1");
+        if (!conflict.ok) return response({ error: { code: "RENTAL_AVAILABILITY_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        if ((await parseJson(conflict) as Array<{id:string}>).length) return response({ error: { code: "RENTAL_DATES_CONFLICT", message: "This vehicle was requested for overlapping dates. Choose another period.", request_id: requestId } }, 409, requestId, origin, env);
+        const inserted = await databaseRequest(env, "rental_bookings?select=id,vehicle_id,pickup_at,return_at,rental_days,daily_price_cents,deposit_cents,total_price_cents,status,created_at", {
+          method: "POST", headers: { prefer: "return=representation" },
+          body: JSON.stringify({ vehicle_id: vehicle.id, company_id: vehicle.company_id, customer_user_id: user.id,
+            pickup_at: body.pickup_at, return_at: body.return_at, rental_days: quote.rentalDays,
+            daily_price_cents: quote.dailyPriceCents, deposit_cents: quote.depositCents,
+            total_price_cents: quote.rentalTotalCents, status: "requested", customer_note: note || null }),
+        });
+        if (!inserted.ok) return response({ error: { code: "RENTAL_BOOKING_CREATE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const rows = await parseJson(inserted) as Array<Record<string, unknown>>;
+        return response({ data: rows[0], meta: { deposit_due_cents: quote.depositCents, total_due_cents: quote.totalDueCents } }, 201, requestId, origin, env);
+      } catch (error) {
+        return response({ error: { code: "RENTAL_BOOKING_FAILED", message: error instanceof Error ? error.message.slice(0, 220) : "Booking request failed.", request_id: requestId } }, 400, requestId, origin, env);
+      }
+    }
+
+    // Rental owner portal: all reads and writes are scoped to the authenticated owner.
+    if (url.pathname.startsWith("/api/v1/rental-owner/")) {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); }
+      catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", message: "Kyçu për të vazhduar.", request_id: requestId } }, 401, requestId, origin, env);
+      if (!configured(env)) return response({ error: { code: "BACKEND_NOT_CONFIGURED", request_id: requestId } }, 503, requestId, origin, env);
+      try {
+        const companyResult = await databaseRequest(env, "rental_companies?owner_user_id=eq." + encodeURIComponent(user.id) + "&select=id,owner_user_id,name,phone,city_slug,address,description,verification_status,created_at&limit=1");
+        if (!companyResult.ok) return response({ error: { code: "RENTAL_OWNER_LOOKUP_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const companies = await parseJson(companyResult) as Array<Record<string, unknown>>;
+        const company = companies[0] ?? null;
+        if (url.pathname === "/api/v1/rental-owner/company" && request.method === "GET") {
+          return response({ data: company }, 200, requestId, origin, env);
+        }
+        if (url.pathname === "/api/v1/rental-owner/company" && request.method === "POST") {
+          let body: unknown;
+          try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
+          const allowedCities = ["prishtina","ferizaj","prizren","gjilan","mitrovica","peja"];
+          if (!isRecord(body) || typeof body.name !== "string" || body.name.trim().length < 2 || body.name.trim().length > 120
+            || typeof body.phone !== "string" || body.phone.trim().length < 5 || body.phone.trim().length > 32
+            || typeof body.city_slug !== "string" || !allowedCities.includes(body.city_slug)
+            || (body.address !== undefined && typeof body.address !== "string") || (body.description !== undefined && typeof body.description !== "string")
+            || String(body.address ?? "").length > 250 || String(body.description ?? "").length > 1000) {
+            return response({ error: { code: "RENTAL_COMPANY_INVALID", message: "Kontrollo emrin, telefonin, qytetin dhe fushat e tjera.", request_id: requestId } }, 400, requestId, origin, env);
+          }
+          const values = { name: body.name.trim(), phone: body.phone.trim(), city_slug: body.city_slug,
+            address: String(body.address ?? "").trim() || null, description: String(body.description ?? "").trim() || null };
+          const saved = company
+            ? await databaseRequest(env, "rental_companies?id=eq." + encodeURIComponent(String(company.id)) + "&owner_user_id=eq." + encodeURIComponent(user.id) + "&select=id,owner_user_id,name,phone,city_slug,address,description,verification_status,created_at", { method: "PATCH", headers: { prefer: "return=representation" }, body: JSON.stringify(values) })
+            : await databaseRequest(env, "rental_companies?select=id,owner_user_id,name,phone,city_slug,address,description,verification_status,created_at", { method: "POST", headers: { prefer: "return=representation" }, body: JSON.stringify({ ...values, owner_user_id: user.id }) });
+          if (!saved.ok) return response({ error: { code: "RENTAL_COMPANY_SAVE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+          const rows = await parseJson(saved) as Array<Record<string, unknown>>;
+          return response({ data: rows[0] ?? null }, company ? 200 : 201, requestId, origin, env);
+        }
+        if (!company) return response({ error: { code: "RENTAL_COMPANY_REQUIRED", message: "Së pari regjistro profilin e biznesit.", request_id: requestId } }, 409, requestId, origin, env);
+
+        if (url.pathname === "/api/v1/rental-owner/vehicles" && request.method === "GET") {
+          const vehicles = await databaseRequest(env, "rental_vehicles?company_id=eq." + encodeURIComponent(String(company.id)) + "&owner_user_id=eq." + encodeURIComponent(user.id) + "&select=id,company_id,make,model,model_year,category,transmission,fuel_type,seats,daily_price_cents,deposit_cents,mileage_limit_km,description,photo_urls,city_slug,pickup_address,status,created_at&order=created_at.desc");
+          if (!vehicles.ok) return response({ error: { code: "RENTAL_OWNER_VEHICLES_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+          return response({ data: await parseJson(vehicles) }, 200, requestId, origin, env);
+        }
+        if (url.pathname === "/api/v1/rental-owner/vehicles" && request.method === "POST") {
+          let body: unknown;
+          try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
+          const categories = ["mini","economy","compact","sedan","suv","van","luxury"], transmissions = ["manual","automatic"], fuels = ["petrol","diesel","hybrid","electric","lpg"];
+          const year = Number(isRecord(body) ? body.model_year : NaN), seats = Number(isRecord(body) ? body.seats : NaN);
+          const price = Number(isRecord(body) ? body.daily_price_cents : NaN), deposit = Number(isRecord(body) ? body.deposit_cents ?? 0 : NaN);
+          if (!isRecord(body) || typeof body.make !== "string" || body.make.trim().length < 1 || body.make.trim().length > 60
+            || typeof body.model !== "string" || body.model.trim().length < 1 || body.model.trim().length > 80
+            || !Number.isInteger(year) || year < 1980 || year > new Date().getFullYear() + 2
+            || typeof body.category !== "string" || !categories.includes(body.category)
+            || typeof body.transmission !== "string" || !transmissions.includes(body.transmission)
+            || typeof body.fuel_type !== "string" || !fuels.includes(body.fuel_type)
+            || !Number.isInteger(seats) || seats < 2 || seats > 9
+            || !Number.isSafeInteger(price) || price < 100 || price > 2000000
+            || !Number.isSafeInteger(deposit) || deposit < 0 || deposit > 10000000
+            || (body.mileage_limit_km !== null && body.mileage_limit_km !== undefined && (!Number.isInteger(Number(body.mileage_limit_km)) || Number(body.mileage_limit_km) < 0))
+            || (body.description !== undefined && typeof body.description !== "string") || String(body.description ?? "").length > 1000
+            || (body.pickup_address !== undefined && typeof body.pickup_address !== "string") || String(body.pickup_address ?? "").length > 250) {
+            return response({ error: { code: "RENTAL_VEHICLE_INVALID", message: "Kontrollo të dhënat dhe çmimet e veturës.", request_id: requestId } }, 400, requestId, origin, env);
+          }
+          const citySlug = String(company.city_slug);
+          const cityResponse = await databaseRequest(env, "sjelle_cities?slug=eq." + encodeURIComponent(citySlug) + "&select=slug,active&limit=1");
+          if (!cityResponse.ok) return response({ error: { code: "RENTAL_CITY_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+          const cityRows = await parseJson(cityResponse) as Array<{slug:string;active:boolean}>;
+          if (!cityRows[0]?.active) return response({ error: { code: "RENTAL_CITY_INACTIVE", request_id: requestId } }, 409, requestId, origin, env);
+          const inserted = await databaseRequest(env, "rental_vehicles?select=id,company_id,make,model,model_year,category,transmission,fuel_type,seats,daily_price_cents,deposit_cents,mileage_limit_km,description,photo_urls,city_slug,pickup_address,status,created_at", {
+            method: "POST", headers: { prefer: "return=representation" }, body: JSON.stringify({
+              company_id: company.id, owner_user_id: user.id, make: body.make.trim(), model: body.model.trim(), model_year: year,
+              category: body.category, transmission: body.transmission, fuel_type: body.fuel_type, seats, daily_price_cents: price,
+              deposit_cents: deposit, mileage_limit_km: body.mileage_limit_km == null ? null : Number(body.mileage_limit_km),
+              description: String(body.description ?? "").trim() || null, city_slug: citySlug, pickup_address: String(body.pickup_address ?? "").trim() || null, status: "pending",
+            }),
+          });
+          if (!inserted.ok) return response({ error: { code: "RENTAL_VEHICLE_CREATE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+          const rows = await parseJson(inserted) as Array<Record<string, unknown>>;
+          return response({ data: rows[0] ?? null }, 201, requestId, origin, env);
+        }
+        if (url.pathname === "/api/v1/rental-owner/bookings" && request.method === "GET") {
+          const bookingsResponse = await databaseRequest(env, "rental_bookings?company_id=eq." + encodeURIComponent(String(company.id)) + "&select=id,vehicle_id,company_id,customer_user_id,pickup_at,return_at,rental_days,daily_price_cents,deposit_cents,total_price_cents,status,customer_note,created_at&order=created_at.desc&limit=250");
+          if (!bookingsResponse.ok) return response({ error: { code: "RENTAL_OWNER_BOOKINGS_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+          const bookings = await parseJson(bookingsResponse) as Array<Record<string, unknown>>;
+          const vehicleIds = [...new Set(bookings.map(b => String(b.vehicle_id)))];
+          const vehicleById = new Map<string, Record<string, unknown>>();
+          if (vehicleIds.length) {
+            const vResponse = await databaseRequest(env, "rental_vehicles?id=in.(" + vehicleIds.map(encodeURIComponent).join(",") + ")&select=id,make,model,model_year");
+            if (!vResponse.ok) return response({ error: { code: "RENTAL_OWNER_VEHICLES_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+            for (const v of await parseJson(vResponse) as Array<Record<string, unknown>>) vehicleById.set(String(v.id), v);
+          }
+          return response({ data: bookings.map(b => ({ ...b, vehicle: vehicleById.get(String(b.vehicle_id)) ?? null })) }, 200, requestId, origin, env);
+        }
+        const bookingMatch = url.pathname.match(/^\/api\/v1\/rental-owner\/bookings\/([^/]+)$/);
+        if (bookingMatch && request.method === "PATCH") {
+          let body: unknown;
+          try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
+          const id = decodeURIComponent(bookingMatch[1]);
+          if (!isRecord(body) || typeof body.status !== "string") return response({ error: { code: "RENTAL_BOOKING_STATUS_INVALID", request_id: requestId } }, 400, requestId, origin, env);
+          const bookingResponse = await databaseRequest(env, "rental_bookings?id=eq." + encodeURIComponent(id) + "&company_id=eq." + encodeURIComponent(String(company.id)) + "&select=id,status,vehicle_id,pickup_at,return_at&limit=1");
+          if (!bookingResponse.ok) return response({ error: { code: "RENTAL_BOOKING_LOOKUP_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+          const bookingRows = await parseJson(bookingResponse) as Array<{id:string;status:string;vehicle_id:string;pickup_at:string;return_at:string}>;
+          const booking = bookingRows[0];
+          if (!booking) return response({ error: { code: "RENTAL_BOOKING_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+          const transitions: Record<string, string[]> = { requested: ["confirmed","declined"], confirmed: ["picked_up","cancelled"], picked_up: ["returned"] };
+          if (!transitions[booking.status]?.includes(body.status)) return response({ error: { code: "RENTAL_BOOKING_TRANSITION_INVALID", message: "Ky ndryshim i statusit nuk lejohet.", request_id: requestId } }, 409, requestId, origin, env);
+          if (body.status === "confirmed") {
+            const conflict = await databaseRequest(env, "rental_bookings?vehicle_id=eq." + encodeURIComponent(booking.vehicle_id)
+              + "&id=neq." + encodeURIComponent(booking.id) + "&status=in.(requested,confirmed,picked_up)&pickup_at=lt." + encodeURIComponent(booking.return_at)
+              + "&return_at=gt." + encodeURIComponent(booking.pickup_at) + "&select=id&limit=1");
+            if (!conflict.ok) return response({ error: { code: "RENTAL_AVAILABILITY_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+            if ((await parseJson(conflict) as Array<{id:string}>).length) return response({ error: { code: "RENTAL_DATES_CONFLICT", message: "Ka kërkesë tjetër për këto data.", request_id: requestId } }, 409, requestId, origin, env);
+          }
+          const updated = await databaseRequest(env, "rental_bookings?id=eq." + encodeURIComponent(booking.id) + "&company_id=eq." + encodeURIComponent(String(company.id)) + "&select=id,status,updated_at", {
+            method: "PATCH", headers: { prefer: "return=representation" }, body: JSON.stringify({ status: body.status, updated_at: new Date().toISOString() }),
+          });
+          if (!updated.ok) return response({ error: { code: "RENTAL_BOOKING_UPDATE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+          return response({ data: (await parseJson(updated) as Array<Record<string, unknown>>)[0] ?? null }, 200, requestId, origin, env);
+        }
+        return response({ error: { code: "RENTAL_OWNER_ROUTE_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+      } catch {
+        return response({ error: { code: "RENTAL_OWNER_OPERATION_FAILED", request_id: requestId } }, 503, requestId, origin, env);
       }
     }
 

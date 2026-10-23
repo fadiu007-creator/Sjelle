@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="sq-XK">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102f28">
+  <title>Vetura me qira — Sjelle</title>
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    .rental-wrap{max-width:1120px;margin:0 auto;padding:36px 22px 70px}
+    .rental-hero{background:#eaf1ec;border-radius:24px;padding:clamp(24px,5vw,48px);margin:28px 0}
+    .rental-hero h1{font-size:clamp(32px,5vw,52px);line-height:1.06;margin:10px 0}
+    .rental-filters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:22px 0}
+    .rental-filters label,.rental-booking label{display:grid;gap:7px;font-weight:600;font-size:14px}
+    .rental-filters input,.rental-filters select,.rental-booking input,.rental-booking textarea{width:100%;padding:12px;border:1px solid #d6ded8;border-radius:10px;background:white;color:#172b23;font:inherit}
+    .rental-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:16px}
+    .rental-card{border:1px solid #e0e6e1;border-radius:18px;overflow:hidden;background:white}
+    .rental-photo{height:160px;background:#e8eee9;display:grid;place-items:center;font-size:48px;color:#61766b}
+    .rental-card-body{padding:18px}
+    .rental-card h3{margin:0 0 8px;font-size:19px}
+    .rental-meta{color:#64756b;font-size:14px;line-height:1.7}
+    .rental-price{font-weight:800;font-size:22px;margin:14px 0}
+    .rental-price small{font-size:13px;font-weight:500;color:#6a786f}
+    .rental-booking{display:grid;gap:12px;margin-top:12px}
+    .rental-booking[hidden]{display:none}
+    .rental-status{min-height:24px;color:#53685c;font-size:14px}
+    @media(max-width:720px){.rental-filters{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media(max-width:430px){.rental-filters{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/" aria-label="Sjelle, faqja kryesore"><span class="brand-mark">s</span><span>sjelle<span class="brand-dot">.</span></span></a>
+  <div class="topbar-right"><a class="help-link" href="/rentals/manage/">Jep vetura me qira</a><a class="help-link" href="/">Kthehu te Sjelle</a></div>
+</header>
+<main class="rental-wrap">
+  <section class="rental-hero">
+    <p class="eyebrow">SJELLE · VETURA ME QIRA</p>
+    <h1>Gjeje veturën për rrugën tënde.</h1>
+    <p>Shiko veturat e publikuara nga ofruesit e verifikuar. Çmimi dhe kërkesa për rezervim shfaqen para se të dërgosh kërkesën.</p>
+  </section>
+  <section aria-labelledby="search-title">
+    <div class="section-heading"><div><p class="eyebrow">KËRKO VETURË</p><h2 id="search-title">Kur të duhet?</h2></div></div>
+    <form id="rental-search" class="rental-filters">
+      <label>Qyteti<select name="city" required><option value="prishtina">Prishtinë</option><option value="ferizaj">Ferizaj</option><option value="prizren">Prizren</option><option value="gjilan">Gjilan</option><option value="mitrovica">Mitrovicë</option><option value="peja">Pejë</option></select></label>
+      <label>Marrja<input name="pickup" type="datetime-local" required></label>
+      <label>Kthimi<input name="return" type="datetime-local" required></label>
+      <label>Kategoria<select name="category"><option value="">Të gjitha</option><option value="mini">Mini</option><option value="economy">Ekonomike</option><option value="compact">Kompakte</option><option value="sedan">Sedan</option><option value="suv">SUV</option><option value="van">Furgon</option><option value="luxury">Luksoze</option></select></label>
+      <label>Transmisioni<select name="transmission"><option value="">Të gjitha</option><option value="manual">Manual</option><option value="automatic">Automatik</option></select></label>
+      <label>Çmimi maksimal / ditë (€)<input name="max_price" type="number" min="1" max="20000" step="1" placeholder="p.sh. 50"></label>
+      <button class="primary-button" type="submit">Kërko vetura</button>
+    </form>
+    <p id="rental-status" class="rental-status" role="status">Zgjedh datat dhe kërko vetura të lira.</p>
+    <div id="rental-results" class="rental-grid" aria-live="polite"></div>
+  </section>
+</main>
+<footer class="footer"><a class="brand footer-brand" href="/"><span class="brand-mark">s</span><span>sjelle<span class="brand-dot">.</span></span></a><span>© Sjelle · Kosovë</span></footer>
+<script>
+(() => {
+  const API = "https://saavqlbwffrwxingbnri.supabase.co/functions/v1/sjelle-api/api/v1";
+  const form = document.querySelector("#rental-search");
+  const results = document.querySelector("#rental-results");
+  const status = document.querySelector("#rental-status");
+  const dateLocal = (date) => { const d = new Date(date.getTime()-date.getTimezoneOffset()*60000); return d.toISOString().slice(0,16); };
+  const now = new Date(); now.setHours(now.getHours()+2,0,0,0);
+  const later = new Date(now); later.setDate(later.getDate()+1);
+  form.elements.pickup.value = dateLocal(now); form.elements.return.value = dateLocal(later);
+  const el = (tag, cls, text) => { const n=document.createElement(tag); if(cls)n.className=cls; if(text!==undefined)n.textContent=text; return n; };
+  const euro = cents => new Intl.NumberFormat("sq-XK",{style:"currency",currency:"EUR"}).format((Number(cents)||0)/100);
+  async function request(path, options={}) {
+    const response=await fetch(API+path,{...options,headers:{"accept":"application/json","content-type":"application/json",...(options.headers||{})},cache:"no-store"});
+    const body=await response.json().catch(()=>null);
+    if(!response.ok) throw new Error(body?.error?.message || "Kërkesa nuk u krye.");
+    return body;
+  }
+  function vehicleCard(vehicle, pickupAt, returnAt) {
+    const card=el("article","rental-card");
+    const photo=el("div","rental-photo","🚘");
+    const imageUrl=Array.isArray(vehicle.photo_urls)?vehicle.photo_urls[0]:"";
+    if(imageUrl && /^https:\/\//i.test(imageUrl)){const img=el("img");img.src=imageUrl;img.alt=vehicle.make+" "+vehicle.model;img.loading="lazy";img.style="width:100%;height:100%;object-fit:cover";photo.replaceChildren(img);}
+    card.append(photo);
+    const body=el("div","rental-card-body");
+    body.append(el("h3","",vehicle.make+" "+vehicle.model+" · "+vehicle.model_year));
+    body.append(el("p","rental-meta",[vehicle.category,vehicle.transmission==="automatic"?"Automatik":"Manual",vehicle.fuel_type,vehicle.seats+" ulëse"].filter(Boolean).join(" · ")));
+    body.append(el("p","rental-price",euro(vehicle.daily_price_cents)+" "+ " "+ " "+ " "+ " "));
+    body.lastChild.append(el("small","","/ ditë"));
+    if(vehicle.deposit_cents>0) body.append(el("p","rental-meta","Depozitë: "+euro(vehicle.deposit_cents)));
+    const button=el("button","primary-button","Kërko rezervim");button.type="button";
+    const booking=el("form","rental-booking");booking.hidden=true;
+    const note=el("p","rental-status","");
+    const pickup=el("label","","Marrja");const pickInput=el("input");pickInput.type="datetime-local";pickInput.required=true;pickInput.value=dateLocal(new Date(pickupAt));pickup.append(pickInput);
+    const returned=el("label","","Kthimi");const returnInput=el("input");returnInput.type="datetime-local";returnInput.required=true;returnInput.value=dateLocal(new Date(returnAt));returned.append(returnInput);
+    const message=el("label","","Shënim (opsional)");const msgInput=el("textarea");msgInput.maxLength=800;msgInput.rows=2;message.append(msgInput);
+    const submit=el("button","primary-button","Dërgo kërkesën");submit.type="submit";
+    booking.append(pickup,returned,message,submit,note);
+    button.addEventListener("click",()=>{booking.hidden=!booking.hidden;});
+    booking.addEventListener("submit",async e=>{e.preventDefault();submit.disabled=true;note.textContent="Po dërgohet kërkesa…";
+      try{const token=sessionStorage.getItem("sjelle.session");if(!token){note.textContent="Kyçu në llogarinë Sjelle për të kërkuar rezervim.";return;}
+        const session=JSON.parse(token);const payload={vehicle_id:vehicle.id,pickup_at:new Date(pickInput.value).toISOString(),return_at:new Date(returnInput.value).toISOString(),customer_note:msgInput.value.trim()};
+        const data=await request("/rental-bookings",{method:"POST",headers:{authorization:"Bearer "+session.access_token},body:JSON.stringify(payload)});
+        note.textContent="Kërkesa u dërgua. Ofruesi duhet ta konfirmojë rezervimin.";
+      }catch(err){note.textContent=err.message||"S’u dërgua. Provo përsëri.";}finally{submit.disabled=false;}
+    });
+    body.append(button,booking);card.append(body);return card;
+  }
+  async function search() {
+    const data=new FormData(form);const pickup=new Date(data.get("pickup"));const returned=new Date(data.get("return"));
+    if(!Number.isFinite(+pickup)||!Number.isFinite(+returned)||returned<=pickup){status.textContent="Data e kthimit duhet të jetë pas datës së marrjes.";return;}
+    results.replaceChildren();status.textContent="Po kontrollojmë veturat e lira…";
+    const params=new URLSearchParams({city:String(data.get("city")),pickup_at:pickup.toISOString(),return_at:returned.toISOString()});
+    for(const key of ["category","transmission"])if(data.get(key))params.set(key,String(data.get(key)));
+    if(data.get("max_price"))params.set("max_price",String(Number(data.get("max_price"))*100));
+    try{const result=await request("/rental-vehicles?"+params.toString());const vehicles=Array.isArray(result.data)?result.data:[];
+      if(!vehicles.length){status.textContent="Nuk ka vetura të publikuara për këto kritere ende. Provo qytet ose data tjera.";return;}
+      status.textContent=vehicles.length+" vetura u gjetën.";results.replaceChildren(...vehicles.map(v=>vehicleCard(v,pickup.toISOString(),returned.toISOString())));
+    }catch(error){status.textContent=error.message||"Lista e veturave nuk u ngarkua."; }
+  }
+  form.addEventListener("submit",e=>{e.preventDefault();search();});
+  search();
+})();
+</script>
+</body>
+</html>
