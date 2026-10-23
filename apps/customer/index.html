@@ -6,8 +6,10 @@
   <meta name="theme-color" content="#102f28">
   <meta name="description" content="Sjelle — udhëtime dhe ushqim në qytetin tënd.">
   <title>Sjelle — Lëviz. Shijo.</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="stylesheet" href="/styles.css">
-  <script src="/app.js?v=gpsfix-20261023" defer></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="" defer></script>
+  <script src="/app.js?v=map-first-20261023" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -26,10 +28,11 @@
     <section class="hero">
       <div class="hero-copy">
         <p class="eyebrow">MË AFËR. MË LEHTË.</p>
-        <h1>Lëviz. Shijo.<br><span>Vazhdo me ditën.</span></h1>
-        <p class="hero-description">Udhëtime e ushqim, krejt në një vend. Sjelle po bëhet gati me qenë pranë teje në Kosovë.</p>
+        <h1>Rezervo udhëtimin.<br><span>Ne të çojmë atje.</span></h1>
+        <p class="hero-description">Rezervo me pak hapa, zgjedh nisjen dhe destinacionin direkt në hartë dhe shih çmimin para se të konfirmosh.</p>
         <div class="hero-actions" aria-label="Fillo me Sjelle">
-          <a class="primary-button hero-primary" href="/?account=signup">Regjistrohu</a>
+          <a class="primary-button hero-primary" href="#ride-panel" id="hero-book-ride">Rezervo udhëtim ↗</a>
+          <a class="secondary-button hero-secondary" href="/?account=signup">Krijo llogari</a>
           <a class="secondary-button hero-secondary" href="/driver/">Bëhu shofer</a>
           <a class="secondary-button hero-secondary" href="/merchant/">Regjistro restorantin</a>
           <a class="secondary-button hero-secondary" href="/rentals/">Vetura me qira</a>
@@ -66,19 +69,19 @@
       </div>
 
       <div class="service-tabs" role="tablist" aria-label="Zgjedh shërbimin">
-        <button class="service-tab is-active" id="tab-food" type="button" role="tab" aria-selected="true" aria-controls="food-panel" data-service="food">
+        <button class="service-tab" id="tab-food" type="button" role="tab" aria-selected="false" aria-controls="food-panel" data-service="food">
           <span class="tab-icon food-tab-icon" aria-hidden="true">✳</span>
           <span><b>Ushqim</b><small>Restorante pranë teje</small></span>
           <span class="tab-arrow" aria-hidden="true">↗</span>
         </button>
-        <button class="service-tab" id="tab-ride" type="button" role="tab" aria-selected="false" aria-controls="ride-panel" data-service="ride">
+        <button class="service-tab is-active ride-primary-tab" id="tab-ride" type="button" role="tab" aria-selected="true" aria-controls="ride-panel" data-service="ride">
           <span class="tab-icon ride-tab-icon" aria-hidden="true">↗</span>
           <span><b>Udhëtim</b><small>Shko ku të duhet</small></span>
           <span class="tab-arrow" aria-hidden="true">↗</span>
         </button>
       </div>
 
-      <section id="food-panel" class="service-panel" role="tabpanel" aria-labelledby="tab-food">
+      <section id="food-panel" class="service-panel" role="tabpanel" aria-labelledby="tab-food" hidden>
         <div class="panel-heading">
           <div>
             <p class="eyebrow">PËR TY, NË QYTETIN TËND</p>
@@ -91,10 +94,12 @@
         </div>
       </section>
 
-      <section id="ride-panel" class="service-panel ride-panel" role="tabpanel" aria-labelledby="tab-ride" hidden>
+      <section id="ride-panel" class="service-panel ride-panel" role="tabpanel" aria-labelledby="tab-ride">
         <section class="ride-quote-box">
           <div><p class="eyebrow">LLOGARIT ÇMIMIN</p><h3>Ku po shkon?</h3><p class="ride-quote-intro">Zgjedh adresat për të marrë një çmim nga rruga reale. Rezervimi krijohet vetëm pasi ta konfirmosh.</p></div>
           <form id="ride-quote-form" class="ride-quote-form">
+            <div class="ride-map-intro"><strong>Zgjedh në hartë</strong><span>Prek një pikë për nisjen ose destinacionin.</span></div>
+            <div class="map-pick-controls" role="group" aria-label="Çfarë pike po zgjedh?"><button id="map-pickup-mode" type="button" class="map-pick-button is-selected">📍 Nisja</button><button id="map-destination-mode" type="button" class="map-pick-button">🏁 Destinacioni</button><button id="map-use-location" type="button" class="map-pick-button">◎ GPS im</button></div><div id="ride-map" class="sjelle-map" role="application" aria-label="Harta për zgjedhjen e nisjes dhe destinacionit"></div><p id="ride-map-status" class="map-status" role="status">Zgjidh një pikë në hartë ose përdor kërkimin e adresës më poshtë.</p>
             <label>Nisja<input name="pickup_query" required minlength="3" maxlength="160" placeholder="Adresa e nisjes"></label>
             <button id="find-pickup" class="secondary-button" type="button">Gjej adresën e nisjes</button>
             <div id="pickup-suggestions" class="address-suggestions"></div>
