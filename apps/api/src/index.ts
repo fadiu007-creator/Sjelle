@@ -529,7 +529,7 @@ export default {
         const maxPrice = Number(url.searchParams.get("max_price"));
         if (category && ["mini","economy","compact","sedan","suv","van","luxury"].includes(category)) filters.push("category=eq." + encodeURIComponent(category));
         if (transmission && ["manual","automatic"].includes(transmission)) filters.push("transmission=eq." + encodeURIComponent(transmission));
-        if (Number.isSafeInteger(maxPrice) && maxPrice > 0) filters.push("daily_price_cents=lte." + maxPrice);
+        if (Number.isSafeInteger(maxPrice) && maxPrice > 0) filters.push("daily_price_cents=lte." + (maxPrice * 100));
         const vehicleResponse = await databaseRequest(env, "rental_vehicles?" + filters.join("&"));
         if (!vehicleResponse.ok) return response({ error: { code: "RENTAL_VEHICLES_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
         const vehicles = await parseJson(vehicleResponse) as Array<Record<string, unknown>>;
@@ -1213,7 +1213,19 @@ export default {
           }),
         });
         const payload = await parseJson(result);
-        if (!result.ok) return response({ error: { code: "VEHICLE_SAVE_FAILED", request_id: requestId } }, result.status === 409 ? 409 : 503, requestId, origin, env);
+        if (!result.ok) {
+          const dbCode = isRecord(payload) && typeof payload.code === "string" ? payload.code : "";
+          if (dbCode === "23505" || result.status === 409) {
+            return response({ error: { code: "VEHICLE_ALREADY_REGISTERED", message: "Ky numër regjistrimi është përdorur tashmë. Kontrollo targat.", request_id: requestId } }, 409, requestId, origin, env);
+          }
+          if (dbCode === "23514" || dbCode === "22P02") {
+            return response({ error: { code: "INVALID_VEHICLE", message: "Të dhënat e automjetit nuk janë të vlefshme. Kontrollo llojin dhe numrin e vendeve.", request_id: requestId } }, 400, requestId, origin, env);
+          }
+          if (dbCode === "42P01" || dbCode === "42703" || dbCode === "PGRST204" || dbCode === "PGRST205") {
+            return response({ error: { code: "DRIVER_SETUP_NOT_READY", message: "Konfigurimi i shoferëve në server kërkon përditësim. Provo përsëri pak më vonë.", request_id: requestId } }, 503, requestId, origin, env);
+          }
+          return response({ error: { code: "VEHICLE_SAVE_FAILED", message: "Automjeti nuk u ruajt. Provo përsëri; nëse vazhdon, dërgo ID-në e kërkesës te mbështetja.", request_id: requestId } }, 503, requestId, origin, env);
+        }
         return response({ data: Array.isArray(payload) ? payload[0] : payload }, 201, requestId, origin, env);
       } catch { return response({ error: { code: "VEHICLE_SAVE_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
     }
