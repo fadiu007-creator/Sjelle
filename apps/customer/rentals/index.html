@@ -31,7 +31,7 @@
 <body>
 <header class="topbar">
   <a class="brand" href="/" aria-label="Sjelle, faqja kryesore"><span class="brand-mark">s</span><span>sjelle<span class="brand-dot">.</span></span></a>
-  <div class="topbar-right"><a class="help-link" href="/rentals/manage/">Jep vetura me qira</a><a class="help-link" href="/">Kthehu te Sjelle</a></div>
+  <div class="topbar-right"><a class="help-link" href="../?account=login">Kyçu / Regjistrohu</a><a class="help-link" href="manage/">Jep vetura me qira</a><a class="help-link" href="../">Kthehu te Sjelle</a></div>
 </header>
 <main class="rental-wrap">
   <section class="rental-hero">
@@ -42,7 +42,7 @@
   <section aria-labelledby="search-title">
     <div class="section-heading"><div><p class="eyebrow">KËRKO VETURË</p><h2 id="search-title">Kur të duhet?</h2></div></div>
     <form id="rental-search" class="rental-filters">
-      <label>Qyteti<select name="city" required><option value="prishtina">Prishtinë</option><option value="ferizaj">Ferizaj</option><option value="prizren">Prizren</option><option value="gjilan">Gjilan</option><option value="mitrovica">Mitrovicë</option><option value="peja">Pejë</option></select></label>
+      <label>Qyteti<select name="city" required><option value="ferizaj">Ferizaj</option><option value="prishtina" disabled>Prishtinë — së shpejti</option><option value="prizren" disabled>Prizren — së shpejti</option><option value="gjilan" disabled>Gjilan — së shpejti</option><option value="mitrovica" disabled>Mitrovicë — së shpejti</option><option value="peja" disabled>Pejë — së shpejti</option></select></label>
       <label>Marrja<input name="pickup" type="datetime-local" required></label>
       <label>Kthimi<input name="return" type="datetime-local" required></label>
       <label>Kategoria<select name="category"><option value="">Të gjitha</option><option value="mini">Mini</option><option value="economy">Ekonomike</option><option value="compact">Kompakte</option><option value="sedan">Sedan</option><option value="suv">SUV</option><option value="van">Furgon</option><option value="luxury">Luksoze</option></select></label>
@@ -95,7 +95,7 @@
     booking.append(pickup,returned,message,submit,note);
     button.addEventListener("click",()=>{booking.hidden=!booking.hidden;});
     booking.addEventListener("submit",async e=>{e.preventDefault();submit.disabled=true;note.textContent="Po dërgohet kërkesa…";
-      try{const token=sessionStorage.getItem("sjelle.session");if(!token){note.textContent="Kyçu në llogarinë Sjelle për të kërkuar rezervim.";return;}
+      try{const token=sessionStorage.getItem("sjelle.session");if(!token){note.textContent="Kyçu ose regjistrohu për të kërkuar rezervim.";const login=el("a","","Hyr në llogari");login.href="../?account=login";login.style.display="inline-block";login.style.marginTop="8px";note.after(login);return;}
         const session=JSON.parse(token);const payload={vehicle_id:vehicle.id,pickup_at:new Date(pickInput.value).toISOString(),return_at:new Date(returnInput.value).toISOString(),customer_note:msgInput.value.trim()};
         const data=await request("/rental-bookings",{method:"POST",headers:{authorization:"Bearer "+session.access_token},body:JSON.stringify(payload)});
         note.textContent="Kërkesa u dërgua. Ofruesi duhet ta konfirmojë rezervimin.";
