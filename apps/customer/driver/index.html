@@ -5,9 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#102f28">
   <title>Sjelle — Shoferi</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/portal.css">
-  <script src="/driver/driver.js" defer></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="" defer></script>
+  <script src="/driver/driver.js?v=live-map-20261023" defer></script>
 </head>
 <body class="portal-body">
   <header class="topbar">
@@ -64,6 +66,7 @@
       <div id="driver-offers" class="portal-list"><p class="portal-muted">Nuk ka oferta të ngarkuara.</p></div>
     </section>
     <section class="portal-card" id="jobs-section" hidden>
+      <div class="portal-card-heading"><div><p class="eyebrow">HARTA LIVE</p><h2>Harta e punës</h2></div><span class="portal-tag" id="driver-map-live-status">Në pritje të GPS-it</span></div><div id="driver-live-map" class="driver-live-map" role="application" aria-label="Harta live e shoferit"></div><p class="portal-muted" id="driver-map-help">Kur je online, harta përditëson vendndodhjen tënde dhe tregon nisjen e destinacionin e udhëtimeve aktive.</p>
       <div class="portal-card-heading"><div><p class="eyebrow">PUNA AKTIVE</p><h2>Udhëtimet dhe dërgesat</h2></div><button id="jobs-refresh" class="secondary-button" type="button">Rifresko</button></div>
       <div id="driver-jobs" class="portal-list"><p class="portal-muted">Nuk ka punë aktive.</p></div>
     </section>
