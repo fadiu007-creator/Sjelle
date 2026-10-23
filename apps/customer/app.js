@@ -239,7 +239,8 @@ async function start() {
       showEmpty("Po përgatisim nisjen", "Lista e qyteteve nuk është e disponueshme ende.", "⌖");
       return;
     }
-    state.selectedCity = state.cities.some(city => city.slug === "prishtina") ? "prishtina" : state.cities[0].slug;
+    const defaultCity = state.cities.find(city => city.active && city.rides_enabled) || state.cities.find(city => city.active && city.food_enabled) || state.cities[0];
+    state.selectedCity = defaultCity.slug;
     citySelect.value = state.selectedCity;
     updateCityStatus();
     chooseService("ride");
