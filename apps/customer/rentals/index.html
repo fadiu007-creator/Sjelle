@@ -53,6 +53,11 @@
     <p id="rental-status" class="rental-status" role="status">Zgjedh datat dhe kërko vetura të lira.</p>
     <div id="rental-results" class="rental-grid" aria-live="polite"></div>
   </section>
+  <section class="rental-my-bookings" aria-labelledby="my-rentals-title" style="margin-top:42px">
+    <div class="section-heading"><div><p class="eyebrow">LLOGARIA JOTE</p><h2 id="my-rentals-title">Rezervimet e mia</h2></div><button id="rental-bookings-refresh" class="secondary-button" type="button">Përditëso</button></div>
+    <p id="rental-bookings-status" class="rental-status" role="status">Kyçu për t’i parë kërkesat e tua për vetura me qira.</p>
+    <div id="rental-bookings-results" class="rental-grid" aria-live="polite"></div>
+  </section>
 </main>
 <footer class="footer"><a class="brand footer-brand" href="/"><span class="brand-mark">s</span><span>sjelle<span class="brand-dot">.</span></span></a><span>© Sjelle · Kosovë</span></footer>
 <script>
@@ -98,7 +103,7 @@
       try{const token=sessionStorage.getItem("sjelle.session");if(!token){note.textContent="Kyçu ose regjistrohu për të kërkuar rezervim.";const login=el("a","","Hyr në llogari");login.href="../?account=login";login.style.display="inline-block";login.style.marginTop="8px";note.after(login);return;}
         const session=JSON.parse(token);const payload={vehicle_id:vehicle.id,pickup_at:new Date(pickInput.value).toISOString(),return_at:new Date(returnInput.value).toISOString(),customer_note:msgInput.value.trim()};
         const data=await request("/rental-bookings",{method:"POST",headers:{authorization:"Bearer "+session.access_token},body:JSON.stringify(payload)});
-        note.textContent="Kërkesa u dërgua. Ofruesi duhet ta konfirmojë rezervimin.";
+        note.textContent="Kërkesa u dërgua. Ofruesi duhet ta konfirmojë rezervimin.";await loadMyBookings();
       }catch(err){note.textContent=err.message||"S’u dërgua. Provo përsëri.";}finally{submit.disabled=false;}
     });
     body.append(button,booking);card.append(body);return card;
@@ -115,7 +120,38 @@
       status.textContent=vehicles.length+" vetura u gjetën.";results.replaceChildren(...vehicles.map(v=>vehicleCard(v,pickup.toISOString(),returned.toISOString())));
     }catch(error){status.textContent=error.message||"Lista e veturave nuk u ngarkua."; }
   }
+  const bookingStatusLabels={requested:"Në pritje të konfirmimit",confirmed:"E konfirmuar",declined:"E refuzuar",cancelled:"E anuluar",picked_up:"Vetura u mor",returned:"U kthye",no_show:"Nuk u paraqit"};
+  const bookingsStatus=document.querySelector("#rental-bookings-status");
+  const bookingsResults=document.querySelector("#rental-bookings-results");
+  async function loadMyBookings(){
+    bookingsResults.replaceChildren();
+    const raw=sessionStorage.getItem("sjelle.session");
+    if(!raw){bookingsStatus.textContent="Kyçu ose regjistrohu në Sjelle për t’i parë rezervimet.";return;}
+    let session;try{session=JSON.parse(raw);}catch{bookingsStatus.textContent="Sesioni nuk është i vlefshëm. Kyçu përsëri.";return;}
+    if(!session?.access_token){bookingsStatus.textContent="Kyçu ose regjistrohu në Sjelle për t’i parë rezervimet.";return;}
+    bookingsStatus.textContent="Po ngarkojmë rezervimet…";
+    try{
+      const result=await request("/rental-bookings",{headers:{authorization:"Bearer "+session.access_token}});
+      const bookings=Array.isArray(result.data)?result.data:[];
+      if(!bookings.length){bookingsStatus.textContent="Nuk ke kërkesa për vetura me qira ende.";return;}
+      bookingsStatus.textContent=bookings.length+" rezervime u gjetën.";
+      for(const booking of bookings){
+        const card=el("article","rental-card"),body=el("div","rental-card-body");
+        const vehicle=booking.vehicle||{},provider=booking.provider||{};
+        body.append(el("h3","",[vehicle.make,vehicle.model,vehicle.model_year].filter(Boolean).join(" ")||"Vetura me qira"));
+        body.append(el("p","rental-meta",provider.name||"Ofruesi i qirasë"));
+        body.append(el("p","rental-meta",new Date(booking.pickup_at).toLocaleString("sq-XK")+" → "+new Date(booking.return_at).toLocaleString("sq-XK")));
+        body.append(el("p","rental-price",euro(booking.total_price_cents)));body.lastChild.append(el("small",""," / gjithsej · "+booking.rental_days+" ditë"));
+        if(Number(booking.deposit_cents)>0)body.append(el("p","rental-meta","Depozitë: "+euro(booking.deposit_cents)));
+        body.append(el("span","order-status",bookingStatusLabels[booking.status]||booking.status));
+        if(booking.customer_note)body.append(el("p","rental-meta",booking.customer_note));
+        card.append(body);bookingsResults.append(card);
+      }
+    }catch(error){bookingsStatus.textContent=error.message||"Rezervimet nuk u ngarkuan. Provo përsëri.";}
+  }
+  document.querySelector("#rental-bookings-refresh").addEventListener("click",loadMyBookings);
   form.addEventListener("submit",e=>{e.preventDefault();search();});
+  loadMyBookings();
   search();
 })();
 </script>
