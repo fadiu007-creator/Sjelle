@@ -781,7 +781,7 @@ const worker = {
         let suggestions: Array<{label:string;lat:number;lon:number}> = [];
         // Primary provider: configured Nominatim-compatible service.
         try {
-          const geocodeUrl = new URL(env.GEOCODING_API_URL.replace(/\\/+$/,"") + "/search");
+          const geocodeUrl = new URL(env.GEOCODING_API_URL.replace(/\/+$/,"") + "/search");
           geocodeUrl.searchParams.set("format","jsonv2");
           geocodeUrl.searchParams.set("limit","5");
           geocodeUrl.searchParams.set("countrycodes","xk");
