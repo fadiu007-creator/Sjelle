@@ -38,6 +38,8 @@ assert.ok(!adminHtml.includes('name="confirm_ready" type="checkbox" required'), 
 assert.ok(adminHtml.includes('id="city-readiness"'), "admin portal must expose a city readiness summary");
 assert.ok(adminJs.includes("function renderCityReadiness()"), "admin portal must render the city readiness summary");
 assert.ok(adminJs.includes("currentCity.pricing?.active"), "readiness summary must check active city pricing");
-assert.ok(adminJs.includes("area.active&&area.boundary_geojson"), "readiness summary must check active service-area geometry");
+assert.ok(adminJs.includes("function isUsableServiceAreaGeometry(value)"), "readiness summary must validate service-area geometry");
+assert.ok(adminJs.includes("Math.abs(first[0]-last[0])>1e-6"), "readiness summary must reject unclosed GeoJSON rings");
+assert.ok(adminJs.includes("point[0]<19.7||point[0]>22||point[1]<41.7||point[1]>43.4"), "readiness summary must reject coordinates outside the configured Kosovo bounds");
 
 console.log("Critical API/Edge Function and admin activation parity checks passed.");
