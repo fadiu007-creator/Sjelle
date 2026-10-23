@@ -439,18 +439,38 @@ function renderCart() {
   cartLines.append(total);
 }
 
-document.querySelector("#locate-me").addEventListener("click", () => {
-  if (!navigator.geolocation) {
-    showMessage(checkoutMessage, "Shfletuesi nuk e mbështet vendndodhjen. Shkruaji koordinatat manualisht.", "error");
+const locateMeButton = document.querySelector("#locate-me");
+locateMeButton.addEventListener("click", () => {
+  if (!window.isSecureContext) {
+    showMessage(checkoutMessage, "Vendndodhja kërkon lidhje të sigurt HTTPS. Hape Sjelle nga faqja zyrtare dhe provo përsëri.", "error");
     return;
   }
-  showMessage(checkoutMessage, "Po kërkojmë vendndodhjen…");
+  if (!navigator.geolocation) {
+    showMessage(checkoutMessage, "Ky shfletues nuk e mbështet gjetjen automatike të vendndodhjes. Provo Chrome ose lejo shërbimet e vendndodhjes në telefon.", "error");
+    return;
+  }
+  locateMeButton.disabled = true;
+  locateMeButton.textContent = "Po kërkojmë vendndodhjen…";
+  showMessage(checkoutMessage, "Po kërkojmë vendndodhjen e pajisjes. Nëse shfaqet kërkesa, zgjidh Lejo.");
   navigator.geolocation.getCurrentPosition(position => {
-    checkoutForm.elements.lat.value = position.coords.latitude.toFixed(6);
-    checkoutForm.elements.lon.value = position.coords.longitude.toFixed(6);
-    showMessage(checkoutMessage, "Vendndodhja u plotësua. Kontrollo adresën para porosisë.", "success");
-  }, () => showMessage(checkoutMessage, "Nuk mundëm të marrim vendndodhjen. Lejo qasjen ose plotëso koordinatat manualisht.", "error"), {
-    enableHighAccuracy: true, timeout: 10000, maximumAge: 60000,
+    checkoutForm.elements.lat.value = String(position.coords.latitude);
+    checkoutForm.elements.lon.value = String(position.coords.longitude);
+    locateMeButton.textContent = "Vendndodhja u gjet ✓";
+    showMessage(checkoutMessage, "Vendndodhja u gjet. Shkruaj ose kërko adresën e saktë të dërgesës më sipër.", "success");
+    locateMeButton.disabled = false;
+  }, error => {
+    locateMeButton.disabled = false;
+    locateMeButton.textContent = "Provo përsëri vendndodhjen";
+    const messages = {
+      1: "Qasja në vendndodhje u refuzua. Lejo Location për Chrome në cilësimet e telefonit dhe provo përsëri.",
+      2: "Vendndodhja nuk është e disponueshme. Aktivizo Location/GPS në telefon dhe provo përsëri.",
+      3: "Kërkimi i vendndodhjes zgjati shumë. Aktivizo GPS-in dhe provo përsëri në një vend me sinjal më të mirë.",
+    };
+    showMessage(checkoutMessage, messages[error?.code] || "Nuk mundëm ta gjejmë vendndodhjen. Kontrollo lejet e shfletuesit dhe GPS-in e telefonit.", "error");
+  }, {
+    enableHighAccuracy: false,
+    timeout: 20000,
+    maximumAge: 120000,
   });
 });
 
@@ -866,7 +886,7 @@ document.querySelector("#find-delivery-address").addEventListener("click",async(
     checkoutForm.elements.lat.value=String(item.lat);
     checkoutForm.elements.lon.value=String(item.lon);
     deliveryAddressSuggestions.replaceChildren(node("p","menu-empty","E zgjodhe adresën."));
-    showMessage(checkoutMessage,"E zgjodhe adresën. Kontrollo koordinatat para se të porositësh.","success");
+    showMessage(checkoutMessage,"Adresa dhe vendndodhja u plotësuan. Mund ta dërgosh porosinë.","success");
    });
    deliveryAddressSuggestions.append(choice);
   }
