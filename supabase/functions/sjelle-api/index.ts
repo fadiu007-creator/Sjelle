@@ -233,7 +233,7 @@ async function requireUser(request: Request, env: Env): Promise<AuthUser | null>
   return getAuthenticatedUser(request, env);
 }
 
-export default {
+const worker = {
   async fetch(request: Request, env: Env): Promise<Response> {
     const requestId = crypto.randomUUID();
     const url = new URL(request.url);
@@ -2464,4 +2464,25 @@ export default {
       }
     })());
   },
-} satisfies ExportedHandler<Env>;
+};
+
+const DEFAULT_ALLOWED_ORIGIN = "https://fadiu007-creator.github.io";
+Deno.serve(async (incoming: Request) => {
+  const url = new URL(incoming.url);
+  for (const prefix of ["/functions/v1/sjelle-api", "/sjelle-api"]) {
+    if (url.pathname.startsWith(prefix)) url.pathname = url.pathname.slice(prefix.length) || "/";
+  }
+  const request = new Request(url.toString(), incoming);
+  const env: Env = {
+    SUPABASE_URL: Deno.env.get("SUPABASE_URL"),
+    SUPABASE_SERVICE_ROLE_KEY: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+    SUPABASE_PUBLISHABLE_KEY: Deno.env.get("SUPABASE_ANON_KEY") ?? Deno.env.get("SUPABASE_PUBLISHABLE_KEY"),
+    ALLOWED_ORIGIN: Deno.env.get("ALLOWED_ORIGIN") ?? DEFAULT_ALLOWED_ORIGIN,
+    ROUTING_API_URL: Deno.env.get("ROUTING_API_URL") ?? "https://router.project-osrm.org",
+    ROUTING_API_KEY: Deno.env.get("ROUTING_API_KEY"),
+    GEOCODING_API_URL: Deno.env.get("GEOCODING_API_URL") ?? "https://nominatim.openstreetmap.org",
+    GEOCODING_API_KEY: Deno.env.get("GEOCODING_API_KEY"),
+    APP_ENV: "production",
+  };
+  return worker.fetch(request, env);
+});
