@@ -558,6 +558,37 @@ const worker = {
       } catch { return response({ error: { code: "RENTAL_SEARCH_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
     }
 
+    // Customers can see only their own rental requests and the current vehicle/provider labels.
+    if (url.pathname === "/api/v1/rental-bookings" && request.method === "GET") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); }
+      catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", message: "Kyçu për të parë rezervimet.", request_id: requestId } }, 401, requestId, origin, env);
+      if (!configured(env)) return response({ error: { code: "BACKEND_NOT_CONFIGURED", request_id: requestId } }, 503, requestId, origin, env);
+      try {
+        const bookingsResponse = await databaseRequest(env,
+          "rental_bookings?customer_user_id=eq." + encodeURIComponent(user.id)
+          + "&select=id,vehicle_id,company_id,pickup_at,return_at,rental_days,daily_price_cents,deposit_cents,total_price_cents,status,customer_note,created_at,updated_at&order=created_at.desc&limit=100");
+        if (!bookingsResponse.ok) return response({ error: { code: "RENTAL_CUSTOMER_BOOKINGS_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const bookings = await parseJson(bookingsResponse) as Array<Record<string, unknown>>;
+        const vehicleIds = [...new Set(bookings.map(b => String(b.vehicle_id)))];
+        const companyIds = [...new Set(bookings.map(b => String(b.company_id)))];
+        const vehiclesById = new Map<string, Record<string, unknown>>();
+        const companiesById = new Map<string, Record<string, unknown>>();
+        if (vehicleIds.length) {
+          const vehiclesResponse = await databaseRequest(env, "rental_vehicles?id=in.(" + vehicleIds.map(encodeURIComponent).join(",") + ")&select=id,make,model,model_year,city_slug,pickup_address");
+          if (!vehiclesResponse.ok) return response({ error: { code: "RENTAL_CUSTOMER_VEHICLES_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+          for (const vehicle of await parseJson(vehiclesResponse) as Array<Record<string, unknown>>) vehiclesById.set(String(vehicle.id), vehicle);
+        }
+        if (companyIds.length) {
+          const companiesResponse = await databaseRequest(env, "rental_companies?id=in.(" + companyIds.map(encodeURIComponent).join(",") + ")&select=id,name,phone");
+          if (!companiesResponse.ok) return response({ error: { code: "RENTAL_CUSTOMER_PROVIDERS_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+          for (const company of await parseJson(companiesResponse) as Array<Record<string, unknown>>) companiesById.set(String(company.id), company);
+        }
+        return response({ data: bookings.map(b => ({ ...b, vehicle: vehiclesById.get(String(b.vehicle_id)) ?? null, provider: companiesById.get(String(b.company_id)) ?? null })) }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "RENTAL_CUSTOMER_BOOKINGS_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+    }
+
     // Customer rental request. Price is read from the approved listing and stored as a snapshot.
     if (url.pathname === "/api/v1/rental-bookings" && request.method === "POST") {
       let user: AuthUser | null;
