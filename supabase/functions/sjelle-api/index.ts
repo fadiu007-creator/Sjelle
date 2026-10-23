@@ -771,22 +771,51 @@ const worker = {
         const cities = await parseJson(cityResponse) as Array<{ id: string; name: string; active: boolean }>;
         if (!cityResponse.ok) return response({ error: { code: "CITY_LOOKUP_FAILED", request_id: requestId } }, 503, requestId, origin, env);
         if (!cities.length) return response({ error: { code: "CITY_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
-        const geocodeUrl = new URL(env.GEOCODING_API_URL.replace(/\/+$/,"") + "/search");
-        geocodeUrl.searchParams.set("format","jsonv2");
-        geocodeUrl.searchParams.set("limit","5");
-        geocodeUrl.searchParams.set("countrycodes","xk");
-        geocodeUrl.searchParams.set("q",body.query.trim()+", "+cities[0].name+", Kosovo");
-        const headers = new Headers({ accept:"application/json", "accept-language":"sq,en;q=0.8" });
-        if (env.GEOCODING_API_KEY) headers.set("authorization","Bearer "+env.GEOCODING_API_KEY);
-        const geoResponse = await fetch(geocodeUrl.toString(),{headers});
-        const raw = await parseJson(geoResponse);
-        if (!geoResponse.ok || !Array.isArray(raw)) return response({ error: { code: "GEOCODING_FAILED", request_id: requestId } }, 503, requestId, origin, env);
-        const suggestions = raw.filter(isRecord).map(item => ({
+        const query = body.query.trim() + ", " + cities[0].name + ", Kosovo";
+        const toSuggestions = (raw: unknown) => Array.isArray(raw) ? raw.filter(isRecord).map(item => ({
           label: typeof item.display_name === "string" ? item.display_name.slice(0,220) : "",
           lat: typeof item.lat === "string" || typeof item.lat === "number" ? Number(item.lat) : NaN,
           lon: typeof item.lon === "string" || typeof item.lon === "number" ? Number(item.lon) : NaN,
         })).filter(item => item.label && Number.isFinite(item.lat) && Number.isFinite(item.lon)
-          && item.lat >= 41.7 && item.lat <= 43.4 && item.lon >= 19.7 && item.lon <= 22.0);
+          && item.lat >= 41.7 && item.lat <= 43.4 && item.lon >= 19.7 && item.lon <= 22.0) : [];
+        let suggestions: Array<{label:string;lat:number;lon:number}> = [];
+        // Primary provider: configured Nominatim-compatible service.
+        try {
+          const geocodeUrl = new URL(env.GEOCODING_API_URL.replace(/\\/+$/,"") + "/search");
+          geocodeUrl.searchParams.set("format","jsonv2");
+          geocodeUrl.searchParams.set("limit","5");
+          geocodeUrl.searchParams.set("countrycodes","xk");
+          geocodeUrl.searchParams.set("q",query);
+          const headers = new Headers({ accept:"application/json", "accept-language":"sq,en;q=0.8", "user-agent":"Sjelle/1.0 (address search)" });
+          if (env.GEOCODING_API_KEY) headers.set("authorization","Bearer "+env.GEOCODING_API_KEY);
+          const geoResponse = await fetch(geocodeUrl.toString(),{headers, signal:AbortSignal.timeout(8000)});
+          if (geoResponse.ok) suggestions = toSuggestions(await parseJson(geoResponse));
+        } catch { /* use the independent fallback below */ }
+        // Fallback provider: Photon/OpenStreetMap. It does not require an API key.
+        if (!suggestions.length) {
+          try {
+            const photonUrl = new URL("https://photon.komoot.io/api/");
+            photonUrl.searchParams.set("q",query);
+            photonUrl.searchParams.set("limit","5");
+            photonUrl.searchParams.set("lang","en");
+            const photonResponse = await fetch(photonUrl.toString(),{headers:{accept:"application/geo+json"},signal:AbortSignal.timeout(8000)});
+            const photon = await parseJson(photonResponse);
+            if (photonResponse.ok && isRecord(photon) && Array.isArray(photon.features)) {
+              suggestions = photon.features.filter(isRecord).map(feature => {
+                const properties = isRecord(feature.properties) ? feature.properties : {};
+                const coordinates = isRecord(feature.geometry) && Array.isArray(feature.geometry.coordinates) ? feature.geometry.coordinates : [];
+                const country = String(properties.country || "").toLowerCase();
+                const parts = [properties.name,properties.street,properties.housenumber,properties.district,properties.city,properties.state,properties.country]
+                  .filter(value => typeof value === "string" && value.trim()).map(String);
+                return {label:[...new Set(parts)].join(", ").slice(0,220),lon:Number(coordinates[0]),lat:Number(coordinates[1]),country};
+              }).filter(item => item.label && (item.country.includes("kosovo") || item.country.includes("kosova"))
+                && Number.isFinite(item.lat) && Number.isFinite(item.lon)
+                && item.lat >= 41.7 && item.lat <= 43.4 && item.lon >= 19.7 && item.lon <= 22.0)
+                .map(({label,lat,lon})=>({label,lat,lon}));
+            }
+          } catch { /* handled by a useful API error below */ }
+        }
+        if (!suggestions.length) return response({ data: [] }, 200, requestId, origin, env);
         return response({ data: suggestions }, 200, requestId, origin, env);
       } catch { return response({ error: { code: "GEOCODING_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
     }
