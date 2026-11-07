@@ -824,7 +824,7 @@ test("driver GPS updates reject inaccurate fixes before database writes", async 
     });
     const body = await response.json() as { error: { code: string; message: string } };
     assert.equal(response.status, 422);
-    assert.equal(body.error.code, "INVALID_LOCATION");
+    assert.equal(body.error.code, "GPS_ACCURACY_TOO_LOW");
     assert.match(body.error.message, /1,500 metres or better/);
     assert.equal(databaseCalls, 0);
   } finally {
