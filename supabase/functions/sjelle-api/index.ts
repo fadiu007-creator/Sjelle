@@ -1473,11 +1473,13 @@ const worker = {
       if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
       let body: unknown;
       try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
-      if (!isRecord(body) || typeof body.latitude !== "number" || typeof body.longitude !== "number"
+      if (!isRecord(body) || typeof body.latitude !== "number" || !Number.isFinite(body.latitude)
+        || typeof body.longitude !== "number" || !Number.isFinite(body.longitude)
         || body.latitude < 41.7 || body.latitude > 43.4 || body.longitude < 19.7 || body.longitude > 22.0
-        || (body.accuracy_m !== undefined && (typeof body.accuracy_m !== "number" || body.accuracy_m < 0 || body.accuracy_m > 10000))
-        || (body.heading_degrees !== undefined && (typeof body.heading_degrees !== "number" || body.heading_degrees < 0 || body.heading_degrees >= 360))) {
-        return response({ error: { code: "INVALID_LOCATION", request_id: requestId } }, 400, requestId, origin, env);
+        || typeof body.accuracy_m !== "number" || !Number.isFinite(body.accuracy_m)
+        || body.accuracy_m < 0 || body.accuracy_m > 1500
+        || (body.heading_degrees !== undefined && (typeof body.heading_degrees !== "number" || !Number.isFinite(body.heading_degrees) || body.heading_degrees < 0 || body.heading_degrees >= 360))) {
+        return response({ error: { code: "INVALID_LOCATION", message: "GPS accuracy must be 1,500 metres or better. Move to an open area and try again.", request_id: requestId } }, 422, requestId, origin, env);
       }
       try {
         const driver = await databaseRequest(env, "sjelle_driver_profiles?user_id=eq." + encodeURIComponent(user.id) + "&select=online,review_status&limit=1");
