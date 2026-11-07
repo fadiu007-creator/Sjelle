@@ -802,3 +802,32 @@ test("city activation is blocked until a valid active service area exists", asyn
     assert.equal(requestedUrls.some(url => url.includes("/sjelle_cities?id=eq." + cityId) && url.includes("PATCH")), false);
   } finally { globalThis.fetch = originalFetch; }
 });
+
+test("driver GPS updates reject inaccurate fixes before database writes", async () => {
+  const originalFetch = globalThis.fetch;
+  let databaseCalls = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    databaseCalls += 1;
+    throw new Error("An inaccurate GPS fix must be rejected before database access");
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/location", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ latitude: 42.66, longitude: 21.16, accuracy_m: 1800 }),
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { error: { code: string; message: string } };
+    assert.equal(response.status, 422);
+    assert.equal(body.error.code, "INVALID_LOCATION");
+    assert.match(body.error.message, /1,500 metres or better/);
+    assert.equal(databaseCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
