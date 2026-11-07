@@ -1446,10 +1446,11 @@ export default {
       if (!isRecord(body) || typeof body.latitude !== "number" || !Number.isFinite(body.latitude)
         || typeof body.longitude !== "number" || !Number.isFinite(body.longitude)
         || body.latitude < 41.7 || body.latitude > 43.4 || body.longitude < 19.7 || body.longitude > 22.0
-        || typeof body.accuracy_m !== "number" || !Number.isFinite(body.accuracy_m)
-        || body.accuracy_m < 0 || body.accuracy_m > 1500
         || (body.heading_degrees !== undefined && (typeof body.heading_degrees !== "number" || !Number.isFinite(body.heading_degrees) || body.heading_degrees < 0 || body.heading_degrees >= 360))) {
-        return response({ error: { code: "INVALID_LOCATION", message: "GPS accuracy must be 1,500 metres or better. Move to an open area and try again.", request_id: requestId } }, 422, requestId, origin, env);
+        return response({ error: { code: "INVALID_LOCATION", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      if (typeof body.accuracy_m !== "number" || !Number.isFinite(body.accuracy_m) || body.accuracy_m < 0 || body.accuracy_m > 1500) {
+        return response({ error: { code: "GPS_ACCURACY_TOO_LOW", message: "GPS accuracy must be 1,500 metres or better. Move to an open area and try again.", request_id: requestId } }, 422, requestId, origin, env);
       }
       try {
         const driver = await databaseRequest(env, "sjelle_driver_profiles?user_id=eq." + encodeURIComponent(user.id) + "&select=online,review_status&limit=1");
