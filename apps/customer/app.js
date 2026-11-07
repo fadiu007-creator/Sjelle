@@ -764,6 +764,9 @@ rideQuoteForm.addEventListener("submit", async event => {
       }),
     });
     const quote = result.data;
+    // Keep one idempotency key for this quote across retries. A network timeout can
+    // happen after the server committed the ride; a new key on retry could duplicate it.
+    const bookingIdempotencyKey = crypto.randomUUID();
     const heading = node("h4", "", quote.pricing_kind === "fixed_route" ? "Çmim fiks i konfiguruar" : "Çmim i vlerësuar");
     rideQuoteResult.append(heading, node("strong", "", euro(quote.amount_cents)));
     rideQuoteResult.append(node("p", "", (quote.distance_m / 1000).toFixed(1) + " km · rreth " + Math.max(1, Math.round(quote.duration_s / 60)) + " min"));
@@ -776,7 +779,7 @@ rideQuoteForm.addEventListener("submit", async event => {
       try {
         const booked = await apiRequest("/rides", {
           method: "POST",
-          headers: { "idempotency-key": crypto.randomUUID() },
+          headers: { "idempotency-key": bookingIdempotencyKey },
           body: JSON.stringify({ quote_id: quote.quote_id }),
         });
         rideQuoteResult.replaceChildren(node("h4", "", "Kërkesa për udhëtim u regjistrua"), node("p", "", "Statusi: " + (booked.data?.status || "searching") + ". Çmimi: " + euro(booked.data?.quoted_amount_cents) + "."));
