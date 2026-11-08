@@ -740,7 +740,15 @@ locatePickup.addEventListener("click", () => {
 });
 rideQuoteForm.querySelector("#find-pickup").insertAdjacentElement("afterend", locatePickup);
 initRideMap();
-citySelect.addEventListener("change",()=>{if(rideMap)rideMap.setView(mapCityCenter(),12);});
+citySelect.addEventListener("change",()=>{
+  for(const which of ["pickup","destination"]){
+    rideQuoteForm.elements[which+"_query"].value="";
+    clearAddressSelection(which);
+  }
+  rideQuoteResult.replaceChildren();
+  showMessage(rideQuoteMessage,"Qyteti u ndryshua. Zgjidh përsëri nisjen dhe destinacionin.");
+  if(rideMap){rideMap.setView(mapCityCenter(),12);setTimeout(()=>rideMap.invalidateSize(),100);}
+});
 
 rideQuoteForm.addEventListener("submit", async event => {
   event.preventDefault();
