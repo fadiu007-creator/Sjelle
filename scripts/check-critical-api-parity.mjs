@@ -16,6 +16,7 @@ const expectedConflictCodes = [
   "CASH_COLLECTION_CONFIRMATION_REQUIRED",
   "CASH_CONFIRMATION_ONLY_ON_COMPLETION",
   "CASH_CONFIRMATION_NOT_APPLICABLE",
+  "ONLINE_PAYMENT_NOT_CONFIGURED",
   "INVALID_JOB_KIND",
 ];
 
@@ -30,6 +31,7 @@ for (const [file, source] of [[apiPath, api], [edgePath, edge]]) {
   assert.ok(source.includes("rpc/sjelle_driver_update_job"), `${file}: driver job transitions must use the authoritative database RPC`);
   assert.ok(source.includes("CASH_COLLECTION_CONFIRMATION_REQUIRED"), `${file}: cash completion guard is missing`);
   assert.ok(source.includes("CASH_CONFIRMATION_NOT_APPLICABLE"), `${file}: online jobs must not be marked as cash-collected`);
+  assert.ok(source.includes("ONLINE_PAYMENT_NOT_CONFIGURED"), `${file}: online jobs must fail closed until a payment provider is configured`);
   assert.ok(source.includes("(body.active && body.confirm_ready !== true)"), `${file}: activation must require readiness confirmation while deactivation stays available`);
   assert.deepEqual(readConflictCodes(source, file), expectedConflictCodes, `${file}: expected consistent job conflict codes`);
 }
@@ -50,3 +52,7 @@ const cashMigration = readFileSync("supabase/migrations/20261108090000_sjelle_pa
 assert.ok(cashMigration.includes("v_ride.payment_method='cash'"), "cash migration must guard ride completion by payment method");
 assert.ok(cashMigration.includes("v_order.payment_method='cash'"), "cash migration must guard delivery completion by payment method");
 assert.ok(cashMigration.includes("'not_due'::public.sjelle_cash_status"), "online jobs must not remain in the cash-due ledger state");
+
+const onlinePaymentMigration = readFileSync("supabase/migrations/20261108093000_sjelle_block_unconfigured_online_payments.sql", "utf8");
+assert.ok(onlinePaymentMigration.includes("v_ride.payment_method='online'"), "online rides must fail closed until payment is configured");
+assert.ok(onlinePaymentMigration.includes("v_order.payment_method='online'"), "online deliveries must fail closed until payment is configured");

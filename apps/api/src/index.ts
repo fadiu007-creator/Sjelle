@@ -1657,6 +1657,9 @@ export default {
           if (paymentMethod !== "cash" && paymentMethod !== "online") {
             return response({ error: { code: "PAYMENT_METHOD_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
           }
+          if (paymentMethod === "online") {
+            return response({ error: { code: "ONLINE_PAYMENT_NOT_CONFIGURED", message: "Online payments are not enabled yet. Use cash for this MVP.", request_id: requestId } }, 409, requestId, origin, env);
+          }
           if (paymentMethod === "cash" && body.cash_collected !== true) {
             return response({ error: { code: "CASH_COLLECTION_CONFIRMATION_REQUIRED", message: "Confirm cash collection before completing this job.", request_id: requestId } }, 400, requestId, origin, env);
           }
@@ -1674,7 +1677,7 @@ export default {
         const payload = await parseJson(result);
         if (!result.ok) {
           const code = isRecord(payload) && typeof payload.message === "string" ? payload.message : "JOB_UPDATE_FAILED";
-          const status = code === "JOB_NOT_FOUND" ? 404 : ["DRIVER_NOT_APPROVED","DRIVER_HAS_ACTIVE_JOB","ORDER_NOT_READY_FOR_PICKUP","INVALID_JOB_TRANSITION","CASH_COLLECTION_CONFIRMATION_REQUIRED","CASH_CONFIRMATION_ONLY_ON_COMPLETION","CASH_CONFIRMATION_NOT_APPLICABLE","INVALID_JOB_KIND"].includes(code) ? 409 : 503;
+          const status = code === "JOB_NOT_FOUND" ? 404 : ["DRIVER_NOT_APPROVED","DRIVER_HAS_ACTIVE_JOB","ORDER_NOT_READY_FOR_PICKUP","INVALID_JOB_TRANSITION","CASH_COLLECTION_CONFIRMATION_REQUIRED","CASH_CONFIRMATION_ONLY_ON_COMPLETION","CASH_CONFIRMATION_NOT_APPLICABLE","ONLINE_PAYMENT_NOT_CONFIGURED","INVALID_JOB_KIND"].includes(code) ? 409 : 503;
           return response({ error: { code, request_id: requestId } }, status, requestId, origin, env);
         }
         return response({ data: payload }, 200, requestId, origin, env);

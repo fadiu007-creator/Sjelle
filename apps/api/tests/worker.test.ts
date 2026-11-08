@@ -401,31 +401,28 @@ test("driver cannot complete a cash ride without confirming collection", async (
   }
 });
 
-test("online ride can complete without a cash collection confirmation", async () => {
+test("online ride completion is blocked until online payments are configured", async () => {
   const originalFetch = globalThis.fetch;
-  const rpcBodies: Record<string, unknown>[] = [];
-  globalThis.fetch = async (input, init) => {
+  let rpcCalls = 0;
+  globalThis.fetch = async (input) => {
     const url = String(input);
     if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), { status: 200 });
     if (url.includes("/rest/v1/sjelle_rides?")) return new Response(JSON.stringify([{ payment_method: "online" }]), { status: 200 });
-    if (url.includes("/rest/v1/rpc/sjelle_driver_update_job")) {
-      rpcBodies.push(JSON.parse(String(init?.body || "{}")));
-      return new Response(JSON.stringify({ status: "completed" }), { status: 200 });
-    }
-    throw new Error("Unexpected backend request: " + url);
+    if (url.includes("/rest/v1/rpc/sjelle_driver_update_job")) rpcCalls += 1;
+    throw new Error("Online payment must be blocked before the job RPC");
   };
   try {
     const result = await worker.fetch(new Request("https://api.example/api/v1/driver/jobs/ride/00000000-0000-4000-8000-000000000001/status", {
-      method: "POST",
-      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      method: "POST", headers: { authorization: "Bearer test-token", "content-type": "application/json" },
       body: JSON.stringify({ status: "completed" }),
     }), {
       APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
       SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
       SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
     } as never);
-    assert.equal(result.status, 200);
-    assert.equal(rpcBodies[0]?.p_cash_collected, false);
+    assert.equal(result.status, 409);
+    assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "ONLINE_PAYMENT_NOT_CONFIGURED");
+    assert.equal(rpcCalls, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -492,38 +489,35 @@ test("delivery cannot be marked delivered when cash confirmation is missing", as
   }
 });
 
-test("online delivery can be marked delivered without cash collection confirmation", async () => {
+test("online delivery completion is blocked until online payments are configured", async () => {
   const originalFetch = globalThis.fetch;
-  const rpcBodies: Record<string, unknown>[] = [];
-  globalThis.fetch = async (input, init) => {
+  let rpcCalls = 0;
+  globalThis.fetch = async (input) => {
     const url = String(input);
     if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), { status: 200 });
     if (url.includes("/rest/v1/sjelle_delivery_jobs?")) return new Response(JSON.stringify([{ order_id: "00000000-0000-4000-8000-000000000003" }]), { status: 200 });
     if (url.includes("/rest/v1/sjelle_food_orders?")) return new Response(JSON.stringify([{ payment_method: "online" }]), { status: 200 });
-    if (url.includes("/rest/v1/rpc/sjelle_driver_update_job")) {
-      rpcBodies.push(JSON.parse(String(init?.body || "{}")));
-      return new Response(JSON.stringify({ status: "delivered" }), { status: 200 });
-    }
-    throw new Error("Unexpected backend request: " + url);
+    if (url.includes("/rest/v1/rpc/sjelle_driver_update_job")) rpcCalls += 1;
+    throw new Error("Online delivery payment must be blocked before the job RPC");
   };
   try {
     const result = await worker.fetch(new Request("https://api.example/api/v1/driver/jobs/delivery/00000000-0000-4000-8000-000000000002/status", {
-      method: "POST",
-      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      method: "POST", headers: { authorization: "Bearer test-token", "content-type": "application/json" },
       body: JSON.stringify({ status: "delivered" }),
     }), {
       APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
       SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
       SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
     } as never);
-    assert.equal(result.status, 200);
-    assert.equal(rpcBodies[0]?.p_cash_collected, false);
+    assert.equal(result.status, 409);
+    assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "ONLINE_PAYMENT_NOT_CONFIGURED");
+    assert.equal(rpcCalls, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test("online jobs reject an accidental cash collection confirmation", async () => {
+test("online jobs cannot bypass the disabled payment provider by setting cash confirmation", async () => {
   const originalFetch = globalThis.fetch;
   let rpcCalls = 0;
   globalThis.fetch = async (input) => {
@@ -531,20 +525,19 @@ test("online jobs reject an accidental cash collection confirmation", async () =
     if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), { status: 200 });
     if (url.includes("/rest/v1/sjelle_rides?")) return new Response(JSON.stringify([{ payment_method: "online" }]), { status: 200 });
     if (url.includes("/rest/v1/rpc/sjelle_driver_update_job")) rpcCalls += 1;
-    throw new Error("An online job must not record a cash collection");
+    throw new Error("Online payment must not be marked as cash-collected");
   };
   try {
     const result = await worker.fetch(new Request("https://api.example/api/v1/driver/jobs/ride/00000000-0000-4000-8000-000000000001/status", {
-      method: "POST",
-      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      method: "POST", headers: { authorization: "Bearer test-token", "content-type": "application/json" },
       body: JSON.stringify({ status: "completed", cash_collected: true }),
     }), {
       APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
       SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
       SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
     } as never);
-    assert.equal(result.status, 400);
-    assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "CASH_CONFIRMATION_NOT_APPLICABLE");
+    assert.equal(result.status, 409);
+    assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "ONLINE_PAYMENT_NOT_CONFIGURED");
     assert.equal(rpcCalls, 0);
   } finally {
     globalThis.fetch = originalFetch;
