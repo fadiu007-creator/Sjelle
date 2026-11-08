@@ -1663,9 +1663,6 @@ export default {
           if (paymentMethod === "cash" && body.cash_collected !== true) {
             return response({ error: { code: "CASH_COLLECTION_CONFIRMATION_REQUIRED", message: "Confirm cash collection before completing this job.", request_id: requestId } }, 400, requestId, origin, env);
           }
-          if (paymentMethod === "online" && body.cash_collected === true) {
-            return response({ error: { code: "CASH_CONFIRMATION_NOT_APPLICABLE", message: "This job is not payable in cash.", request_id: requestId } }, 400, requestId, origin, env);
-          }
         } catch {
           return response({ error: { code: "JOB_PAYMENT_METHOD_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
         }
