@@ -54,6 +54,12 @@ test("ride cannot jump directly from searching to completed", () => {
   assert.throws(() => assertRideTransition("searching", "completed"), /Invalid ride transition/);
 });
 
+test("stale ride dispatch can terminate with no_driver_found, but terminal rides cannot reopen", () => {
+  assert.equal(canTransitionRide("searching", "no_driver_found"), true);
+  assert.equal(canTransitionRide("no_driver_found", "searching"), false);
+  assert.equal(canTransitionRide("no_driver_found", "driver_assigned"), false);
+});
+
 test("food order follows restaurant acceptance before courier assignment", () => {
   assert.equal(canTransitionFoodOrder("submitted", "accepted"), true);
   assert.equal(canTransitionFoodOrder("submitted", "courier_assigned"), false);
