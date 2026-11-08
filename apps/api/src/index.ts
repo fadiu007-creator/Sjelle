@@ -1621,7 +1621,7 @@ export default {
       let body: unknown;
       try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
       const allowed = driverJobMatch[1] === "ride"
-        ? ["driver_arriving","driver_arrived","in_progress","completed"]
+        ? ["driver_arriving","driver_arrived","in_progress","completed","cancelled_by_driver"]
         : ["arriving","arrived","picked_up","delivered"];
       if (!isRecord(body) || !allowed.includes(String(body.status)) || (body.cash_collected !== undefined && typeof body.cash_collected !== "boolean")) {
         return response({ error: { code: "INVALID_JOB_TRANSITION", request_id: requestId } }, 400, requestId, origin, env);
@@ -1674,7 +1674,7 @@ export default {
         const payload = await parseJson(result);
         if (!result.ok) {
           const code = isRecord(payload) && typeof payload.message === "string" ? payload.message : "JOB_UPDATE_FAILED";
-          const status = code === "JOB_NOT_FOUND" ? 404 : ["DRIVER_NOT_APPROVED","DRIVER_HAS_ACTIVE_JOB","ORDER_NOT_READY_FOR_PICKUP","INVALID_JOB_TRANSITION","CASH_COLLECTION_CONFIRMATION_REQUIRED","CASH_CONFIRMATION_ONLY_ON_COMPLETION","CASH_CONFIRMATION_NOT_APPLICABLE","ONLINE_PAYMENT_NOT_CONFIGURED","INVALID_JOB_KIND"].includes(code) ? 409 : 503;
+          const status = code === "JOB_NOT_FOUND" ? 404 : ["DRIVER_NOT_APPROVED","DRIVER_HAS_ACTIVE_JOB","ORDER_NOT_READY_FOR_PICKUP","INVALID_JOB_TRANSITION","DRIVER_CANCELLATION_NOT_ALLOWED","CASH_COLLECTION_CONFIRMATION_REQUIRED","CASH_CONFIRMATION_ONLY_ON_COMPLETION","CASH_CONFIRMATION_NOT_APPLICABLE","ONLINE_PAYMENT_NOT_CONFIGURED","INVALID_JOB_KIND"].includes(code) ? 409 : 503;
           return response({ error: { code, request_id: requestId } }, status, requestId, origin, env);
         }
         return response({ data: payload }, 200, requestId, origin, env);
