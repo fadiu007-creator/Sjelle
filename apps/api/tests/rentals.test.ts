@@ -46,5 +46,7 @@ test("rental booking lifecycle blocks invalid transitions", () => {
   assert.equal(canTransitionRentalBooking("requested", "confirmed"), true);
   assert.equal(canTransitionRentalBooking("confirmed", "picked_up"), true);
   assert.equal(canTransitionRentalBooking("picked_up", "returned"), true);
+  assert.equal(canTransitionRentalBooking("confirmed", "no_show"), true);
+  assert.equal(canTransitionRentalBooking("no_show", "picked_up"), false);
   assert.equal(canTransitionRentalBooking("returned", "confirmed"), false);
 });
