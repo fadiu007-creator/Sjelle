@@ -624,7 +624,13 @@ export default {
             daily_price_cents: quote.dailyPriceCents, deposit_cents: quote.depositCents,
             total_price_cents: quote.rentalTotalCents, status: "requested", customer_note: note || null }),
         });
-        if (!inserted.ok) return response({ error: { code: "RENTAL_BOOKING_CREATE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        if (!inserted.ok) {
+          const failure = await parseJson(inserted);
+          if (isRecord(failure) && failure.code === "23P01") {
+            return response({ error: { code: "RENTAL_DATES_CONFLICT", message: "This vehicle was just booked for overlapping dates. Choose another period.", request_id: requestId } }, 409, requestId, origin, env);
+          }
+          return response({ error: { code: "RENTAL_BOOKING_CREATE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        }
         const rows = await parseJson(inserted) as Array<Record<string, unknown>>;
         return response({ data: rows[0], meta: { deposit_due_cents: quote.depositCents, total_due_cents: quote.totalDueCents } }, 201, requestId, origin, env);
       } catch (error) {
@@ -747,7 +753,13 @@ export default {
           const updated = await databaseRequest(env, "rental_bookings?id=eq." + encodeURIComponent(booking.id) + "&company_id=eq." + encodeURIComponent(String(company.id)) + "&select=id,status,updated_at", {
             method: "PATCH", headers: { prefer: "return=representation" }, body: JSON.stringify({ status: body.status, updated_at: new Date().toISOString() }),
           });
-          if (!updated.ok) return response({ error: { code: "RENTAL_BOOKING_UPDATE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+          if (!updated.ok) {
+            const failure = await parseJson(updated);
+            if (isRecord(failure) && failure.code === "23P01") {
+              return response({ error: { code: "RENTAL_DATES_CONFLICT", message: "Ka kërkesë tjetër për këto data.", request_id: requestId } }, 409, requestId, origin, env);
+            }
+            return response({ error: { code: "RENTAL_BOOKING_UPDATE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+          }
           return response({ data: (await parseJson(updated) as Array<Record<string, unknown>>)[0] ?? null }, 200, requestId, origin, env);
         }
         return response({ error: { code: "RENTAL_OWNER_ROUTE_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
