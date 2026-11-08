@@ -844,6 +844,8 @@ async function loadMyRides(){
     myRides.replaceChildren();
     for(const ride of rides){
       const c=node("article","my-order-card");
+      c.dataset.rideId=ride.id;
+      c.dataset.rideStatus=ride.status;
       c.append(node("div","my-order-heading",ride.pickup_label+" → "+ride.destination_label));
       c.append(node("span","order-status",rideStatusLabels[ride.status]||ride.status));
       if(rideStatusMessages[ride.status])c.append(node("p","ride-status-message",rideStatusMessages[ride.status]));
@@ -859,7 +861,24 @@ async function loadMyRides(){
   }catch(error){myRides.replaceChildren(node("p","menu-empty","Udhëtimet nuk mund të ngarkohen: "+error.message));}
 }
 
-setInterval(()=>{if(document.visibilityState==='visible'&&state.session?.access_token&&document.querySelector('#account-dialog')?.open){loadMyOrders();loadMyRides();}},20000);
+let rideStatusRefreshInFlight=false;
+async function refreshMyRidesIfChanged(){
+  if(rideStatusRefreshInFlight||!state.session?.access_token||!document.querySelector("#account-dialog")?.open)return;
+  rideStatusRefreshInFlight=true;
+  try{
+    const result=await apiRequest("/rides");
+    const rides=Array.isArray(result.data)?result.data:[];
+    const current=[...myRides.querySelectorAll("[data-ride-id]")].map(card=>card.dataset.rideId+":"+card.dataset.rideStatus).sort().join("|");
+    const latest=rides.map(ride=>ride.id+":"+ride.status).sort().join("|");
+    if(current!==latest)await loadMyRides();
+  }catch{
+    // Keep the last known ride state visible during temporary network/API failures.
+  }finally{
+    rideStatusRefreshInFlight=false;
+  }
+}
+
+setInterval(()=>{if(document.visibilityState==='visible'&&state.session?.access_token&&document.querySelector('#account-dialog')?.open){loadMyOrders();refreshMyRidesIfChanged();}},20000);
 
 // Support direct links to account creation/login from GitHub Pages project paths.
 const requestedAccountMode = new URLSearchParams(window.location.search).get("account");
