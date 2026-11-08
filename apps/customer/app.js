@@ -550,6 +550,9 @@ async function loadRideRoutes() {
       price.append(node("strong", "", euro(route.amount_cents)));
       const book = node("button", "", "Rezervo me para në dorë");
       book.type = "button";
+      // Reuse the same key after ambiguous network failures: the server may
+      // have committed the booking even when the browser never received it.
+      const bookingIdempotencyKey = crypto.randomUUID();
       book.addEventListener("click", async () => {
         if (!state.session?.access_token) { openAccount("login"); return; }
         book.disabled = true;
@@ -557,9 +560,11 @@ async function loadRideRoutes() {
         try {
           const result = await apiRequest("/rides", {
             method: "POST",
-            headers: { "x-route-id": route.id, "idempotency-key": crypto.randomUUID() },
+            headers: { "x-route-id": route.id, "idempotency-key": bookingIdempotencyKey },
           });
           book.textContent = "Kërkesa u dërgua · " + euro(result.data?.quoted_amount_cents);
+          book.disabled = true;
+          if (document.querySelector("#account-dialog")?.open) await loadMyRides();
         } catch (error) {
           book.disabled = false;
           book.textContent = "Provo përsëri";
