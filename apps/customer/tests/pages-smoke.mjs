@@ -52,6 +52,11 @@ try {
   assert.match(appSource, /nuk u mblodh pagesë/, "failed or cancelled cash rides must clearly state that no payment was collected");
   assert.match(appSource, /dataset\.rideStatus/, "customer ride cards must expose their last rendered status for change detection");
   assert.match(appSource, /refreshMyRidesIfChanged/, "customer ride status must refresh without rebuilding unchanged live tracking maps");
+  const driverSourceResponse = await page.request.get(new URL("driver/driver.js", baseUrl).toString());
+  assert.equal(driverSourceResponse.status(), 200, "driver application bundle should load");
+  const driverSource = await driverSourceResponse.text();
+  assert.match(driverSource, /cancelled_by_driver/, "driver portal must expose the safe ride-cancellation transition");
+  assert.match(driverSource, /Anulo udhëtimin/, "driver portal must provide an explicit cancellation action");
   await page.waitForFunction(
     () => document.querySelectorAll("#city-select option").length >= 2,
     { timeout: 15000 },
