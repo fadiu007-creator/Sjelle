@@ -496,7 +496,7 @@ const worker = {
       try { body = await request.json(); } catch {
         return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env);
       }
-      if (!isRecord(body) || typeof body.email !== "string" || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(body.email.trim()) || body.email.trim().length > 254) {
+      if (!isRecord(body) || typeof body.email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email.trim()) || body.email.trim().length > 254) {
         return response({ error: { code: "INVALID_EMAIL", message: "Enter a valid email address.", request_id: requestId } }, 400, requestId, origin, env);
       }
       try {
@@ -523,7 +523,7 @@ const worker = {
         return response({ error: { code: "AUTH_NOT_CONFIGURED", request_id: requestId } }, 503, requestId, origin, env);
       }
       const authorization = request.headers.get("authorization");
-      if (!authorization || !/^Bearer\\s+\\S+$/i.test(authorization)) {
+      if (!authorization || !/^Bearer\s+\S+$/i.test(authorization)) {
         return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
       }
       let body: unknown;
