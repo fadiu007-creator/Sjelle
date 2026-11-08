@@ -903,3 +903,55 @@ test("driver cancellation is not accepted for delivery jobs", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("rental booking maps the database exclusion constraint race to a date conflict", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls: Array<{ url: string; method: string }> = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    calls.push({ url, method });
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    }
+    if (url.includes("/rest/v1/rental_vehicles?")) {
+      return new Response(JSON.stringify([{
+        id: "22222222-2222-4222-8222-222222222222",
+        company_id: "44444444-4444-4444-8444-444444444444",
+        owner_user_id: "55555555-5555-4555-8555-555555555555",
+        daily_price_cents: 5000,
+        deposit_cents: 10000,
+      }]), { status: 200 });
+    }
+    if (url.includes("/rest/v1/rental_companies?")) return new Response(JSON.stringify([{ id: "44444444-4444-4444-8444-444444444444" }]), { status: 200 });
+    if (url.includes("/rest/v1/rental_bookings?") && method === "GET") return new Response("[]", { status: 200 });
+    if (url.includes("/rest/v1/rental_bookings?") && method === "POST") {
+      return new Response(JSON.stringify({ code: "23P01", message: "conflicting key value violates exclusion constraint rental_bookings_no_active_overlap" }), {
+        status: 409, headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error("Unexpected database request: " + url);
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/rental-bookings", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({
+        vehicle_id: "22222222-2222-4222-8222-222222222222",
+        pickup_at: "2026-11-10T10:00:00.000Z",
+        return_at: "2026-11-11T10:00:00.000Z",
+      }),
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 409);
+    assert.equal(body.error.code, "RENTAL_DATES_CONFLICT");
+    assert.ok(calls.some(call => call.method === "POST" && call.url.includes("rental_bookings")));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
