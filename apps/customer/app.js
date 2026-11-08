@@ -281,11 +281,11 @@ const cartLines = document.querySelector("#cart-lines");
 const cartCount = document.querySelector("#cart-count");
 const rideRoutes = document.querySelector("#ride-routes");
 
-readAuthCallback();
 try {
   const saved = sessionStorage.getItem("sjelle.session");
   if (saved) state.session = JSON.parse(saved);
 } catch { state.session = null; }
+readAuthCallback();
 
 function showMessage(element, message, kind = "") {
   element.textContent = message;
