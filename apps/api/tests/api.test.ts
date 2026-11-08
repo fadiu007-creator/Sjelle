@@ -255,11 +255,10 @@ test("driver availability reports a backend error if active-job checks fail", as
 test("ride completion requires explicit cash collection confirmation", async () => {
   const originalFetch = globalThis.fetch;
   let rpcCalls = 0;
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.endsWith("/auth/v1/user")) {
-      return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
-    }
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_rides?")) return new Response(JSON.stringify([{ payment_method: "cash" }]), { status: 200 });
     if (url.includes("/rpc/")) rpcCalls += 1;
     return new Response("[]", { status: 200 });
   }) as typeof fetch;
@@ -318,9 +317,9 @@ test("delivery completion requires explicit cash collection confirmation", async
   let rpcCalls = 0;
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.endsWith("/auth/v1/user")) {
-      return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
-    }
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_delivery_jobs?")) return new Response(JSON.stringify([{ order_id: "44444444-4444-4444-8444-444444444444" }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_food_orders?")) return new Response(JSON.stringify([{ payment_method: "cash" }]), { status: 200 });
     if (url.includes("/rpc/")) rpcCalls += 1;
     return new Response("[]", { status: 200 });
   }) as typeof fetch;
@@ -495,11 +494,11 @@ test("driver job status rejects non-boolean cash collection flags before databas
 test("driver job status rejects explicit false cash confirmation for terminal transitions before database RPC", async () => {
   const originalFetch = globalThis.fetch;
   let rpcCalls = 0;
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.endsWith("/auth/v1/user")) {
-      return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
-    }
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_delivery_jobs?")) return new Response(JSON.stringify([{ order_id: "44444444-4444-4444-8444-444444444444" }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_food_orders?")) return new Response(JSON.stringify([{ payment_method: "cash" }]), { status: 200 });
     if (url.includes("/rpc/")) rpcCalls += 1;
     return new Response("[]", { status: 200 });
   }) as typeof fetch;
@@ -528,9 +527,8 @@ test("successful ride completion sends cash confirmation to the atomic database 
   let rpcBody: Record<string, unknown> | null = null;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    if (url.endsWith("/auth/v1/user")) {
-      return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
-    }
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_rides?")) return new Response(JSON.stringify([{ payment_method: "cash" }]), { status: 200 });
     if (url.includes("/rpc/sjelle_driver_update_job")) {
       assert.equal(init?.method, "POST");
       rpcBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
@@ -562,6 +560,7 @@ test("successful ride completion sends cash confirmation to the atomic database 
     globalThis.fetch = originalFetch;
   }
 });
+
 
 test("driver job RPC conflicts are returned as conflicts instead of backend outages", async () => {
   const originalFetch = globalThis.fetch;
