@@ -988,3 +988,73 @@ test("driver cancellation after ride start is returned as a conflict from the da
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("customer ride cancellation succeeds only through the customer-scoped database RPC", async () => {
+  const originalFetch = globalThis.fetch;
+  let rpcBody: Record<string, unknown> | null = null;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    }
+    if (url.includes("/rpc/sjelle_cancel_ride")) {
+      assert.equal(init?.method, "POST");
+      rpcBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({ id: "33333333-3333-4333-8333-333333333333", status: "cancelled_by_customer" }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error("Unexpected database request: " + url);
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/rides/33333333-3333-4333-8333-333333333333/cancel", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token" },
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { data: { status: string } };
+    assert.equal(response.status, 200);
+    assert.equal(body.data.status, "cancelled_by_customer");
+    assert.deepEqual(rpcBody, {
+      p_customer_id: "11111111-1111-4111-8111-111111111111",
+      p_ride_id: "33333333-3333-4333-8333-333333333333",
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("customer cancellation returns conflict after the ride is no longer cancellable", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    }
+    if (url.includes("/rpc/sjelle_cancel_ride")) {
+      return new Response(JSON.stringify({ message: "RIDE_NOT_CANCELLABLE" }), {
+        status: 400, headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error("Unexpected database request: " + url);
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/rides/33333333-3333-4333-8333-333333333333/cancel", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token" },
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 409);
+    assert.equal(body.error.code, "RIDE_NOT_CANCELLABLE");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
