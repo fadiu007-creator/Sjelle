@@ -463,6 +463,94 @@ const worker = {
       }
     }
 
+    // OAuth and password recovery use Supabase Auth through this Worker; secrets remain server-side.
+    if (url.pathname === "/api/v1/auth/google" && request.method === "GET") {
+      if (!env.SUPABASE_URL || !env.SUPABASE_PUBLISHABLE_KEY) {
+        return response({ error: { code: "AUTH_NOT_CONFIGURED", request_id: requestId } }, 503, requestId, origin, env);
+      }
+      const redirectTo = new URL("/", url.origin).toString();
+      try {
+        const authResponse = await fetch(supabaseUrl(env, "/auth/v1/authorize?provider=google&redirect_to=" + encodeURIComponent(redirectTo)), {
+          method: "GET",
+          headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY },
+          redirect: "manual",
+        });
+        const location = authResponse.headers.get("location");
+        if (authResponse.status >= 300 && authResponse.status < 400 && location) {
+          return new Response(null, { status: 302, headers: { location, "cache-control": "no-store" } });
+        }
+        const authBody = await parseJson(authResponse);
+        const message = isRecord(authBody) && typeof authBody.msg === "string" ? authBody.msg
+          : isRecord(authBody) && typeof authBody.message === "string" ? authBody.message : "Google sign-in is not enabled in Supabase Auth.";
+        return response({ error: { code: "GOOGLE_AUTH_NOT_CONFIGURED", message: message.slice(0, 220), request_id: requestId } }, 503, requestId, origin, env);
+      } catch {
+        return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+      }
+    }
+
+    if (url.pathname === "/api/v1/auth/recover" && request.method === "POST") {
+      if (!env.SUPABASE_URL || !env.SUPABASE_PUBLISHABLE_KEY) {
+        return response({ error: { code: "AUTH_NOT_CONFIGURED", request_id: requestId } }, 503, requestId, origin, env);
+      }
+      let body: unknown;
+      try { body = await request.json(); } catch {
+        return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      if (!isRecord(body) || typeof body.email !== "string" || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(body.email.trim()) || body.email.trim().length > 254) {
+        return response({ error: { code: "INVALID_EMAIL", message: "Enter a valid email address.", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      try {
+        const redirectTo = new URL("/?auth=recovery", url.origin).toString();
+        const authResponse = await fetch(supabaseUrl(env, "/auth/v1/recover?redirect_to=" + encodeURIComponent(redirectTo)), {
+          method: "POST",
+          headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, "content-type": "application/json" },
+          body: JSON.stringify({ email: body.email.trim().toLowerCase() }),
+        });
+        if (!authResponse.ok) {
+          const authBody = await parseJson(authResponse);
+          const message = isRecord(authBody) && typeof authBody.msg === "string" ? authBody.msg
+            : isRecord(authBody) && typeof authBody.message === "string" ? authBody.message : "Password reset email could not be sent.";
+          return response({ error: { code: "PASSWORD_RESET_FAILED", message: message.slice(0, 220), request_id: requestId } }, authResponse.status >= 500 ? 503 : authResponse.status, requestId, origin, env);
+        }
+        return response({ data: { email_sent: true } }, 200, requestId, origin, env);
+      } catch {
+        return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+      }
+    }
+
+    if (url.pathname === "/api/v1/auth/update-password" && request.method === "POST") {
+      if (!env.SUPABASE_URL || !env.SUPABASE_PUBLISHABLE_KEY) {
+        return response({ error: { code: "AUTH_NOT_CONFIGURED", request_id: requestId } }, 503, requestId, origin, env);
+      }
+      const authorization = request.headers.get("authorization");
+      if (!authorization || !/^Bearer\\s+\\S+$/i.test(authorization)) {
+        return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      }
+      let body: unknown;
+      try { body = await request.json(); } catch {
+        return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      if (!isRecord(body) || typeof body.password !== "string" || body.password.length < 8 || body.password.length > 128) {
+        return response({ error: { code: "INVALID_PASSWORD", message: "Password must be between 8 and 128 characters.", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      try {
+        const authResponse = await fetch(supabaseUrl(env, "/auth/v1/user"), {
+          method: "PUT",
+          headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, authorization, "content-type": "application/json" },
+          body: JSON.stringify({ password: body.password }),
+        });
+        const authBody = await parseJson(authResponse);
+        if (!authResponse.ok) {
+          const message = isRecord(authBody) && typeof authBody.msg === "string" ? authBody.msg
+            : isRecord(authBody) && typeof authBody.message === "string" ? authBody.message : "Password could not be updated.";
+          return response({ error: { code: "PASSWORD_UPDATE_FAILED", message: message.slice(0, 220), request_id: requestId } }, authResponse.status >= 500 ? 503 : authResponse.status, requestId, origin, env);
+        }
+        return response({ data: { updated: true } }, 200, requestId, origin, env);
+      } catch {
+        return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+      }
+    }
+
     // Supabase Auth proxy: the publishable key is used only for Auth; the service-role key never leaves this Worker.
     if ((url.pathname === "/api/v1/auth/signup" && request.method === "POST")
       || (url.pathname === "/api/v1/auth/login" && request.method === "POST")) {
