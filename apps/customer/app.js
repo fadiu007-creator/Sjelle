@@ -262,6 +262,16 @@ const accountForm = document.querySelector("#auth-form");
 const authMessage = document.querySelector("#auth-message");
 const authNameWrap = document.querySelector("#auth-name-wrap");
 const authSubmit = document.querySelector("#auth-submit");
+const googleSignin = document.querySelector("#google-signin");
+const forgotPasswordOpen = document.querySelector("#forgot-password-open");
+const recoveryForm = document.querySelector("#password-recovery-form");
+const recoveryMessage = document.querySelector("#recovery-message");
+const recoverySubmit = document.querySelector("#recovery-submit");
+const recoveryBack = document.querySelector("#recovery-back");
+const passwordUpdateForm = document.querySelector("#password-update-form");
+const passwordUpdateMessage = document.querySelector("#password-update-message");
+const passwordUpdateSubmit = document.querySelector("#password-update-submit");
+
 const accountSignedIn = document.querySelector("#account-signed-in");
 const accountSummary = document.querySelector("#account-summary");
 const checkoutForm = document.querySelector("#checkout-form");
@@ -271,6 +281,7 @@ const cartLines = document.querySelector("#cart-lines");
 const cartCount = document.querySelector("#cart-count");
 const rideRoutes = document.querySelector("#ride-routes");
 
+readAuthCallback();
 try {
   const saved = sessionStorage.getItem("sjelle.session");
   if (saved) state.session = JSON.parse(saved);
@@ -347,6 +358,11 @@ function updateAuthMode() {
     button.classList.toggle("is-active", button.dataset.authMode === state.authMode);
   });
   document.querySelector("#account-title").textContent = signup ? "Regjistrohunë tënde" : "Mirë se erdhe";
+  document.querySelector("#forgot-password-open").hidden = signup;
+  document.querySelector("#google-signin").hidden = signup;
+  recoveryForm.hidden = true;
+  passwordUpdateForm.hidden = true;
+  accountForm.hidden = Boolean(state.session?.access_token);
   showMessage(authMessage, "");
 }
 
@@ -358,6 +374,81 @@ document.querySelectorAll("[data-auth-mode]").forEach(button => button.addEventL
   state.authMode = button.dataset.authMode;
   updateAuthMode();
 }));
+
+function showRecoveryForm() {
+  accountForm.hidden = true;
+  googleSignin.hidden = true;
+  recoveryForm.hidden = false;
+  passwordUpdateForm.hidden = true;
+  recoveryForm.elements.email.value = accountForm.elements.email.value.trim();
+  showMessage(recoveryMessage, "");
+}
+forgotPasswordOpen.addEventListener("click", showRecoveryForm);
+recoveryBack.addEventListener("click", () => { recoveryForm.hidden = true; accountForm.hidden = false; googleSignin.hidden = false; });
+googleSignin.addEventListener("click", () => {
+  googleSignin.disabled = true;
+  showMessage(authMessage, "Po hapim kyçjen me Google…");
+  window.location.assign(API + "/auth/google");
+});
+recoveryForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  recoverySubmit.disabled = true;
+  showMessage(recoveryMessage, "Po e dërgojmë lidhjen…");
+  try {
+    await apiRequest("/auth/recover", { method: "POST", body: JSON.stringify({ email: recoveryForm.elements.email.value.trim() }) }, false);
+    showMessage(recoveryMessage, "Nëse kjo adresë është e regjistruar, do të marrësh një email me lidhjen për rivendosje. Kontrollo edhe dosjen Spam.", "success");
+  } catch (error) {
+    showMessage(recoveryMessage, error.message || "Lidhja nuk u dërgua. Provo përsëri.", "error");
+  } finally { recoverySubmit.disabled = false; }
+});
+passwordUpdateForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  const password = passwordUpdateForm.elements.password.value;
+  if (password !== passwordUpdateForm.elements.confirm_password.value) {
+    showMessage(passwordUpdateMessage, "Fjalëkalimet nuk përputhen.", "error");
+    return;
+  }
+  passwordUpdateSubmit.disabled = true;
+  showMessage(passwordUpdateMessage, "Po e ruajmë fjalëkalimin e ri…");
+  try {
+    await apiRequest("/auth/update-password", { method: "POST", body: JSON.stringify({ password }) }, false);
+    showMessage(passwordUpdateMessage, "Fjalëkalimi u ndryshua. Tani mund të kyçesh me fjalëkalimin e ri.", "success");
+    passwordUpdateForm.reset();
+    setTimeout(() => { passwordUpdateForm.hidden = true; accountForm.hidden = false; googleSignin.hidden = false; state.authMode = "login"; updateAuthMode(); }, 1200);
+  } catch (error) {
+    showMessage(passwordUpdateMessage, error.message || "Fjalëkalimi nuk u ndryshua. Kërko një lidhje të re.", "error");
+  } finally { passwordUpdateSubmit.disabled = false; }
+});
+
+function readAuthCallback() {
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const accessToken = hash.get("access_token");
+  const refreshToken = hash.get("refresh_token");
+  if (!accessToken || !refreshToken) return;
+  let user = null;
+  try {
+    const payload = accessToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    user = JSON.parse(atob(payload.padEnd(Math.ceil(payload.length / 4) * 4, "=")));
+  } catch { user = null; }
+  const session = {
+    access_token: accessToken,
+    refresh_token: refreshToken,
+    token_type: hash.get("token_type") || "bearer",
+    expires_in: Number(hash.get("expires_in") || 3600),
+    expires_at: Number(hash.get("expires_at") || 0) || Math.floor(Date.now() / 1000) + Number(hash.get("expires_in") || 3600),
+    user: user ? { id: user.sub, email: user.email } : null,
+  };
+  persistSession(session);
+  history.replaceState(null, "", window.location.pathname + window.location.search);
+  if (hash.get("type") === "recovery" || new URLSearchParams(window.location.search).get("auth") === "recovery") {
+    openAccount("login");
+    accountForm.hidden = true;
+    googleSignin.hidden = true;
+    passwordUpdateForm.hidden = false;
+    showMessage(passwordUpdateMessage, "Verifikimi u krye. Vendos fjalëkalimin e ri.", "success");
+  } else if (accountDialog.open) accountDialog.close();
+}
+
 accountForm.addEventListener("submit", async event => {
   event.preventDefault();
   authSubmit.disabled = true;
