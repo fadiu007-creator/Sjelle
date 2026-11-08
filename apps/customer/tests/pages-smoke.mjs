@@ -50,7 +50,7 @@ try {
   const appSource = await appSourceResponse.text();
   assert.match(appSource, /Nuk u gjet shofer brenda 15 minutave/, "dispatch timeout must be explained to customers");
   assert.match(appSource, /nuk u mblodh pagesë/, "failed or cancelled cash rides must clearly state that no payment was collected");
-  assert.match(appSource, /data-ride-status/, "customer ride cards must expose their last rendered status for change detection");
+  assert.match(appSource, /dataset\.rideStatus/, "customer ride cards must expose their last rendered status for change detection");
   assert.match(appSource, /refreshMyRidesIfChanged/, "customer ride status must refresh without rebuilding unchanged live tracking maps");
   await page.waitForFunction(
     () => document.querySelectorAll("#city-select option").length >= 2,
