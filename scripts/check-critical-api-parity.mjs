@@ -48,11 +48,11 @@ assert.ok(adminJs.includes("point[0]<19.7||point[0]>22||point[1]<41.7||point[1]>
 
 console.log("Critical API/Edge Function and admin activation parity checks passed.");
 
-const cashMigration = readFileSync("supabase/migrations/20261108090000_sjelle_payment_method_cash_guard.sql", "utf8");
+const cashMigration = readFileSync("supabase/migrations/20261108082418_sjelle_payment_method_cash_guard.sql", "utf8");
 assert.ok(cashMigration.includes("v_ride.payment_method='cash'"), "cash migration must guard ride completion by payment method");
 assert.ok(cashMigration.includes("v_order.payment_method='cash'"), "cash migration must guard delivery completion by payment method");
 assert.ok(cashMigration.includes("'not_due'::public.sjelle_cash_status"), "online jobs must not remain in the cash-due ledger state");
 
-const onlinePaymentMigration = readFileSync("supabase/migrations/20261108093000_sjelle_block_unconfigured_online_payments.sql", "utf8");
+const onlinePaymentMigration = readFileSync("supabase/migrations/20261108083041_sjelle_block_unconfigured_online_payments.sql", "utf8");
 assert.ok(onlinePaymentMigration.includes("v_ride.payment_method='online'"), "online rides must fail closed until payment is configured");
 assert.ok(onlinePaymentMigration.includes("v_order.payment_method='online'"), "online deliveries must fail closed until payment is configured");
