@@ -403,13 +403,13 @@ test("driver cannot complete a cash ride without confirming collection", async (
 
 test("online ride can complete without a cash collection confirmation", async () => {
   const originalFetch = globalThis.fetch;
-  let rpcBody: Record<string, unknown> | null = null;
+  const rpcBodies: Record<string, unknown>[] = [];
   globalThis.fetch = async (input, init) => {
     const url = String(input);
     if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), { status: 200 });
     if (url.includes("/rest/v1/sjelle_rides?")) return new Response(JSON.stringify([{ payment_method: "online" }]), { status: 200 });
     if (url.includes("/rest/v1/rpc/sjelle_driver_update_job")) {
-      rpcBody = JSON.parse(String(init?.body || "{}"));
+      rpcBodies.push(JSON.parse(String(init?.body || "{}")));
       return new Response(JSON.stringify({ status: "completed" }), { status: 200 });
     }
     throw new Error("Unexpected backend request: " + url);
@@ -425,7 +425,7 @@ test("online ride can complete without a cash collection confirmation", async ()
       SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
     } as never);
     assert.equal(result.status, 200);
-    assert.equal(rpcBody?.p_cash_collected, false);
+    assert.equal(rpcBodies[0]?.p_cash_collected, false);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -433,13 +433,13 @@ test("online ride can complete without a cash collection confirmation", async ()
 
 test("cash ride completion records the driver's confirmation through the atomic job RPC", async () => {
   const originalFetch = globalThis.fetch;
-  let rpcBody: Record<string, unknown> | null = null;
+  const rpcBodies: Record<string, unknown>[] = [];
   globalThis.fetch = async (input, init) => {
     const url = String(input);
     if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), { status: 200 });
     if (url.includes("/rest/v1/sjelle_rides?")) return new Response(JSON.stringify([{ payment_method: "cash" }]), { status: 200 });
     if (url.includes("/rest/v1/rpc/sjelle_driver_update_job")) {
-      rpcBody = JSON.parse(String(init?.body || "{}"));
+      rpcBodies.push(JSON.parse(String(init?.body || "{}")));
       return new Response(JSON.stringify({ status: "completed", cash_collected: true }), { status: 200 });
     }
     throw new Error("Unexpected backend request: " + url);
@@ -455,9 +455,9 @@ test("cash ride completion records the driver's confirmation through the atomic 
       SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
     } as never);
     assert.equal(result.status, 200);
-    assert.equal(rpcBody?.p_job_kind, "ride");
-    assert.equal(rpcBody?.p_next_status, "completed");
-    assert.equal(rpcBody?.p_cash_collected, true);
+    assert.equal(rpcBodies[0]?.p_job_kind, "ride");
+    assert.equal(rpcBodies[0]?.p_next_status, "completed");
+    assert.equal(rpcBodies[0]?.p_cash_collected, true);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -494,14 +494,14 @@ test("delivery cannot be marked delivered when cash confirmation is missing", as
 
 test("online delivery can be marked delivered without cash collection confirmation", async () => {
   const originalFetch = globalThis.fetch;
-  let rpcBody: Record<string, unknown> | null = null;
+  const rpcBodies: Record<string, unknown>[] = [];
   globalThis.fetch = async (input, init) => {
     const url = String(input);
     if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), { status: 200 });
     if (url.includes("/rest/v1/sjelle_delivery_jobs?")) return new Response(JSON.stringify([{ order_id: "00000000-0000-4000-8000-000000000003" }]), { status: 200 });
     if (url.includes("/rest/v1/sjelle_food_orders?")) return new Response(JSON.stringify([{ payment_method: "online" }]), { status: 200 });
     if (url.includes("/rest/v1/rpc/sjelle_driver_update_job")) {
-      rpcBody = JSON.parse(String(init?.body || "{}"));
+      rpcBodies.push(JSON.parse(String(init?.body || "{}")));
       return new Response(JSON.stringify({ status: "delivered" }), { status: 200 });
     }
     throw new Error("Unexpected backend request: " + url);
@@ -517,7 +517,7 @@ test("online delivery can be marked delivered without cash collection confirmati
       SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
     } as never);
     assert.equal(result.status, 200);
-    assert.equal(rpcBody?.p_cash_collected, false);
+    assert.equal(rpcBodies[0]?.p_cash_collected, false);
   } finally {
     globalThis.fetch = originalFetch;
   }
