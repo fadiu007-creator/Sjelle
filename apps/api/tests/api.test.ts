@@ -830,3 +830,76 @@ test("driver GPS updates reject inaccurate fixes before database writes", async 
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("approved driver can request cancellation of an unstarted ride through the atomic job RPC", async () => {
+  const originalFetch = globalThis.fetch;
+  let rpcBody: Record<string, unknown> | null = null;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    }
+    if (url.includes("/rpc/sjelle_driver_update_job")) {
+      assert.equal(init?.method, "POST");
+      rpcBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({ job_id: "33333333-3333-4333-8333-333333333333", status: "cancelled_by_driver" }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error("Unexpected database request: " + url);
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/jobs/ride/33333333-3333-4333-8333-333333333333/status", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ status: "cancelled_by_driver" }),
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { data: { status: string } };
+    assert.equal(response.status, 200);
+    assert.equal(body.data.status, "cancelled_by_driver");
+    assert.deepEqual(rpcBody, {
+      p_driver_id: "11111111-1111-4111-8111-111111111111",
+      p_job_kind: "ride",
+      p_job_id: "33333333-3333-4333-8333-333333333333",
+      p_next_status: "cancelled_by_driver",
+      p_cash_collected: false,
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("driver cancellation is not accepted for delivery jobs", async () => {
+  const originalFetch = globalThis.fetch;
+  let rpcCalls = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    }
+    if (url.includes("/rpc/")) rpcCalls += 1;
+    return new Response("[]", { status: 200 });
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/jobs/delivery/33333333-3333-4333-8333-333333333333/status", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ status: "cancelled_by_driver" }),
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 400);
+    assert.equal(body.error.code, "INVALID_JOB_TRANSITION");
+    assert.equal(rpcCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
