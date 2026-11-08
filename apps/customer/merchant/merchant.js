@@ -17,16 +17,19 @@ async function loadMerchantCities(){
     for(const city of r.data||[]){const o=document.createElement("option");o.value=city.slug;o.textContent=city.name;sel.append(o);}
   }catch(e){alertMsg("Qytetet nuk u ngarkuan: "+e.message,"error");}
 }
+async function captureMerchantLocation(){const form=$("#restaurant-apply");const lat=form.elements.latitude,lon=form.elements.longitude,status=$("#merchant-gps-status");if(lat.value&&lon.value)return {latitude:Number(lat.value),longitude:Number(lon.value)};if(!navigator.geolocation)throw Error("GPS nuk mbështetet në këtë pajisje. Aktivizo lokacionin ose provo një shfletues tjetër.");status.textContent="Po marrim lokacionin GPS…";const pos=await new Promise((resolve,reject)=>navigator.geolocation.getCurrentPosition(resolve,()=>reject(Error("Nuk u mor lokacioni. Lejo qasjen në GPS dhe provo përsëri.")),{enableHighAccuracy:true,timeout:15000,maximumAge:60000}));lat.value=String(pos.coords.latitude);lon.value=String(pos.coords.longitude);status.textContent="Lokacioni u mor nga GPS.";return {latitude:pos.coords.latitude,longitude:pos.coords.longitude}}
+$("#merchant-use-gps")?.addEventListener("click",async()=>{try{await captureMerchantLocation()}catch(err){$("#merchant-gps-status").textContent=err.message}});
 $("#restaurant-apply").addEventListener("submit",async e=>{
-  e.preventDefault();const f=new FormData(e.currentTarget);
+  e.preventDefault();const form=e.currentTarget;const f=new FormData(form);
   try{
-    const r=await api("/merchant/restaurants",{method:"POST",body:JSON.stringify({
+    const location=await captureMerchantLocation();
+    await api("/merchant/restaurants",{method:"POST",body:JSON.stringify({
       city:f.get("city"),name:f.get("name"),slug:String(f.get("slug")||"").trim().toLowerCase(),
       phone:f.get("phone"),description:f.get("description"),address_text:f.get("address_text"),
-      latitude:Number(f.get("latitude")),longitude:Number(f.get("longitude")),
+      latitude:location.latitude,longitude:location.longitude,
     })});
     alertMsg("Aplikimi u dërgua. Restoranti nuk është publik ose i hapur deri në aprovim.","success");
-    e.currentTarget.reset();await loadMerchantCities();await loadRestaurantManager();
+    form.reset();$("#merchant-gps-status").textContent="Lokacioni merret automatikisht nga GPS-i kur dërgon aplikimin.";await loadMerchantCities();await loadRestaurantManager();
   }catch(err){alertMsg("Aplikimi dështoi: "+err.message,"error");}
 });
 
