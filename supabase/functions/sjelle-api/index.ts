@@ -468,7 +468,7 @@ const worker = {
       if (!env.SUPABASE_URL || !env.SUPABASE_PUBLISHABLE_KEY) {
         return response({ error: { code: "AUTH_NOT_CONFIGURED", request_id: requestId } }, 503, requestId, origin, env);
       }
-      const redirectTo = new URL("/", url.origin).toString();
+      const redirectTo = "https://fadiu007-creator.github.io/Sjelle/";
       try {
         const authResponse = await fetch(supabaseUrl(env, "/auth/v1/authorize?provider=google&redirect_to=" + encodeURIComponent(redirectTo)), {
           method: "GET",
@@ -500,7 +500,7 @@ const worker = {
         return response({ error: { code: "INVALID_EMAIL", message: "Enter a valid email address.", request_id: requestId } }, 400, requestId, origin, env);
       }
       try {
-        const redirectTo = new URL("/?auth=recovery", url.origin).toString();
+        const redirectTo = "https://fadiu007-creator.github.io/Sjelle/?auth=recovery";
         const authResponse = await fetch(supabaseUrl(env, "/auth/v1/recover?redirect_to=" + encodeURIComponent(redirectTo)), {
           method: "POST",
           headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, "content-type": "application/json" },
