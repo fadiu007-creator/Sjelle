@@ -15,6 +15,7 @@ const expectedConflictCodes = [
   "INVALID_JOB_TRANSITION",
   "CASH_COLLECTION_CONFIRMATION_REQUIRED",
   "CASH_CONFIRMATION_ONLY_ON_COMPLETION",
+  "CASH_CONFIRMATION_NOT_APPLICABLE",
   "INVALID_JOB_KIND",
 ];
 
@@ -28,6 +29,7 @@ for (const [file, source] of [[apiPath, api], [edgePath, edge]]) {
   assert.ok(source.includes("rpc/sjelle_apply_for_driver"), `${file}: driver application must use the atomic database RPC`);
   assert.ok(source.includes("rpc/sjelle_driver_update_job"), `${file}: driver job transitions must use the authoritative database RPC`);
   assert.ok(source.includes("CASH_COLLECTION_CONFIRMATION_REQUIRED"), `${file}: cash completion guard is missing`);
+  assert.ok(source.includes("CASH_CONFIRMATION_NOT_APPLICABLE"), `${file}: online jobs must not be marked as cash-collected`);
   assert.ok(source.includes("(body.active && body.confirm_ready !== true)"), `${file}: activation must require readiness confirmation while deactivation stays available`);
   assert.deepEqual(readConflictCodes(source, file), expectedConflictCodes, `${file}: expected consistent job conflict codes`);
 }
@@ -43,3 +45,8 @@ assert.ok(adminJs.includes("Math.abs(first[0]-last[0])>1e-6"), "readiness summar
 assert.ok(adminJs.includes("point[0]<19.7||point[0]>22||point[1]<41.7||point[1]>43.4"), "readiness summary must reject coordinates outside the configured Kosovo bounds");
 
 console.log("Critical API/Edge Function and admin activation parity checks passed.");
+
+const cashMigration = readFileSync("supabase/migrations/20261108090000_sjelle_payment_method_cash_guard.sql", "utf8");
+assert.ok(cashMigration.includes("v_ride.payment_method='cash'"), "cash migration must guard ride completion by payment method");
+assert.ok(cashMigration.includes("v_order.payment_method='cash'"), "cash migration must guard delivery completion by payment method");
+assert.ok(cashMigration.includes("'not_due'::public.sjelle_cash_status"), "online jobs must not remain in the cash-due ledger state");

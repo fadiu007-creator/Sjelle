@@ -1631,8 +1631,41 @@ export default {
       if (body.cash_collected === true && !cashTerminalStatus) {
         return response({ error: { code: "CASH_CONFIRMATION_ONLY_ON_COMPLETION", message: "Cash collection can only be confirmed when completing the job.", request_id: requestId } }, 400, requestId, origin, env);
       }
-      if (cashTerminalStatus && body.cash_collected !== true) {
-        return response({ error: { code: "CASH_COLLECTION_CONFIRMATION_REQUIRED", message: "Confirm cash collection before completing this job.", request_id: requestId } }, 400, requestId, origin, env);
+      if (cashTerminalStatus) {
+        try {
+          let paymentMethod: unknown;
+          if (driverJobMatch[1] === "ride") {
+            const rideResponse = await databaseRequest(env, "sjelle_rides?id=eq." + encodeURIComponent(driverJobMatch[2]) + "&driver_id=eq." + encodeURIComponent(user.id) + "&select=payment_method&limit=1");
+            const rides = await parseJson(rideResponse);
+            if (!rideResponse.ok) return response({ error: { code: "JOB_PAYMENT_METHOD_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+            const ride = Array.isArray(rides) ? rides[0] : null;
+            if (!isRecord(ride)) return response({ error: { code: "JOB_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+            paymentMethod = ride.payment_method;
+          } else {
+            const jobResponse = await databaseRequest(env, "sjelle_delivery_jobs?id=eq." + encodeURIComponent(driverJobMatch[2]) + "&driver_id=eq." + encodeURIComponent(user.id) + "&select=order_id&limit=1");
+            const jobs = await parseJson(jobResponse);
+            if (!jobResponse.ok) return response({ error: { code: "JOB_PAYMENT_METHOD_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+            const job = Array.isArray(jobs) ? jobs[0] : null;
+            if (!isRecord(job) || typeof job.order_id !== "string") return response({ error: { code: "JOB_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+            const orderResponse = await databaseRequest(env, "sjelle_food_orders?id=eq." + encodeURIComponent(job.order_id) + "&select=payment_method&limit=1");
+            const orders = await parseJson(orderResponse);
+            if (!orderResponse.ok) return response({ error: { code: "JOB_PAYMENT_METHOD_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+            const order = Array.isArray(orders) ? orders[0] : null;
+            if (!isRecord(order)) return response({ error: { code: "JOB_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+            paymentMethod = order.payment_method;
+          }
+          if (paymentMethod !== "cash" && paymentMethod !== "online") {
+            return response({ error: { code: "PAYMENT_METHOD_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
+          }
+          if (paymentMethod === "cash" && body.cash_collected !== true) {
+            return response({ error: { code: "CASH_COLLECTION_CONFIRMATION_REQUIRED", message: "Confirm cash collection before completing this job.", request_id: requestId } }, 400, requestId, origin, env);
+          }
+          if (paymentMethod === "online" && body.cash_collected === true) {
+            return response({ error: { code: "CASH_CONFIRMATION_NOT_APPLICABLE", message: "This job is not payable in cash.", request_id: requestId } }, 400, requestId, origin, env);
+          }
+        } catch {
+          return response({ error: { code: "JOB_PAYMENT_METHOD_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        }
       }
       try {
         const result = await databaseRequest(env, "rpc/sjelle_driver_update_job", {
@@ -1641,7 +1674,7 @@ export default {
         const payload = await parseJson(result);
         if (!result.ok) {
           const code = isRecord(payload) && typeof payload.message === "string" ? payload.message : "JOB_UPDATE_FAILED";
-          const status = code === "JOB_NOT_FOUND" ? 404 : ["DRIVER_NOT_APPROVED","DRIVER_HAS_ACTIVE_JOB","ORDER_NOT_READY_FOR_PICKUP","INVALID_JOB_TRANSITION","CASH_COLLECTION_CONFIRMATION_REQUIRED","CASH_CONFIRMATION_ONLY_ON_COMPLETION","INVALID_JOB_KIND"].includes(code) ? 409 : 503;
+          const status = code === "JOB_NOT_FOUND" ? 404 : ["DRIVER_NOT_APPROVED","DRIVER_HAS_ACTIVE_JOB","ORDER_NOT_READY_FOR_PICKUP","INVALID_JOB_TRANSITION","CASH_COLLECTION_CONFIRMATION_REQUIRED","CASH_CONFIRMATION_ONLY_ON_COMPLETION","CASH_CONFIRMATION_NOT_APPLICABLE","INVALID_JOB_KIND"].includes(code) ? 409 : 503;
           return response({ error: { code, request_id: requestId } }, status, requestId, origin, env);
         }
         return response({ data: payload }, 200, requestId, origin, env);
@@ -2051,7 +2084,7 @@ export default {
         const [rides, jobs] = await Promise.all([parseJson(ridesResponse), parseJson(jobsResponse)]);
         const deliveries = await Promise.all((Array.isArray(jobs) ? jobs : []).map(async job => {
           if (!isRecord(job) || typeof job.order_id !== "string") return job;
-          const orderResponse = await databaseRequest(env, "sjelle_food_orders?id=eq." + encodeURIComponent(job.order_id) + "&select=id,status,total_cents,delivery_address_text,delivery_instructions,sjelle_cash_status,restaurant_id,ready_at&limit=1");
+          const orderResponse = await databaseRequest(env, "sjelle_food_orders?id=eq." + encodeURIComponent(job.order_id) + "&select=id,status,total_cents,delivery_address_text,delivery_instructions,payment_method,sjelle_cash_status,restaurant_id,ready_at&limit=1");
           const orders = await parseJson(orderResponse) as Array<Record<string, unknown>>;
           const order = orders[0];
           if (!order) return { ...job, order: null };
