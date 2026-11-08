@@ -742,7 +742,7 @@ const worker = {
           const bookingRows = await parseJson(bookingResponse) as Array<{id:string;status:string;vehicle_id:string;pickup_at:string;return_at:string}>;
           const booking = bookingRows[0];
           if (!booking) return response({ error: { code: "RENTAL_BOOKING_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
-          const transitions: Record<string, string[]> = { requested: ["confirmed","declined"], confirmed: ["picked_up","cancelled"], picked_up: ["returned"] };
+          const transitions: Record<string, string[]> = { requested: ["confirmed","declined"], confirmed: ["picked_up","cancelled","no_show"], picked_up: ["returned"] };
           if (!transitions[booking.status]?.includes(body.status)) return response({ error: { code: "RENTAL_BOOKING_TRANSITION_INVALID", message: "Ky ndryshim i statusit nuk lejohet.", request_id: requestId } }, 409, requestId, origin, env);
           if (body.status === "confirmed") {
             const conflict = await databaseRequest(env, "rental_bookings?vehicle_id=eq." + encodeURIComponent(booking.vehicle_id)
