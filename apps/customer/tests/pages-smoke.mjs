@@ -45,6 +45,11 @@ try {
   }
 
   await page.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+  const appSourceResponse = await page.request.get(new URL("app.js", baseUrl).toString());
+  assert.equal(appSourceResponse.status(), 200, "customer application bundle should load");
+  const appSource = await appSourceResponse.text();
+  assert.match(appSource, /Nuk u gjet shofer brenda 15 minutave/, "dispatch timeout must be explained to customers");
+  assert.match(appSource, /nuk u mblodh pagesë/, "failed or cancelled cash rides must clearly state that no payment was collected");
   await page.waitForFunction(
     () => document.querySelectorAll("#city-select option").length >= 2,
     { timeout: 15000 },

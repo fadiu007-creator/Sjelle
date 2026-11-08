@@ -828,6 +828,11 @@ const rideStatusLabels = {
   cancelled_by_customer:"Anuluar nga klienti",cancelled_by_driver:"Anuluar nga shoferi",
   cancelled_by_platform:"Anuluar nga Sjelle",no_driver_found:"Nuk u gjet shofer",
 };
+const rideStatusMessages = {
+  no_driver_found:"Nuk u gjet shofer brenda 15 minutave. Udhëtimi nuk u realizua dhe nuk u mblodh pagesë. Provo sërish nga lista e itinerareve.",
+  cancelled_by_driver:"Shoferi e anuloi udhëtimin. Nuk u mblodh pagesë; mund të rezervosh përsëri.",
+  cancelled_by_platform:"Sjelle e anuloi kërkesën. Nuk u mblodh pagesë; kontakto ndihmën nëse kjo përsëritet.",
+};
 myRidesOpen.addEventListener("click",loadMyRides);
 async function loadMyRides(){
   if(!state.session?.access_token)return;
@@ -841,6 +846,7 @@ async function loadMyRides(){
       const c=node("article","my-order-card");
       c.append(node("div","my-order-heading",ride.pickup_label+" → "+ride.destination_label));
       c.append(node("span","order-status",rideStatusLabels[ride.status]||ride.status));
+      if(rideStatusMessages[ride.status])c.append(node("p","ride-status-message",rideStatusMessages[ride.status]));
       c.append(node("p","","Çmimi: "+euro(ride.final_amount_cents??ride.quoted_amount_cents)+" · Para në dorë"));
       if(["driver_assigned","driver_arriving","driver_arrived","in_progress"].includes(ride.status)&&window.L){const mapEl=node("div","ride-tracking-map");mapEl.setAttribute("aria-label","Harta live e udhëtimit");c.append(mapEl);const map=L.map(mapEl,{zoomControl:false,attributionControl:false}).setView([Number(ride.pickup_lat)||42.37,Number(ride.pickup_lon)||21.15],13);L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(map);if(typeof ride.pickup_lat==="number"&&typeof ride.pickup_lon==="number")L.marker([ride.pickup_lat,ride.pickup_lon]).addTo(map).bindPopup("Nisja");if(typeof ride.destination_lat==="number"&&typeof ride.destination_lon==="number")L.marker([ride.destination_lat,ride.destination_lon]).addTo(map).bindPopup("Destinacioni");const status=node("p","ride-tracking-status","Po lidhemi me vendndodhjen live…");c.append(status);let pin=null;setTimeout(()=>map.invalidateSize(),120);const refresh=async()=>{try{const r=await apiRequest("/rides/"+ride.id+"/driver-location");if(r.data?.available){const ll=[r.data.latitude,r.data.longitude];if(!pin)pin=L.circleMarker(ll,{radius:9,color:"#244c40",fillColor:"#d6f27a",fillOpacity:1,weight:3}).addTo(map).bindPopup("Shoferi live");else pin.setLatLng(ll);map.setView(ll,Math.max(14,map.getZoom()));status.textContent="Shoferi u përditësua "+new Date(r.data.recorded_at||Date.now()).toLocaleTimeString("sq-XK",{hour:"2-digit",minute:"2-digit"});}else status.textContent="Po presim vendndodhjen e shoferit…";}catch{status.textContent="Vendndodhja live s’është e disponueshme për momentin.";}};await refresh();state.rideTrackingTimers.push(setInterval(refresh,10000));}
       if(ride.status==="searching"){
