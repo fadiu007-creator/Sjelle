@@ -1087,7 +1087,7 @@ test("approved online driver can switch modes when the target city service and r
   const driverId = "00000000-0000-4000-8000-000000000099";
   const cityId = "00000000-0000-4000-8000-000000000088";
   const requests: string[] = [];
-  let rpcBody: Record<string, unknown> | null = null;
+  const rpcBodies: Record<string, unknown>[] = [];
   const docs = ["identity", "driving_licence", "vehicle_registration", "insurance"].map(document_type => ({
     document_type, review_status: "approved", expires_at: null, created_at: new Date().toISOString(),
   }));
@@ -1107,7 +1107,7 @@ test("approved online driver can switch modes when the target city service and r
     }]), { status: 200 });
     if (url.includes("/rest/v1/sjelle_driver_locations?")) return new Response(JSON.stringify([{ driver_id: driverId }]), { status: 200 });
     if (url.includes("/rest/v1/rpc/sjelle_set_driver_availability")) {
-      rpcBody = JSON.parse(String(init?.body || "{}")) as Record<string, unknown>;
+      rpcBodies.push(JSON.parse(String(init?.body || "{}")) as Record<string, unknown>);
       return new Response(JSON.stringify({ user_id: driverId, online: true, selected_mode: "delivery" }), { status: 200 });
     }
     throw new Error("Unexpected backend request during driver mode switch: " + url);
@@ -1126,8 +1126,8 @@ test("approved online driver can switch modes when the target city service and r
     const payload = await result.json() as { data?: { online?: boolean; selected_mode?: string } };
     assert.equal(payload.data?.online, true);
     assert.equal(payload.data?.selected_mode, "delivery");
-    assert.equal(rpcBody?.p_online, true);
-    assert.equal(rpcBody?.p_mode, "delivery");
+    assert.equal(rpcBodies[0]?.p_online, true);
+    assert.equal(rpcBodies[0]?.p_mode, "delivery");
     assert.ok(requests.some(url => url.includes("sjelle_driver_documents?")));
     assert.ok(requests.some(url => url.includes("sjelle_driver_locations?")));
   } finally {
