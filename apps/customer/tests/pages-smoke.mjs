@@ -57,6 +57,14 @@ try {
   const driverSource = await driverSourceResponse.text();
   assert.match(driverSource, /cancelled_by_driver/, "driver portal must expose the safe ride-cancellation transition");
   assert.match(driverSource, /Anulo udhëtimin/, "driver portal must provide an explicit cancellation action");
+  assert.match(driverSource, /async function changeDriverMode\(\)/, "driver portal must handle an explicit mode change");
+  assert.ok(driverSource.includes('$("#driver-mode").addEventListener("change",changeDriverMode)'), "driver mode selector must apply changes immediately while online");
+  assert.ok(driverSource.includes('JSON.stringify({online:true,mode:next})'), "online mode changes must use the server-authoritative availability endpoint");
+  assert.ok(driverSource.includes('DRIVER_HAS_ACTIVE_JOB'), "driver mode changes must explain when an active job blocks switching");
+  const driverHtmlResponse = await page.request.get(new URL("driver/", baseUrl).toString());
+  assert.equal(driverHtmlResponse.status(), 200, "driver portal markup should load");
+  const driverHtml = await driverHtmlResponse.text();
+  assert.match(driverHtml, /ndërrimi i modalitetit zbatohet menjëherë/, "driver portal must explain online mode switching");
   await page.waitForFunction(
     () => document.querySelectorAll("#city-select option").length >= 2,
     { timeout: 15000 },

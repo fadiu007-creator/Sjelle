@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/portal.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="" defer></script>
-  <script src="/driver/driver.js?v=driver-poll-guard-20261108" defer></script>
+  <script src="/driver/driver.js?v=driver-mode-switch-20261109" defer></script>
 </head>
 <body class="portal-body">
   <header class="topbar">
@@ -57,8 +57,9 @@
       <div class="portal-card-heading"><div><p class="eyebrow">HAPI 4</p><h2>Disponueshmëria</h2></div><span id="driver-review-tag" class="portal-tag">Në pritje</span></div>
       <div class="portal-form">
         <label>Mënyra e punës<select id="driver-mode"><option value="ride">Udhëtime</option><option value="delivery">Dërgesa</option></select></label>
+        <p class="portal-muted">Kur je online, ndërrimi i modalitetit zbatohet menjëherë nëse nuk ke punë aktive. Kur je offline, zgjedhja zbatohet herën tjetër që del online.</p>
         <div class="portal-actions"><button id="driver-online" class="primary-button" type="button">Shko online</button><button id="driver-offline" class="secondary-button" type="button">Shko offline</button><button id="driver-location" class="secondary-button" type="button">Dërgo vendndodhjen</button></div>
-        <p class="portal-muted">Kur je online dhe ke lejuar GPS-in, vendndodhja përditësohet periodikisht për ofertat dhe hartën live. Mund ta dërgosh edhe manualisht.</p>
+        <p class="portal-muted">GPS-i dërgohet kur zgjedh të dalësh online dhe përditësohet periodikisht vetëm gjatë online. Përditësimi manual është i çaktivizuar kur je offline.</p>
       </div>
     </section>
     <section class="portal-card" id="offers-section" hidden>

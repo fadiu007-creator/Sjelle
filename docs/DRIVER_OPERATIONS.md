@@ -49,6 +49,14 @@ Database triggers `sjelle_guard_ride_driver_assignment` and `sjelle_guard_delive
 - [ ] Test that an active ride blocks delivery assignment and an active delivery blocks ride assignment.
 - [ ] Confirm the driver can go offline and switch modes after the active job reaches a terminal state.
 
+## Driver mode switching and location consent
+
+- While offline, the Ride/Delivery selector is a pending choice; the selected mode is sent when the driver next goes online. The city service switch is checked before availability is enabled.
+- While online, changing the selector immediately calls the server-authoritative availability endpoint. The change is accepted only when there is no active ride or delivery, the target service is enabled in the driver's city, required documents and an approved vehicle remain valid, and the GPS location is fresh. A rejected switch restores the persisted mode.
+- Availability controls are locked during an online/offline or mode-switch request to prevent duplicate or conflicting submissions.
+- Manual GPS updates are available only while online. The initial GPS fix is sent only after the driver explicitly chooses to go online; periodic updates stop when the portal is offline or hidden.
+- The database RPC and assignment triggers remain authoritative. The UI must never override an active-job, document, vehicle, city-service or location rejection.
+
 ## Database-enforced cash confirmation
 
 The `sjelle_driver_update_job` RPC now independently rejects terminal ride/delivery transitions unless `p_cash_collected=true`, and rejects cash confirmation on non-terminal transitions. This duplicates the API's validation at the database boundary as defense in depth. The RPC remains executable only by `service_role`.

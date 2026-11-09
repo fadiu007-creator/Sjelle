@@ -1080,3 +1080,93 @@ test("food delivery activation requires an approved delivery driver and vehicle"
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("approved online driver can switch modes when the target city service and readiness checks pass", async () => {
+  const originalFetch = globalThis.fetch;
+  const driverId = "00000000-0000-4000-8000-000000000099";
+  const cityId = "00000000-0000-4000-8000-000000000088";
+  const requests: string[] = [];
+  let rpcBody: Record<string, unknown> | null = null;
+  const docs = ["identity", "driving_licence", "vehicle_registration", "insurance"].map(document_type => ({
+    document_type, review_status: "approved", expires_at: null, created_at: new Date().toISOString(),
+  }));
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    requests.push(url);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: driverId }), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_driver_profiles?")) return new Response(JSON.stringify([{
+      user_id: driverId, review_status: "approved", city_id: cityId, selected_mode: "ride",
+    }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_rides?")) return new Response("[]", { status: 200 });
+    if (url.includes("/rest/v1/sjelle_delivery_jobs?")) return new Response("[]", { status: 200 });
+    if (url.includes("/rest/v1/sjelle_driver_documents?")) return new Response(JSON.stringify(docs), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_vehicles?")) return new Response(JSON.stringify([{ id: "approved-vehicle" }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_cities?")) return new Response(JSON.stringify([{
+      active: true, rides_enabled: true, food_enabled: true,
+    }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_driver_locations?")) return new Response(JSON.stringify([{ driver_id: driverId }]), { status: 200 });
+    if (url.includes("/rest/v1/rpc/sjelle_set_driver_availability")) {
+      rpcBody = JSON.parse(String(init?.body || "{}")) as Record<string, unknown>;
+      return new Response(JSON.stringify({ user_id: driverId, online: true, selected_mode: "delivery" }), { status: 200 });
+    }
+    throw new Error("Unexpected backend request during driver mode switch: " + url);
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/driver/availability", {
+      method: "PATCH",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ online: true, mode: "delivery" }),
+    }), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(result.status, 200);
+    const payload = await result.json() as { data?: { online?: boolean; selected_mode?: string } };
+    assert.equal(payload.data?.online, true);
+    assert.equal(payload.data?.selected_mode, "delivery");
+    assert.equal(rpcBody?.p_online, true);
+    assert.equal(rpcBody?.p_mode, "delivery");
+    assert.ok(requests.some(url => url.includes("sjelle_driver_documents?")));
+    assert.ok(requests.some(url => url.includes("sjelle_driver_locations?")));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("driver mode switch is rejected before readiness checks when an active ride exists", async () => {
+  const originalFetch = globalThis.fetch;
+  const driverId = "00000000-0000-4000-8000-000000000099";
+  const cityId = "00000000-0000-4000-8000-000000000088";
+  const requests: string[] = [];
+  globalThis.fetch = async input => {
+    const url = String(input);
+    requests.push(url);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: driverId }), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_driver_profiles?")) return new Response(JSON.stringify([{
+      user_id: driverId, review_status: "approved", city_id: cityId, selected_mode: "ride",
+    }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_rides?")) return new Response(JSON.stringify([{ id: "active-ride" }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_delivery_jobs?")) return new Response("[]", { status: 200 });
+    throw new Error("An active job must stop the mode switch before readiness or RPC work: " + url);
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/driver/availability", {
+      method: "PATCH",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ online: true, mode: "delivery" }),
+    }), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(result.status, 409);
+    const payload = await result.json() as { error?: { code?: string } };
+    assert.equal(payload.error?.code, "DRIVER_HAS_ACTIVE_JOB");
+    assert.equal(requests.some(url => url.includes("sjelle_driver_documents?")), false);
+    assert.equal(requests.some(url => url.includes("rpc/sjelle_set_driver_availability")), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
