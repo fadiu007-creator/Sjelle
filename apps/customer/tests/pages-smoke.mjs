@@ -54,6 +54,7 @@ try {
 
   const apiOrigin = "https://saavqlbwffrwxingbnri.supabase.co/functions/v1/sjelle-api/api/v1";
   const adminRequests = [];
+  let adminRoleAllowed = true;
   await page.route(`${apiOrigin}/**`, async route => {
     const request = route.request();
     const pathname = new URL(request.url()).pathname.replace("/functions/v1/sjelle-api/api/v1", "");
@@ -62,6 +63,9 @@ try {
     }
     if (!request.headers().authorization?.includes("sjelle-admin-smoke-token")) {
       return route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: { code: "UNAUTHENTICATED" } }) });
+    }
+    if (pathname.startsWith("/admin/") && !adminRoleAllowed) {
+      return route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: { code: "FORBIDDEN" } }) });
     }
     adminRequests.push(pathname);
     const payloads = {
@@ -85,6 +89,25 @@ try {
   assert.ok(adminRequests.includes("/admin/restaurants"), "admin login must load the protected restaurant application queue");
   assert.match(await page.locator("#admin-alert").textContent(), /Paneli administrativ u ngarkua/i, "admin dashboard should report a successful protected load");
   console.log("PASS admin login returns to the admin dashboard and loads protected driver/restaurant queues with the session token");
+
+  adminRoleAllowed = false;
+  await page.locator("#queue-refresh").click();
+  await page.locator("#restaurants-refresh").click();
+  const forbiddenMessage = /Llogaria është kyçur, por nuk ka rolin admin në sjelle_user_roles/i;
+  await page.locator("#driver-queue").getByText(forbiddenMessage).waitFor({ state: "visible" });
+  await page.locator("#admin-restaurants").getByText(forbiddenMessage).waitFor({ state: "visible" });
+  for (const selector of ["#driver-queue", "#admin-restaurants"]) {
+    const setupLink = page.locator(selector).locator("a[href$=\"first-admin.sql\"]");
+    await setupLink.waitFor({ state: "visible" });
+    assert.equal(await setupLink.getAttribute("target"), "_blank");
+    assert.equal(await setupLink.getAttribute("rel"), "noopener noreferrer");
+  }
+  adminRoleAllowed = true;
+  await page.locator("#queue-refresh").click();
+  await page.locator("#restaurants-refresh").click();
+  await page.getByText("Nuk ka dokumente, automjete ose aplikime në pritje.").waitFor({ state: "visible" });
+  await page.getByText("Nuk ka aplikime restorantesh në pritje.").waitFor({ state: "visible" });
+  console.log("PASS a signed-in non-admin receives a clear role error and safe first-admin setup link in both queues");
   await page.unroute(`${apiOrigin}/**`);
 
   await page.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 30000 });

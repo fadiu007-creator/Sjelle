@@ -184,6 +184,41 @@ test("admin route configuration requires an authenticated admin", async () => {
   assert.equal(body.error.code, "UNAUTHENTICATED");
 });
 
+test("authenticated non-admin users cannot read private driver or restaurant application queues", async () => {
+  const originalFetch = globalThis.fetch;
+  const privateReads: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (url.includes("/rest/v1/sjelle_user_roles?")) {
+      return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (url.includes("/rest/v1/sjelle_driver_documents?") || url.includes("/rest/v1/sjelle_vehicles?") || url.includes("/rest/v1/sjelle_driver_profiles?") || url.includes("/rest/v1/sjelle_restaurants?")) {
+      privateReads.push(url);
+    }
+    throw new Error("Unexpected database request: " + url);
+  }) as typeof fetch;
+  try {
+    for (const path of ["/admin/driver-documents", "/admin/restaurants"]) {
+      const response = await callWorker(new Request("https://sjelle.test/api/v1" + path, {
+        method: "GET", headers: { authorization: "Bearer test-token" },
+      }), {
+        SUPABASE_URL: "https://example.supabase.co",
+        SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+        SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+      });
+      const body = await response.json() as { error: { code: string } };
+      assert.equal(response.status, 403, path);
+      assert.equal(body.error.code, "FORBIDDEN", path);
+    }
+    assert.deepEqual(privateReads, [], "private application rows must not be queried for a non-admin");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 
 test("driver cannot go offline while an assigned ride is active", async () => {
   const originalFetch = globalThis.fetch;
