@@ -85,6 +85,7 @@ try {
   assert.ok(adminRequests.includes("/admin/restaurants"), "admin login must load the protected restaurant application queue");
   assert.match(await page.locator("#admin-alert").textContent(), /Paneli administrativ u ngarkua/i, "admin dashboard should report a successful protected load");
   console.log("PASS admin login returns to the admin dashboard and loads protected driver/restaurant queues with the session token");
+  await page.unroute(`${apiOrigin}/**`);
 
   await page.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
   const appSourceResponse = await page.request.get(new URL("app.js", baseUrl).toString());
