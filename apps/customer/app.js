@@ -310,6 +310,16 @@ function renderAccountState() {
   if (signedIn) accountSummary.textContent = "Je kyçur si " + (state.session.user?.email || "përdorues Sjelle") + ".";
 }
 
+function redirectAfterAuth() {
+  if (!state.session?.access_token) return false;
+  // Only a fixed, same-origin destination is accepted; never redirect to an arbitrary URL.
+  if (new URLSearchParams(window.location.search).get("return_to") !== "admin") return false;
+  const destination = new URL("admin/", new URL(".", window.location.href));
+  if (destination.origin !== window.location.origin) return false;
+  window.location.assign(destination.href);
+  return true;
+}
+
 async function apiRequest(path, options = {}, allowRefresh = true) {
   const headers = new Headers(options.headers || {});
   headers.set("accept", "application/json");
@@ -446,7 +456,10 @@ function readAuthCallback() {
     googleSignin.hidden = true;
     passwordUpdateForm.hidden = false;
     showMessage(passwordUpdateMessage, "Verifikimi u krye. Vendos fjalëkalimin e ri.", "success");
-  } else if (accountDialog.open) accountDialog.close();
+  } else {
+    if (accountDialog.open) accountDialog.close();
+    redirectAfterAuth();
+  }
 }
 
 accountForm.addEventListener("submit", async event => {
@@ -473,6 +486,7 @@ accountForm.addEventListener("submit", async event => {
       return;
     }
     persistSession(session);
+    if (redirectAfterAuth()) return;
     accountDialog.close();
     showMessage(checkoutMessage, "Je kyçur. Mund të dërgosh porosinë.", "success");
   } catch (error) {
