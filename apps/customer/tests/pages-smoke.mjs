@@ -44,6 +44,48 @@ try {
     console.log(`PASS ${portal.label}: ${url}`);
   }
 
+  const adminUrl = new URL("admin/", baseUrl).toString();
+  await page.goto(adminUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+  const adminLoginLink = page.locator("#admin-login-link");
+  await adminLoginLink.waitFor({ state: "visible" });
+  const adminLoginTarget = new URL(await adminLoginLink.getAttribute("href"), adminUrl);
+  assert.equal(adminLoginTarget.searchParams.get("return_to"), "admin", "admin login link must preserve the admin return destination");
+  assert.match(await page.locator("#admin-alert").textContent(), /Kyçu me llogarinë e administratorit/i, "unauthenticated admin portal must explain how to sign in");
+
+  const apiOrigin = "https://saavqlbwffrwxingbnri.supabase.co/functions/v1/sjelle-api/api/v1";
+  const adminRequests = [];
+  await page.route(`${apiOrigin}/**`, async route => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname.replace("/functions/v1/sjelle-api/api/v1", "");
+    if (pathname === "/auth/login") {
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { access_token: "sjelle-admin-smoke-token", refresh_token: "sjelle-admin-smoke-refresh", expires_in: 3600, user: { id: "smoke-admin", email: "admin-smoke@example.test" } } }) });
+    }
+    if (!request.headers().authorization?.includes("sjelle-admin-smoke-token")) {
+      return route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: { code: "UNAUTHENTICATED" } }) });
+    }
+    adminRequests.push(pathname);
+    const payloads = {
+      "/admin/cities": { data: [] },
+      "/admin/driver-documents": { data: { documents: [], vehicles: [], drivers: [] } },
+      "/admin/restaurants": { data: [] },
+      "/admin/support-tickets": { data: [] },
+    };
+    return route.fulfill({ status: payloads[pathname] ? 200 : 404, contentType: "application/json", body: JSON.stringify(payloads[pathname] || { error: { code: "NOT_FOUND" } }) });
+  });
+
+  await adminLoginLink.click();
+  await page.locator("#account-dialog[open]").waitFor({ state: "visible" });
+  await page.locator('#auth-form input[name="email"]').fill("admin-smoke@example.test");
+  await page.locator('#auth-form input[name="password"]').fill("x".repeat(12));
+  await page.locator("#auth-submit").click();
+  await page.waitForURL(url => url.pathname.endsWith("/admin/"), { timeout: 15000 });
+  await page.getByText("Nuk ka dokumente, automjete ose aplikime në pritje.").waitFor({ state: "visible", timeout: 15000 });
+  await page.getByText("Nuk ka aplikime restorantesh në pritje.").waitFor({ state: "visible", timeout: 15000 });
+  assert.ok(adminRequests.includes("/admin/driver-documents"), "admin login must load the protected driver application queue");
+  assert.ok(adminRequests.includes("/admin/restaurants"), "admin login must load the protected restaurant application queue");
+  assert.match(await page.locator("#admin-alert").textContent(), /Paneli administrativ u ngarkua/i, "admin dashboard should report a successful protected load");
+  console.log("PASS admin login returns to the admin dashboard and loads protected driver/restaurant queues with the session token");
+
   await page.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
   const appSourceResponse = await page.request.get(new URL("app.js", baseUrl).toString());
   assert.equal(appSourceResponse.status(), 200, "customer application bundle should load");
