@@ -1,7 +1,23 @@
-const API = "https://saavqlbwffrwxingbnri.supabase.co/functions/v1/sjelle-api/api/v1";const $=s=>document.querySelector(s);$("#year").textContent=String(new Date().getFullYear());let cities=[];let currentCity=null;
+const API = "https://saavqlbwffrwxingbnri.supabase.co/functions/v1/sjelle-api/api/v1";
+const ADMIN_LOGIN_HREF = "../?account=login&return_to=admin";
+const $=s=>document.querySelector(s);
+$("#year").textContent=String(new Date().getFullYear());
+let cities=[];let currentCity=null;let adminBootToken="";let adminBooting=false;let refreshPromise=null;
 function alertMsg(t,k=""){const e=$("#admin-alert");e.textContent=t;if(k)e.dataset.kind=k;else delete e.dataset.kind;}
-function token(){try{return JSON.parse(sessionStorage.getItem("sjelle.session")||"null")?.access_token||"";}catch{return "";}}
-async function api(path,options={}){const headers=new Headers(options.headers||{});headers.set("accept","application/json");if(token())headers.set("authorization","Bearer "+token());if(options.body&&!headers.has("content-type"))headers.set("content-type","application/json");const res=await fetch(API+path,{...options,headers,cache:"no-store"});let body;try{body=await res.json();}catch{body=null;}if(!res.ok){const e=new Error(body?.error?.message||body?.error?.code||"Kërkesa s’u krye.");e.code=body?.error?.code;throw e;}return body;}
+function savedSession(){try{return JSON.parse(sessionStorage.getItem("sjelle.session")||"null");}catch{return null;}}
+function token(){return savedSession()?.access_token||"";}
+function showLoginRequired(){const e=$("#admin-alert");e.replaceChildren(document.createTextNode("Kyçu me llogarinë e administratorit për të parë aplikimet e shoferëve, restoranteve dhe menaxhimin e Sjelle. "));const a=document.createElement("a");a.href=ADMIN_LOGIN_HREF;a.className="primary-button";a.textContent="Kyçu si administrator";e.append(a);e.dataset.kind="warning";}
+function adminErrorMessage(err){if(err?.code==="UNAUTHENTICATED"||err?.status===401)return "Sesioni ka skaduar ose nuk është aktiv. Kyçu përsëri me llogarinë e administratorit.";if(err?.code==="FORBIDDEN"||err?.status===403)return "Llogaria është kyçur, por nuk ka rolin admin në sjelle_user_roles. Përdor llogarinë e administratorit; roli nuk jepet automatikisht.";if(err?.code==="ROLE_CHECK_FAILED")return "Nuk mundëm ta verifikojmë rolin admin në Supabase. Provo përsëri më vonë.";return err?.message||"Kërkesa s’u krye.";}
+async function refreshSession(current){
+ const latest=savedSession();
+ if(latest?.access_token&&latest.access_token!==current?.access_token)return latest;
+ if(!current?.refresh_token)return null;
+ if(!refreshPromise){
+  refreshPromise=(async()=>{try{const response=await fetch(API+"/auth/refresh",{method:"POST",headers:{"content-type":"application/json",accept:"application/json"},body:JSON.stringify({refresh_token:current.refresh_token}),cache:"no-store"});const body=await response.json();if(!response.ok||!body?.data?.access_token)return null;sessionStorage.setItem("sjelle.session",JSON.stringify(body.data));return body.data;}catch{return null;}})();
+ }
+ const pending=refreshPromise;const result=await pending;if(refreshPromise===pending)refreshPromise=null;return result;
+}
+async function api(path,options={},allowRefresh=true){const current=savedSession();const headers=new Headers(options.headers||{});headers.set("accept","application/json");if(current?.access_token)headers.set("authorization","Bearer "+current.access_token);if(options.body&&!headers.has("content-type"))headers.set("content-type","application/json");const res=await fetch(API+path,{...options,headers,cache:"no-store"});let body;try{body=await res.json();}catch{body=null;}if(res.status===401&&allowRefresh){const latest=savedSession();if(latest?.access_token&&latest.access_token!==current?.access_token)return api(path,options,false);const refreshed=await refreshSession(current);if(refreshed)return api(path,options,false);try{sessionStorage.removeItem("sjelle.session");}catch{}}if(!res.ok){const e=new Error(body?.error?.message||body?.error?.code||"Kërkesa s’u krye.");e.code=body?.error?.code;e.status=res.status;throw e;}return body;}
 function cents(value){return Math.round(Number(value||0)*100);}
 function euros(c){return (Number(c||0)/100).toFixed(2);}
 function makeCard(title,description){const c=document.createElement("article");c.className="portal-list-card";const h=document.createElement("strong");h.textContent=title;c.append(h);if(description){const p=document.createElement("p");p.textContent=description;c.append(p);}return c;}
@@ -57,14 +73,13 @@ async function loadRoutes(){if(!currentCity)return;const root=$("#route-list");r
 $("#routes-refresh").addEventListener("click",loadRoutes);
 $("#route-form").addEventListener("submit",async e=>{e.preventDefault();if(!currentCity)return;const f=new FormData(e.currentTarget);const payload={city:currentCity.slug,route_key:f.get("route_key"),vehicle_type:f.get("vehicle_type"),origin_label:f.get("origin_label"),destination_label:f.get("destination_label"),amount_cents:cents(f.get("amount")),version:f.get("version"),origin_lat:Number(f.get("origin_lat")),origin_lon:Number(f.get("origin_lon")),destination_lat:Number(f.get("destination_lat")),destination_lon:Number(f.get("destination_lon"))};try{const r=await api("/admin/routes",{method:"POST",body:JSON.stringify(payload)});alertMsg("Rruga u krijua si joaktive. Kontrollo etiketat, koordinatat dhe çmimin para aktivizimit.","success");e.currentTarget.reset();e.currentTarget.elements.version.value="fixed-v1";await loadRoutes();}catch(err){alertMsg("Rruga nuk u krijua: "+err.message,"error");}});
 async function review(path,payload){await api(path,{method:"PATCH",body:JSON.stringify(payload)});await loadQueue();}
-async function loadQueue(){const root=$("#driver-queue");root.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Po ngarkojmë aplikimet…"}));try{const r=await api("/admin/driver-documents");root.replaceChildren();const data=r.data||{};for(const d of data.documents||[]){const c=makeCard("Dokument · "+d.document_type,"Shoferi: "+d.driver_id+" · 4 shenjat: "+(d.document_number_last4||"—")+" · Skadon: "+(d.expires_at||"—"));const actions=document.createElement("div");actions.className="portal-list-actions";actions.append(button("Shiko dokumentin","secondary-button",async()=>{try{const signed=await api("/admin/driver-documents/"+d.id+"/signed-url",{method:"POST"});window.open(signed.data.url,"_blank","noopener,noreferrer");}catch(err){alertMsg("Dokumenti nuk u hap: "+err.message,"error");}}));actions.append(button("Aprovo","primary-button",()=>review("/admin/driver-documents/"+d.id+"/review",{review_status:"approved"}).then(()=>alertMsg("Dokumenti u aprovua.","success")).catch(err=>alertMsg(err.message,"error"))));actions.append(button("Refuzo","secondary-button",()=>{const reason=prompt("Arsyeja e refuzimit?","Dokumenti duhet të jetë i qartë dhe i vlefshëm.");if(reason!==null)review("/admin/driver-documents/"+d.id+"/review",{review_status:"rejected",rejection_reason:reason}).then(()=>alertMsg("Dokumenti u refuzua.","success")).catch(err=>alertMsg(err.message,"error"));}));c.append(actions);root.append(c);}for(const v of data.vehicles||[]){const c=makeCard("Automjet · "+v.vehicle_type,[v.make,v.model,v.color,v.registration_number].filter(Boolean).join(" · "),"pending");const actions=document.createElement("div");actions.className="portal-list-actions";actions.append(button("Aprovo automjetin","primary-button",()=>review("/admin/vehicles/"+v.id+"/review",{review_status:"approved",document_expires_at:v.document_expires_at||null}).then(()=>alertMsg("Automjeti u aprovua.","success")).catch(err=>alertMsg(err.message,"error"))));actions.append(button("Refuzo","secondary-button",()=>review("/admin/vehicles/"+v.id+"/review",{review_status:"rejected"}).then(()=>alertMsg("Automjeti u refuzua.","success")).catch(err=>alertMsg(err.message,"error"))));c.append(actions);root.append(c);}for(const d of data.drivers||[]){const c=makeCard("Aplikim shoferi",d.user_id+" · "+d.selected_mode+" · qyteti "+d.city_id);const actions=document.createElement("div");actions.className="portal-list-actions";actions.append(button("Aprovo shoferin","primary-button",()=>review("/admin/drivers/"+d.user_id+"/review",{review_status:"approved"}).then(()=>alertMsg("Shoferi u aprovua.","success")).catch(err=>alertMsg("Shoferi nuk mund të aprovohet ende: "+err.message,"error"))));actions.append(button("Refuzo","secondary-button",()=>review("/admin/drivers/"+d.user_id+"/review",{review_status:"rejected"}).then(()=>alertMsg("Aplikimi u refuzua.","success")).catch(err=>alertMsg(err.message,"error"))));c.append(actions);root.append(c);}if(!root.children.length)root.append(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Nuk ka dokumente, automjete ose aplikime në pritje."}));}catch(err){root.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Radhët nuk mund të ngarkohen: "+err.message}));}}
+async function loadQueue(){const root=$("#driver-queue");root.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Po ngarkojmë aplikimet…"}));try{const r=await api("/admin/driver-documents");root.replaceChildren();const data=r.data||{};for(const d of data.documents||[]){const c=makeCard("Dokument · "+d.document_type,"Shoferi: "+d.driver_id+" · 4 shenjat: "+(d.document_number_last4||"—")+" · Skadon: "+(d.expires_at||"—"));const actions=document.createElement("div");actions.className="portal-list-actions";actions.append(button("Shiko dokumentin","secondary-button",async()=>{try{const signed=await api("/admin/driver-documents/"+d.id+"/signed-url",{method:"POST"});window.open(signed.data.url,"_blank","noopener,noreferrer");}catch(err){alertMsg("Dokumenti nuk u hap: "+err.message,"error");}}));actions.append(button("Aprovo","primary-button",()=>review("/admin/driver-documents/"+d.id+"/review",{review_status:"approved"}).then(()=>alertMsg("Dokumenti u aprovua.","success")).catch(err=>alertMsg(err.message,"error"))));actions.append(button("Refuzo","secondary-button",()=>{const reason=prompt("Arsyeja e refuzimit?","Dokumenti duhet të jetë i qartë dhe i vlefshëm.");if(reason!==null)review("/admin/driver-documents/"+d.id+"/review",{review_status:"rejected",rejection_reason:reason}).then(()=>alertMsg("Dokumenti u refuzua.","success")).catch(err=>alertMsg(err.message,"error"));}));c.append(actions);root.append(c);}for(const v of data.vehicles||[]){const c=makeCard("Automjet · "+v.vehicle_type,[v.make,v.model,v.color,v.registration_number].filter(Boolean).join(" · "),"pending");const actions=document.createElement("div");actions.className="portal-list-actions";actions.append(button("Aprovo automjetin","primary-button",()=>review("/admin/vehicles/"+v.id+"/review",{review_status:"approved",document_expires_at:v.document_expires_at||null}).then(()=>alertMsg("Automjeti u aprovua.","success")).catch(err=>alertMsg(err.message,"error"))));actions.append(button("Refuzo","secondary-button",()=>review("/admin/vehicles/"+v.id+"/review",{review_status:"rejected"}).then(()=>alertMsg("Automjeti u refuzua.","success")).catch(err=>alertMsg(err.message,"error"))));c.append(actions);root.append(c);}for(const d of data.drivers||[]){const c=makeCard("Aplikim shoferi",d.user_id+" · "+d.selected_mode+" · qyteti "+d.city_id);const actions=document.createElement("div");actions.className="portal-list-actions";actions.append(button("Aprovo shoferin","primary-button",()=>review("/admin/drivers/"+d.user_id+"/review",{review_status:"approved"}).then(()=>alertMsg("Shoferi u aprovua.","success")).catch(err=>alertMsg("Shoferi nuk mund të aprovohet ende: "+err.message,"error"))));actions.append(button("Refuzo","secondary-button",()=>review("/admin/drivers/"+d.user_id+"/review",{review_status:"rejected"}).then(()=>alertMsg("Aplikimi u refuzua.","success")).catch(err=>alertMsg(err.message,"error"))));c.append(actions);root.append(c);}if(!root.children.length)root.append(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Nuk ka dokumente, automjete ose aplikime në pritje."}));return true;}catch(err){root.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Radhët nuk mund të ngarkohen: "+adminErrorMessage(err)}));return false;}}
 $("#queue-refresh").addEventListener("click",loadQueue);
-Promise.all([loadCities(),loadQueue()]).then(()=>alertMsg("Paneli lidhet me API-në reale. Çmimet, rrugët dhe miratimet ruhen në Supabase.","success")).catch(err=>alertMsg("Nuk mundëm të hapim panelin. Sigurohu që llogaria të ketë rolin admin në sjelle_user_roles. "+err.message,"error"));
 async function loadRestaurantQueue(){
  const root=$("#admin-restaurants");root.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Po ngarkojmë aplikimet…"}));
  try{
   const r=await api("/admin/restaurants");root.replaceChildren();const rows=r.data||[];
-  if(!rows.length){root.append(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Nuk ka aplikime restorantesh në pritje."}));return;}
+  if(!rows.length){root.append(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Nuk ka aplikime restorantesh në pritje."}));return true;}
   for(const rest of rows){
    const c=makeCard(rest.name,rest.address_text+" · "+rest.slug+" · pronari: "+rest.owner_id);
    const desc=document.createElement("p");desc.textContent=(rest.phone||"Pa telefon")+" · koordinatat "+rest.latitude+", "+rest.longitude;c.append(desc);
@@ -73,10 +88,10 @@ async function loadRestaurantQueue(){
    actions.append(button("Refuzo","secondary-button",async()=>{try{await api("/admin/restaurants/"+rest.id+"/review",{method:"PATCH",body:JSON.stringify({approval_status:"rejected"})});alertMsg("Aplikimi u refuzua.","success");await loadRestaurantQueue();}catch(err){alertMsg(err.message,"error");}}));
    c.append(actions);root.append(c);
   }
- }catch(err){root.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Aplikimet nuk mund të ngarkohen: "+err.message}));}
+  return true;
+ }catch(err){root.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Aplikimet nuk mund të ngarkohen: "+adminErrorMessage(err)}));return false;}
 }
 $("#restaurants-refresh").addEventListener("click",loadRestaurantQueue);
-loadRestaurantQueue();
 
 function renderServiceAreas(){
  const root=$("#service-area-list");if(!root)return;root.replaceChildren();
@@ -177,7 +192,7 @@ async function loadSupportTickets(){
  root.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Po ngarkohen kërkesat…"}));
  try{
   const result=await api("/admin/support-tickets");const tickets=result.data||[];root.replaceChildren();
-  if(!tickets.length){root.append(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"S’ka kërkesa për ndihmë."}));return;}
+  if(!tickets.length){root.append(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"S’ka kërkesa për ndihmë."}));return true;}
   for(const ticket of tickets){
    const c=makeCard((supportCategoryLabel[ticket.category]||"Kërkesë")+" · "+(supportStatusLabel[ticket.status]||ticket.status),ticket.description);
    const meta=document.createElement("p");meta.className="portal-muted";meta.textContent="Krijuar: "+new Date(ticket.created_at).toLocaleString("sq-XK")+" · Klienti: "+ticket.requester_id+(ticket.ride_id?" · Udhëtimi: "+ticket.ride_id:"")+(ticket.order_id?" · Porosia: "+ticket.order_id:"")+(ticket.assigned_to?" · Caktuar: "+ticket.assigned_to:"");c.append(meta);
@@ -191,7 +206,26 @@ async function loadSupportTickets(){
    }
    c.append(actions);root.append(c);
   }
- }catch(err){root.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Kërkesat s’u ngarkuan: "+err.message}));}
+  return true;
+ }catch(err){root.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Kërkesat s’u ngarkuan: "+adminErrorMessage(err)}));return false;}
 }
 $("#support-refresh")?.addEventListener("click",loadSupportTickets);
-loadSupportTickets();
+
+async function bootAdmin(){
+ const accessToken=token();
+ if(!accessToken){adminBootToken="";showLoginRequired();return;}
+ if(adminBooting||adminBootToken===accessToken)return;
+ adminBootToken=accessToken;adminBooting=true;
+ alertMsg("Po verifikojmë qasjen dhe po ngarkojmë aplikimet…");
+ try{
+  const results=await Promise.all([loadCities(),loadQueue(),loadRestaurantQueue(),loadSupportTickets()]);
+  if(!token()){adminBootToken="";showLoginRequired();return;}
+  adminBootToken=token();
+  if(results.some(result=>result===false))alertMsg("Disa seksione nuk u ngarkuan. Kontrollo mesazhin te secila listë dhe përdor Rifresko.","error");
+  else alertMsg("Paneli administrativ u ngarkua. Të dhënat dhe miratimet lexohen nga API-ja e mbrojtur.","success");
+ }catch(err){if(!token())showLoginRequired();else alertMsg(adminErrorMessage(err),"error");}
+ finally{adminBooting=false;}
+}
+window.addEventListener("pageshow",()=>{const current=token();if(current&&current!==adminBootToken)bootAdmin();});
+document.addEventListener("visibilitychange",()=>{const current=token();if(document.visibilityState==="visible"&&current&&current!==adminBootToken)bootAdmin();});
+bootAdmin();
