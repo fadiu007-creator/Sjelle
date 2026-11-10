@@ -40,7 +40,7 @@
     if (!root || root.querySelector("[data-admin-sql-editor]")) return;
     const note = document.createElement("p");
     note.className = "portal-muted";
-    note.textContent = "Llogaria është kyçur, por nuk ka rolin admin në sjelle_user_roles. Roli nuk jepet automatikisht. Për administratorin e parë, zëvendëso placeholder-in me email-in e saktë të llogarisë së konfirmuar në SQL dhe ekzekutoje vetëm nga pronari i projektit.";
+    note.textContent = "Roli admin nuk jepet automatikisht. Për administratorin e parë, zëvendëso placeholder-in me email-in e saktë të llogarisë së konfirmuar në SQL dhe ekzekutoje vetëm nga pronari i projektit.";
     const script = document.createElement("a");
     script.href = ROLE_SETUP_HREF;
     script.target = "_blank";
