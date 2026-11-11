@@ -867,6 +867,143 @@ test("driver GPS updates reject inaccurate fixes before database writes", async 
 });
 
 
+
+test("customer live-location requests require authentication before database access", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    throw new Error("Unauthenticated location requests must not reach Supabase");
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/rides/33333333-3333-4333-8333-333333333333/driver-location"), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 401);
+    assert.equal(body.error.code, "UNAUTHENTICATED");
+    assert.equal(calls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("customer live-location requests cannot read another customer's ride", async () => {
+  const originalFetch = globalThis.fetch;
+  const rideId = "33333333-3333-4333-8333-333333333333";
+  const customerId = "11111111-1111-4111-8111-111111111111";
+  let locationReads = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: customerId }), { status: 200 });
+    if (url.includes("sjelle_rides?id=eq." + rideId) && url.includes("customer_id=eq." + customerId)) {
+      return new Response("[]", { status: 200 });
+    }
+    if (url.includes("sjelle_driver_locations?")) {
+      locationReads += 1;
+      throw new Error("A non-owner must never trigger a driver-location read");
+    }
+    throw new Error("Unexpected database request: " + url);
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/rides/" + rideId + "/driver-location", {
+      headers: { authorization: "Bearer test-token" },
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 404);
+    assert.equal(body.error.code, "RIDE_NOT_FOUND");
+    assert.equal(locationReads, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("customer live-location requests stop exposing coordinates after a ride ends", async () => {
+  const originalFetch = globalThis.fetch;
+  const rideId = "33333333-3333-4333-8333-333333333333";
+  const customerId = "11111111-1111-4111-8111-111111111111";
+  const driverId = "22222222-2222-4222-8222-222222222222";
+  let locationReads = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: customerId }), { status: 200 });
+    if (url.includes("sjelle_rides?id=eq." + rideId) && url.includes("customer_id=eq." + customerId)) {
+      return new Response(JSON.stringify([{ id: rideId, driver_id: driverId, status: "completed" }]), { status: 200 });
+    }
+    if (url.includes("sjelle_driver_locations?")) {
+      locationReads += 1;
+      throw new Error("A terminal ride must not expose live coordinates");
+    }
+    throw new Error("Unexpected database request: " + url);
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/rides/" + rideId + "/driver-location", {
+      headers: { authorization: "Bearer test-token" },
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { data: { available: boolean } };
+    assert.equal(response.status, 200);
+    assert.deepEqual(body.data, { available: false });
+    assert.equal(locationReads, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("customer live-location requests return only fresh coordinates for their active ride", async () => {
+  const originalFetch = globalThis.fetch;
+  const rideId = "33333333-3333-4333-8333-333333333333";
+  const customerId = "11111111-1111-4111-8111-111111111111";
+  const driverId = "22222222-2222-4222-8222-222222222222";
+  let locationUrl = "";
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: customerId }), { status: 200 });
+    if (url.includes("sjelle_rides?id=eq." + rideId) && url.includes("customer_id=eq." + customerId)) {
+      return new Response(JSON.stringify([{ id: rideId, driver_id: driverId, status: "driver_arriving" }]), { status: 200 });
+    }
+    if (url.includes("sjelle_driver_locations?")) {
+      locationUrl = url;
+      return new Response(JSON.stringify([{
+        latitude: 42.3702,
+        longitude: 21.1553,
+        heading_degrees: 90,
+        accuracy_m: 12,
+        recorded_at: "2026-11-11T09:00:00Z",
+        updated_at: new Date().toISOString(),
+      }]), { status: 200 });
+    }
+    throw new Error("Unexpected database request: " + url);
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/rides/" + rideId + "/driver-location", {
+      headers: { authorization: "Bearer test-token" },
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { data: { available: boolean; latitude: number; longitude: number } };
+    assert.equal(response.status, 200);
+    assert.equal(body.data.available, true);
+    assert.equal(body.data.latitude, 42.3702);
+    assert.equal(body.data.longitude, 21.1553);
+    assert.ok(locationUrl.includes("driver_id=eq." + driverId));
+    assert.ok(locationUrl.includes("updated_at=gte."), "driver coordinates must be limited to the last two minutes");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("approved driver can request cancellation of an unstarted ride through the atomic job RPC", async () => {
   const originalFetch = globalThis.fetch;
   let rpcBody: Record<string, unknown> | null = null;
