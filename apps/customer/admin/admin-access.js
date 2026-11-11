@@ -31,13 +31,13 @@
     for (const selector of ["#driver-queue", "#admin-restaurants", "#admin-support-tickets"]) {
       const root = $(selector);
       if (!root) continue;
-      root.replaceChildren(Object.assign(document.createElement("p"), { className: "portal-muted", textContent: "Kyçu me llogarinë e administratorit për të ngarkuar këtë listë." }));
+      root.replaceChildren(Object.assign(document.createElement("p"), { className: "portal-muted", textContent: "Kyçu me logariinë e administratorit për të ngarkuar këtë listë." }));
       appendLoginLink(root);
     }
   }
 
   function appendRoleSetupLinks(root) {
-    if (!root || root.querySelector("[data-admin-sql-editor]")) return;
+    if (!root || root.querySelector("[data-admin-sql-editor]") || root.querySelector('a[href$="first-admin.sql"]')) return;
     const note = document.createElement("p");
     note.className = "portal-muted";
     note.textContent = "Roli admin nuk jepet automatikisht. Për administratorin e parë, zëvendëso placeholder-in me email-in e saktë të llogarisë së konfirmuar në SQL dhe ekzekutoje vetëm nga pronari i projektit.";
