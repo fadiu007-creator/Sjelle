@@ -94,6 +94,8 @@ try {
   await page.waitForURL(url => url.pathname.endsWith("/admin/"), { timeout: 15000 });
   await page.getByText("Nuk ka dokumente, automjete ose aplikime në pritje.").waitFor({ state: "visible", timeout: 15000 });
   await page.getByText("Nuk ka aplikime restorantesh në pritje.").waitFor({ state: "visible", timeout: 15000 });
+  assert.equal(await page.locator("#driver-queue-count").textContent(), "0", "admin dashboard must show zero pending driver review items when queue is empty");
+  assert.equal(await page.locator("#restaurant-queue-count").textContent(), "0", "admin dashboard must show zero pending restaurant applications when queue is empty");
   assert.ok(adminRequests.includes("/admin/driver-documents"), "admin login must load the protected driver application queue");
   assert.ok(adminRequests.includes("/admin/restaurants"), "admin login must load the protected restaurant application queue");
   assert.match(await page.locator("#admin-alert").textContent(), /Paneli administrativ u ngarkua/i, "admin dashboard should report a successful protected load");

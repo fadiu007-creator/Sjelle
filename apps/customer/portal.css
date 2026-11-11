@@ -16,3 +16,5 @@
 .admin-quick-nav a:focus-visible{outline:3px solid #66824a;outline-offset:2px}
 .admin-application-card,#city-operations,#cash-reconciliation{scroll-margin-top:76px}
 @media(max-width:560px){.admin-quick-nav{top:4px;gap:6px;padding:8px}.admin-quick-nav a{flex:1 1 calc(50% - 6px);justify-content:center;text-align:center;padding:8px 9px;font-size:12px}}
+
+.admin-queue-count{display:inline-flex;min-width:1.65em;height:1.65em;align-items:center;justify-content:center;margin-left:4px;padding:0 6px;border-radius:999px;background:#e8eee4;color:#102f28;font-size:11px;font-weight:850;line-height:1;font-variant-numeric:tabular-nums}
