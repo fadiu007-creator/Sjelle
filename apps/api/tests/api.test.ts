@@ -837,6 +837,77 @@ test("city activation is blocked until a valid active service area exists", asyn
   } finally { globalThis.fetch = originalFetch; }
 });
 
+
+test("admin driver queue returns pending documents, vehicles and driver applications", async () => {
+  const originalFetch = globalThis.fetch;
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const requestedUrls: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    requestedUrls.push(url);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: userId }), { status: 200 });
+    if (url.includes("sjelle_user_roles?") && url.includes("role=eq.admin")) {
+      return new Response(JSON.stringify([{ role: "admin" }]), { status: 200 });
+    }
+    if (url.includes("sjelle_driver_documents?review_status=eq.pending")) {
+      return new Response(JSON.stringify([{ id: "doc-1", driver_id: userId, document_type: "identity", review_status: "pending" }]), { status: 200 });
+    }
+    if (url.includes("sjelle_vehicles?review_status=eq.pending")) {
+      return new Response(JSON.stringify([{ id: "vehicle-1", driver_id: userId, vehicle_type: "standard", registration_number: "01-123-AA" }]), { status: 200 });
+    }
+    if (url.includes("sjelle_driver_profiles?review_status=eq.pending")) {
+      return new Response(JSON.stringify([{ user_id: userId, city_id: "22222222-2222-4222-8222-222222222222", selected_mode: "ride" }]), { status: 200 });
+    }
+    throw new Error("Unexpected admin queue request: " + url);
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/admin/driver-documents", {
+      headers: { authorization: "Bearer test-token" },
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { data: { documents: Array<{ document_type: string }>; vehicles: Array<{ registration_number: string }>; drivers: Array<{ user_id: string }> } };
+    assert.equal(response.status, 200);
+    assert.equal(body.data.documents[0]?.document_type, "identity");
+    assert.equal(body.data.vehicles[0]?.registration_number, "01-123-AA");
+    assert.equal(body.data.drivers[0]?.user_id, userId);
+    assert.ok(requestedUrls.some(url => url.includes("sjelle_driver_documents?review_status=eq.pending")));
+    assert.ok(requestedUrls.some(url => url.includes("sjelle_vehicles?review_status=eq.pending")));
+    assert.ok(requestedUrls.some(url => url.includes("sjelle_driver_profiles?review_status=eq.pending")));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("admin driver queue denies non-admin users before reading application data", async () => {
+  const originalFetch = globalThis.fetch;
+  const requestedUrls: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    requestedUrls.push(url);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    if (url.includes("sjelle_user_roles?") && url.includes("role=eq.admin")) return new Response("[]", { status: 200 });
+    throw new Error("A non-admin must not read driver applications: " + url);
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/admin/driver-documents", {
+      headers: { authorization: "Bearer test-token" },
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 403);
+    assert.equal(body.error.code, "FORBIDDEN");
+    assert.equal(requestedUrls.some(url => /sjelle_(driver_documents|vehicles|driver_profiles)\?/.test(url)), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("driver GPS updates reject inaccurate fixes before database writes", async () => {
   const originalFetch = globalThis.fetch;
   let databaseCalls = 0;
