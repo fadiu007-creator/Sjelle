@@ -156,6 +156,139 @@ try {
   await page.locator("#account-close").click();
   console.log("PASS homepage signup CTA opens the real signup dialog");
 
+  const rideApi = {
+    quoteRequests: 0,
+    bookingKeys: [],
+    ride: {
+      id: "55555555-5555-4555-8555-555555555555",
+      status: "searching",
+      pickup_label: "Rruga A, Ferizaj",
+      pickup_lat: 42.3702,
+      pickup_lon: 21.1553,
+      destination_label: "Sheshi, Ferizaj",
+      destination_lat: 42.3712,
+      destination_lon: 21.1563,
+      quoted_amount_cents: 450,
+      final_amount_cents: null,
+      payment_method: "cash",
+      created_at: "2026-11-11T09:00:00Z",
+    },
+  };
+  await page.route(`${apiOrigin}/auth/login`, route => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ data: { access_token: "sjelle-ride-smoke-token", refresh_token: "sjelle-ride-smoke-refresh", expires_in: 3600, user: { id: "ride-smoke-user", email: "ride-smoke@example.test" } } }),
+  }));
+  await page.route(`${apiOrigin}/geocode`, async route => {
+    const requestBody = JSON.parse(route.request().postData() || "{}");
+    const pickup = String(requestBody.query || "").toLowerCase().includes("nisja");
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ data: [{
+        label: pickup ? "Rruga A, Ferizaj" : "Sheshi, Ferizaj",
+        lat: pickup ? 42.3702 : 42.3712,
+        lon: pickup ? 21.1553 : 21.1563,
+      }] }),
+    });
+  });
+  await page.route(`${apiOrigin}/ride-quotes`, async route => {
+    rideApi.quoteRequests += 1;
+    const requestBody = JSON.parse(route.request().postData() || "{}");
+    assert.equal(requestBody.city, "ferizaj", "ride quote must use the selected city");
+    assert.equal(requestBody.vehicle_type, "standard", "ride quote must send the selected vehicle type");
+    return route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({ data: {
+        quote_id: "44444444-4444-4444-8444-444444444444",
+        city: "ferizaj",
+        vehicle_type: "standard",
+        pickup_label: "Rruga A, Ferizaj",
+        destination_label: "Sheshi, Ferizaj",
+        pricing_kind: "estimated",
+        pricing_version: "smoke-v1",
+        amount_cents: 450,
+        currency: "EUR",
+        distance_m: 2500,
+        duration_s: 420,
+        expires_at: "2026-11-11T09:05:00Z",
+      } }),
+    });
+  });
+  await page.route(`${apiOrigin}/rides`, async route => {
+    const request = route.request();
+    if (request.method() === "GET") {
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: [rideApi.ride] }) });
+    }
+    if (request.method() === "POST") {
+      const key = request.headers()["idempotency-key"];
+      assert.ok(key && key.length >= 12, "ride booking must send an idempotency key");
+      rideApi.bookingKeys.push(key);
+      const body = JSON.parse(request.postData() || "{}");
+      assert.equal(body.quote_id, "44444444-4444-4444-8444-444444444444");
+      if (rideApi.bookingKeys.length === 1) {
+        return route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ error: { code: "RIDE_BOOKING_FAILED", message: "Përgjigjja u ndërpre përkohësisht." } }),
+        });
+      }
+      return route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({ data: { ...rideApi.ride, driver_offer_sent: true } }),
+      });
+    }
+    return route.continue();
+  });
+
+  await page.goto(new URL("?account=login", baseUrl).toString(), { waitUntil: "domcontentloaded", timeout: 30000 });
+  await page.locator("#account-dialog[open]").waitFor({ state: "visible" });
+  await page.locator('#auth-form input[name="email"]').fill("ride-smoke@example.test");
+  await page.locator('#auth-form input[name="password"]').fill("x".repeat(12));
+  await page.locator("#auth-submit").click();
+  await page.locator("#account-dialog[open]").waitFor({ state: "hidden" });
+  await page.waitForFunction(() => [...document.querySelectorAll("#city-select option")].some(option => option.value === "ferizaj"), { timeout: 15000 });
+  await page.locator("#city-select").selectOption("ferizaj");
+
+  await page.locator('#ride-quote-form input[name="pickup_query"]').fill("Nisja, Ferizaj");
+  await page.locator("#find-pickup").click();
+  await page.locator("#pickup-suggestions button").first().click();
+  await page.locator('#ride-quote-form input[name="destination_query"]').fill("Destinacioni, Ferizaj");
+  await page.locator("#find-destination").click();
+  await page.locator("#destination-suggestions button").first().click();
+
+  for (const name of ["pickup_lon", "destination_lon"]) {
+    const field = page.locator(`#ride-quote-form input[name="${name}"]`);
+    const originalValue = await field.inputValue();
+    await field.evaluate(element => { element.value = ""; });
+    await page.locator('#ride-quote-form button[type="submit"]').click();
+    await page.locator("#ride-quote-message").waitFor({ state: "visible" });
+    assert.match(await page.locator("#ride-quote-message").textContent(), /Zgjedh një adresë të sugjeruar/i, `${name} must be validated before requesting a quote`);
+    assert.equal(rideApi.quoteRequests, 0, "invalid coordinates must not reach the quote API");
+    await field.evaluate((element, value) => { element.value = value; }, originalValue);
+  }
+
+  await page.locator('#ride-quote-form button[type="submit"]').click();
+  await page.locator("#ride-quote-result").getByRole("button", { name: "Konfirmo rezervimin" }).waitFor({ state: "visible" });
+  await page.locator("#ride-quote-result").getByRole("button", { name: "Konfirmo rezervimin" }).click();
+  await page.getByRole("button", { name: "Provo përsëri" }).waitFor({ state: "visible" });
+  await page.getByRole("button", { name: "Provo përsëri" }).click();
+  await page.locator("#ride-quote-result").getByText("Kërkesa për udhëtim u regjistrua").waitFor({ state: "visible" });
+  assert.equal(rideApi.bookingKeys.length, 2, "booking retry should issue exactly two requests");
+  assert.equal(rideApi.bookingKeys[0], rideApi.bookingKeys[1], "booking retry must reuse the same idempotency key");
+  await page.getByRole("button", { name: "Shiko udhëtimet e mia" }).click();
+  await page.locator("#account-dialog[open]").waitFor({ state: "visible" });
+  await page.locator("#my-rides").getByText("Po kërkohet shofer").waitFor({ state: "visible" });
+  assert.match(await page.locator("#my-rides").textContent(), /Rruga A, Ferizaj → Sheshi, Ferizaj/);
+  console.log("PASS ride flow validates all four coordinates, quotes, retries booking idempotently and opens the saved trip");
+
+  await page.unroute(`${apiOrigin}/auth/login`);
+  await page.unroute(`${apiOrigin}/geocode`);
+  await page.unroute(`${apiOrigin}/ride-quotes`);
+  await page.unroute(`${apiOrigin}/rides`);
+
   assert.deepEqual(missingAssets, [], "Pages must not return 4xx/5xx for local portal files");
   assert.deepEqual(pageErrors, [], "portal pages must not raise uncaught JavaScript errors");
   console.log("PASS no broken local assets and no uncaught browser JavaScript errors");

@@ -860,7 +860,15 @@ rideQuoteForm.addEventListener("submit", async event => {
   event.preventDefault();
   if (!state.session?.access_token) { openAccount("login"); return; }
   const form = rideQuoteForm.elements;
-  if (!form.pickup_label.value || !form.pickup_lat.value || !form.destination_label.value || !form.destination_lat.value) {
+  const coordinateIsValid = (value, min, max) => {
+    const numeric = Number(value);
+    return String(value ?? "").trim() !== "" && Number.isFinite(numeric) && numeric >= min && numeric <= max;
+  };
+  if (!form.pickup_label.value || !form.destination_label.value
+    || !coordinateIsValid(form.pickup_lat.value, -90, 90)
+    || !coordinateIsValid(form.pickup_lon.value, -180, 180)
+    || !coordinateIsValid(form.destination_lat.value, -90, 90)
+    || !coordinateIsValid(form.destination_lon.value, -180, 180)) {
     showMessage(rideQuoteMessage, "Zgjedh një adresë të sugjeruar për nisjen dhe destinacionin para llogaritjes.", "error");
     return;
   }
@@ -904,6 +912,13 @@ rideQuoteForm.addEventListener("submit", async event => {
         rideQuoteResult.replaceChildren(node("h4", "", "Kërkesa për udhëtim u regjistrua"), node("p", "", "Statusi: " + (booked.data?.status || "searching") + ". Çmimi: " + euro(booked.data?.quoted_amount_cents) + "."));
         rideQuoteResult.append(node("p", "", booked.data?.driver_offer_sent ? "Oferta iu dërgua një shoferi të përshtatshëm; prit konfirmimin e tij." : "Rezervimi u ruajt, por nuk u gjet shofer i lirë për momentin."));
         showMessage(rideQuoteMessage, "Rezervimi u krijua në sistem.", "success");
+        const viewRides = node("button", "secondary-button", "Shiko udhëtimet e mia");
+        viewRides.type = "button";
+        viewRides.addEventListener("click", () => {
+          openAccount("login");
+          myRidesOpen?.click();
+        });
+        rideQuoteResult.append(viewRides);
       } catch (error) {
         book.disabled = false;
         book.textContent = "Provo përsëri";
