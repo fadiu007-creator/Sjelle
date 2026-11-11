@@ -1046,6 +1046,106 @@ test("approved driver can request cancellation of an unstarted ride through the 
   }
 });
 
+
+test("driver offer acceptance uses the authenticated driver identity and atomic RPC", async () => {
+  const originalFetch = globalThis.fetch;
+  const driverId = "11111111-1111-4111-8111-111111111111";
+  const offerId = "33333333-3333-4333-8333-333333333333";
+  const rideId = "44444444-4444-4444-8444-444444444444";
+  let rpcBody: unknown = null;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: driverId }), { status: 200 });
+    if (url.endsWith("/rpc/sjelle_respond_driver_offer")) {
+      assert.equal(init?.method, "POST");
+      rpcBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ status: "accepted", job_kind: "ride", job_id: rideId }), { status: 200 });
+    }
+    throw new Error("Unexpected database request: " + url);
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/offers/" + offerId + "/respond", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ response: "accept", driver_id: "99999999-9999-4999-8999-999999999999" }),
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { data: { status: string; job_kind: string; job_id: string } };
+    assert.equal(response.status, 200);
+    assert.deepEqual(rpcBody, { p_driver_id: driverId, p_offer_id: offerId, p_response: "accept" });
+    assert.deepEqual(body.data, { status: "accepted", job_kind: "ride", job_id: rideId });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("driver offer acceptance reports atomic assignment conflicts without retrying as a new driver", async () => {
+  const originalFetch = globalThis.fetch;
+  const driverId = "11111111-1111-4111-8111-111111111111";
+  const offerId = "33333333-3333-4333-8333-333333333333";
+  let rpcCalls = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: driverId }), { status: 200 });
+    if (url.endsWith("/rpc/sjelle_respond_driver_offer")) {
+      rpcCalls += 1;
+      return new Response(JSON.stringify({ message: "DRIVER_NOT_AVAILABLE" }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error("Unexpected database request: " + url);
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/offers/" + offerId + "/respond", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ response: "accept" }),
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 409);
+    assert.equal(body.error.code, "DRIVER_NOT_AVAILABLE");
+    assert.equal(rpcCalls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("driver offer response rejects unsupported actions before database access", async () => {
+  const originalFetch = globalThis.fetch;
+  let databaseCalls = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    databaseCalls += 1;
+    throw new Error("Invalid offer actions must be rejected before database access");
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/offers/33333333-3333-4333-8333-333333333333/respond", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ response: "cancel" }),
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 400);
+    assert.equal(body.error.code, "INVALID_OFFER_RESPONSE");
+    assert.equal(databaseCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("driver cancellation is not accepted for delivery jobs", async () => {
   const originalFetch = globalThis.fetch;
   let rpcCalls = 0;
