@@ -7,3 +7,12 @@
 [hidden]{display:none!important}
 
 .driver-live-map{height:420px;min-height:320px;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#e8eee4;z-index:0;margin-bottom:12px}.leaflet-container{font:inherit;z-index:0}@media(max-width:560px){.driver-live-map{height:330px;min-height:280px}}
+
+
+/* Admin application queues are intentionally surfaced before configuration forms. */
+.admin-quick-nav{position:sticky;top:8px;z-index:5;display:flex;flex-wrap:wrap;gap:8px;padding:10px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.96);box-shadow:0 8px 24px rgba(16,47,40,.08);backdrop-filter:blur(10px)}
+.admin-quick-nav a{display:inline-flex;align-items:center;min-height:38px;padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:#fff;color:#102f28;font-size:13px;font-weight:750;text-decoration:none}
+.admin-quick-nav a:hover{background:var(--lime-soft)}
+.admin-quick-nav a:focus-visible{outline:3px solid #66824a;outline-offset:2px}
+.admin-application-card,#city-operations,#cash-reconciliation{scroll-margin-top:76px}
+@media(max-width:560px){.admin-quick-nav{top:4px;gap:6px;padding:8px}.admin-quick-nav a{flex:1 1 calc(50% - 6px);justify-content:center;text-align:center;padding:8px 9px;font-size:12px}}

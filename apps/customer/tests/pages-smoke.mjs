@@ -51,6 +51,15 @@ try {
   const adminLoginTarget = new URL(await adminLoginLink.getAttribute("href"), adminUrl);
   assert.equal(adminLoginTarget.searchParams.get("return_to"), "admin", "admin login link must preserve the admin return destination");
   assert.match(await page.locator("#admin-alert").textContent(), /Kyçu me llogarinë e administratorit/i, "unauthenticated admin portal must explain how to sign in");
+  assert.equal(await page.locator("#pricing-form input").first().isDisabled(), true, "admin controls must stay locked without an authenticated admin session");
+  const quickLinks = ["#driver-applications", "#restaurant-applications", "#city-operations", "#cash-reconciliation"];
+  for (const target of quickLinks) {
+    const link = page.locator(`.admin-quick-nav a[href="${target}"]`);
+    await link.waitFor({ state: "visible" });
+    assert.equal(await page.locator(target).count(), 1, `admin shortcut ${target} must have one destination`);
+  }
+  await page.locator('.admin-quick-nav a[href="#driver-applications"]').click();
+  assert.equal(new URL(page.url()).hash, "#driver-applications", "driver applications shortcut must navigate to the queue");
 
   const apiOrigin = "https://saavqlbwffrwxingbnri.supabase.co/functions/v1/sjelle-api/api/v1";
   const adminRequests = [];

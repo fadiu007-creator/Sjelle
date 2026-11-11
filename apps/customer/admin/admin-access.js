@@ -4,7 +4,6 @@
   const ROLE_SETUP_HREF = "https://github.com/fadiu007-creator/Sjelle/blob/main/supabase/operations/first-admin.sql";
   const SQL_EDITOR_HREF = "https://supabase.com/dashboard/project/saavqlbwffrwxingbnri/sql/new";
   const $ = selector => document.querySelector(selector);
-  let needsRoleRetry = false;
 
   function setControlsEnabled(enabled) {
     for (const control of document.querySelectorAll("main form input, main form select, main form textarea, main form button, #admin-city")) control.disabled = !enabled;
@@ -31,7 +30,7 @@
     for (const selector of ["#driver-queue", "#admin-restaurants", "#admin-support-tickets"]) {
       const root = $(selector);
       if (!root) continue;
-      root.replaceChildren(Object.assign(document.createElement("p"), { className: "portal-muted", textContent: "Kyçu me logariinë e administratorit për të ngarkuar këtë listë." }));
+      root.replaceChildren(Object.assign(document.createElement("p"), { className: "portal-muted", textContent: "Kyçu me llogarinë e administratorit për të ngarkuar këtë listë." }));
       appendLoginLink(root);
     }
   }
@@ -68,10 +67,8 @@
         setControlsEnabled(false);
         showLoginRequired();
       } else if (response.status === 403) {
-        needsRoleRetry = true;
         setControlsEnabled(false);
       } else if (response.ok && new URL(requestUrl).pathname.endsWith("/admin/cities")) {
-        needsRoleRetry = false;
         setControlsEnabled(true);
       }
     }
@@ -95,8 +92,4 @@
     }
   });
   observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && needsRoleRetry) window.location.reload();
-  });
 })();
