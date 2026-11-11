@@ -881,6 +881,47 @@ test("admin driver queue returns pending documents, vehicles and driver applicat
   }
 });
 
+
+test("admin restaurant queue returns only pending applications", async () => {
+  const originalFetch = globalThis.fetch;
+  const requestedUrls: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    requestedUrls.push(url);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    if (url.includes("sjelle_user_roles?") && url.includes("role=eq.admin")) return new Response(JSON.stringify([{ role: "admin" }]), { status: 200 });
+    if (url.includes("sjelle_restaurants?approval_status=eq.pending")) {
+      return new Response(JSON.stringify([{
+        id: "33333333-3333-4333-8333-333333333333",
+        owner_id: "11111111-1111-4111-8111-111111111111",
+        name: "Restoranti Test",
+        slug: "restoranti-test",
+        address_text: "Ferizaj",
+        phone: "+38344000000",
+        latitude: 42.37,
+        longitude: 21.15,
+      }]), { status: 200 });
+    }
+    throw new Error("Unexpected admin restaurant queue request: " + url);
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/admin/restaurants", {
+      headers: { authorization: "Bearer test-token" },
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { data: Array<{ name: string; slug: string }> };
+    assert.equal(response.status, 200);
+    assert.equal(body.data[0]?.name, "Restoranti Test");
+    assert.equal(body.data[0]?.slug, "restoranti-test");
+    assert.ok(requestedUrls.some(url => url.includes("approval_status=eq.pending") && url.includes("limit=100")));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("admin driver queue denies non-admin users before reading application data", async () => {
   const originalFetch = globalThis.fetch;
   const requestedUrls: string[] = [];
