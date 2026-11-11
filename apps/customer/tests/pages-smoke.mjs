@@ -107,6 +107,8 @@ try {
   const forbiddenMessage = /Llogaria është kyçur, por nuk ka rolin admin në sjelle_user_roles/i;
   await page.locator("#driver-queue").getByText(forbiddenMessage).waitFor({ state: "visible" });
   await page.locator("#admin-restaurants").getByText(forbiddenMessage).waitFor({ state: "visible" });
+  assert.equal(await page.locator("#driver-queue-count").textContent(), "—", "failed driver queue requests must not be displayed as an empty queue");
+  assert.equal(await page.locator("#restaurant-queue-count").textContent(), "—", "failed restaurant queue requests must not be displayed as an empty queue");
   for (const selector of ["#driver-queue", "#admin-restaurants"]) {
     const setupLink = page.locator(selector).locator("a[href$=\"first-admin.sql\"]");
     await setupLink.waitFor({ state: "visible" });
