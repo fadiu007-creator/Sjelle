@@ -1648,6 +1648,16 @@ const worker = {
         return response({ error: { code: "INVALID_REVIEW_STATUS", request_id: requestId } }, 400, requestId, origin, env);
       }
       try {
+        if (body.review_status === "approved") {
+          const existingResponse = await databaseRequest(env, "sjelle_driver_documents?id=eq." + encodeURIComponent(documentReviewMatch[1]) + "&select=id,expires_at&limit=1");
+          if (!existingResponse.ok) return response({ error: { code: "DOCUMENT_REVIEW_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+          const existingRows = await parseJson(existingResponse) as Array<{ id: string; expires_at: string | null }>;
+          if (!Array.isArray(existingRows) || !existingRows.length) return response({ error: { code: "DOCUMENT_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
+          const today = new Date().toISOString().slice(0,10);
+          if (existingRows[0].expires_at && existingRows[0].expires_at < today) {
+            return response({ error: { code: "DOCUMENT_EXPIRED", message: "An expired document cannot be approved. Request a current document from the driver.", request_id: requestId } }, 409, requestId, origin, env);
+          }
+        }
         const result = await databaseRequest(env, "sjelle_driver_documents?id=eq." + encodeURIComponent(documentReviewMatch[1]), {
           method: "PATCH", headers: { prefer: "return=representation" },
           body: JSON.stringify({ review_status: body.review_status, reviewed_at: new Date().toISOString(), reviewed_by: user.id,
