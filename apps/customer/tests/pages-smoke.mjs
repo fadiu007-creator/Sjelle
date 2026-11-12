@@ -186,6 +186,11 @@ try {
     contentType: "application/json",
     body: JSON.stringify({ data: { access_token: "sjelle-ride-smoke-token", refresh_token: "sjelle-ride-smoke-refresh", expires_in: 3600, user: { id: "ride-smoke-user", email: "ride-smoke@example.test" } } }),
   }));
+  await page.route(`${apiOrigin}/auth/refresh`, route => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ data: { access_token: "sjelle-ride-smoke-token-refreshed", refresh_token: "sjelle-ride-smoke-refresh", expires_in: 3600, user: { id: "ride-smoke-user", email: "ride-smoke@example.test" } } }),
+  }));
   await page.route(`${apiOrigin}/geocode`, async route => {
     const requestBody = JSON.parse(route.request().postData() || "{}");
     const query = String(requestBody.query || "").toLowerCase();
@@ -365,6 +370,7 @@ try {
   console.log("PASS ride flow validates coordinates, invalidates stale quotes after address/vehicle changes, ignores stale in-flight quotes, retries booking idempotently and opens the saved trip");
 
   await page.unroute(`${apiOrigin}/auth/login`);
+  await page.unroute(`${apiOrigin}/auth/refresh`);
   await page.unroute(`${apiOrigin}/geocode`);
   await page.unroute(`${apiOrigin}/ride-quotes`);
   await page.unroute(`${apiOrigin}/rides`);
