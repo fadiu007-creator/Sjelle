@@ -337,7 +337,10 @@ try {
   assert.equal(await quoteConfirm.count(), 0, "changing vehicle type must invalidate the displayed quote");
   await vehicleType.selectOption("standard");
   await quoteSubmit.click();
-  await quoteConfirm.waitFor({ state: "visible" });
+  await quoteConfirm.waitFor({ state: "visible", timeout: 10000 }).catch(async error => {
+    const details = { quoteRequests: rideApi.quoteRequests, quoteBodies: rideApi.quoteBodies, message: await page.locator("#ride-quote-message").textContent(), pickupLabel: await page.locator('#ride-quote-form input[name="pickup_label"]').inputValue(), pickupLat: await page.locator('#ride-quote-form input[name="pickup_lat"]').inputValue(), pickupLon: await page.locator('#ride-quote-form input[name="pickup_lon"]').inputValue(), destinationLabel: await page.locator('#ride-quote-form input[name="destination_label"]').inputValue(), destinationLat: await page.locator('#ride-quote-form input[name="destination_lat"]').inputValue(), destinationLon: await page.locator('#ride-quote-form input[name="destination_lon"]').inputValue(), vehicleType: await vehicleType.inputValue() };
+    throw new Error("Fourth ride quote did not render confirmation: " + JSON.stringify(details) + "; " + error.message);
+  });
   assert.equal(rideApi.quoteRequests, 4, "a fresh quote is required after pickup, destination and vehicle changes");
   assert.equal(rideApi.quoteBodies[3].pickup_label, "Rruga tjetër, Ferizaj");
   assert.equal(rideApi.quoteBodies[3].destination_label, "Sheshi, Ferizaj");
