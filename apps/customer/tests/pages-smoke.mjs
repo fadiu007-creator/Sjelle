@@ -283,6 +283,8 @@ try {
     return route.continue();
   });
 
+  // The earlier admin smoke login shares this tab's sessionStorage; start the customer flow as a clean user.
+  await page.evaluate(() => sessionStorage.removeItem("sjelle.session"));
   await page.goto(new URL("?account=login", baseUrl).toString(), { waitUntil: "domcontentloaded", timeout: 30000 });
   await page.locator("#account-dialog[open]").waitFor({ state: "visible" });
   await page.locator('#auth-form input[name="email"]').fill("ride-smoke@example.test");
