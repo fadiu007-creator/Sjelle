@@ -162,6 +162,8 @@ try {
 
   const rideApi = {
     quoteRequests: 0,
+    quoteBodies: [],
+    latestQuoteId: "",
     bookingKeys: [],
     ride: {
       id: "55555555-5555-4555-8555-555555555555",
@@ -185,31 +187,48 @@ try {
   }));
   await page.route(`${apiOrigin}/geocode`, async route => {
     const requestBody = JSON.parse(route.request().postData() || "{}");
-    const pickup = String(requestBody.query || "").toLowerCase().includes("nisja");
+    const query = String(requestBody.query || "").toLowerCase();
+    const pickup = query.includes("nisja");
+    const updatedPickup = pickup && query.includes("e re");
+    const updatedDestination = !pickup && query.includes("i ri");
     return route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({ data: [{
-        label: pickup ? "Rruga A, Ferizaj" : "Sheshi, Ferizaj",
-        lat: pickup ? 42.3702 : 42.3712,
+        label: pickup ? (updatedPickup ? "Rruga e Re, Ferizaj" : "Rruga A, Ferizaj") : (updatedDestination ? "Parku, Ferizaj" : "Sheshi, Ferizaj"),
+        lat: pickup ? (updatedPickup ? 42.3722 : 42.3702) : (updatedDestination ? 42.3733 : 42.3712),
         lon: pickup ? 21.1553 : 21.1563,
       }] }),
     });
   });
+  let secondQuoteStartedResolve;
+  const secondQuoteStarted = new Promise(resolve => { secondQuoteStartedResolve = resolve; });
   await page.route(`${apiOrigin}/ride-quotes`, async route => {
     rideApi.quoteRequests += 1;
+    const quoteNumber = rideApi.quoteRequests;
     const requestBody = JSON.parse(route.request().postData() || "{}");
+    rideApi.quoteBodies.push(requestBody);
     assert.equal(requestBody.city, "ferizaj", "ride quote must use the selected city");
     assert.equal(requestBody.vehicle_type, "standard", "ride quote must send the selected vehicle type");
+    const quoteId = ["44444444-4444-4444-8444-444444444444", "66666666-6666-4666-8666-666666666666", "77777777-7777-4777-8777-777777777777", "88888888-8888-4888-8888-888888888888"][quoteNumber - 1];
+    rideApi.latestQuoteId = quoteId;
+    if (quoteNumber === 2) {
+      secondQuoteStartedResolve();
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
     return route.fulfill({
       status: 201,
       contentType: "application/json",
       body: JSON.stringify({ data: {
-        quote_id: "44444444-4444-4444-8444-444444444444",
+        quote_id: quoteId,
         city: "ferizaj",
         vehicle_type: "standard",
-        pickup_label: "Rruga A, Ferizaj",
-        destination_label: "Sheshi, Ferizaj",
+        pickup_label: requestBody.pickup_label,
+        pickup_lat: requestBody.pickup_lat,
+        pickup_lon: requestBody.pickup_lon,
+        destination_label: requestBody.destination_label,
+        destination_lat: requestBody.destination_lat,
+        destination_lon: requestBody.destination_lon,
         pricing_kind: "estimated",
         pricing_version: "smoke-v1",
         amount_cents: 450,
@@ -230,7 +249,7 @@ try {
       assert.ok(key && key.length >= 12, "ride booking must send an idempotency key");
       rideApi.bookingKeys.push(key);
       const body = JSON.parse(request.postData() || "{}");
-      assert.equal(body.quote_id, "44444444-4444-4444-8444-444444444444");
+      assert.equal(body.quote_id, rideApi.latestQuoteId, "booking must use the latest non-stale quote");
       if (rideApi.bookingKeys.length === 1) {
         return route.fulfill({
           status: 503,
@@ -238,6 +257,16 @@ try {
           body: JSON.stringify({ error: { code: "RIDE_BOOKING_FAILED", message: "Përgjigjja u ndërpre përkohësisht." } }),
         });
       }
+      const latestQuote = rideApi.quoteBodies.at(-1);
+      rideApi.ride = {
+        ...rideApi.ride,
+        pickup_label: latestQuote.pickup_label,
+        pickup_lat: latestQuote.pickup_lat,
+        pickup_lon: latestQuote.pickup_lon,
+        destination_label: latestQuote.destination_label,
+        destination_lat: latestQuote.destination_lat,
+        destination_lon: latestQuote.destination_lon,
+      };
       return route.fulfill({
         status: 201,
         contentType: "application/json",
@@ -274,19 +303,59 @@ try {
     await field.evaluate((element, value) => { element.value = value; }, originalValue);
   }
 
-  await page.locator('#ride-quote-form button[type="submit"]').click();
-  await page.locator("#ride-quote-result").getByRole("button", { name: "Konfirmo rezervimin" }).waitFor({ state: "visible" });
-  await page.locator("#ride-quote-result").getByRole("button", { name: "Konfirmo rezervimin" }).click();
+  const pickupQuery = page.locator('#ride-quote-form input[name="pickup_query"]');
+  const destinationQuery = page.locator('#ride-quote-form input[name="destination_query"]');
+  const quoteSubmit = page.locator('#ride-quote-form button[type="submit"]');
+  const quoteConfirm = page.locator("#ride-quote-result").getByRole("button", { name: "Konfirmo rezervimin" });
+
+  // Editing an address after a quote must remove the old confirmation immediately.
+  await quoteSubmit.click();
+  await quoteConfirm.waitFor({ state: "visible" });
+  await pickupQuery.fill("Nisja e re, Ferizaj");
+  assert.equal(await quoteConfirm.count(), 0, "changing pickup must invalidate the displayed quote and booking action");
+  assert.equal(await page.locator('#ride-quote-form input[name="pickup_lat"]').inputValue(), "", "changing pickup must clear its previously selected coordinates");
+  await page.locator("#find-pickup").click();
+  await page.locator("#pickup-suggestions button").first().click();
+
+  // A response for an older in-flight request must not restore a stale quote.
+  await quoteSubmit.click();
+  await secondQuoteStarted;
+  await destinationQuery.fill("Destinacioni i ri, Ferizaj");
+  await page.waitForTimeout(400);
+  assert.equal(await quoteConfirm.count(), 0, "a quote response for coordinates changed while the request was in flight must be ignored");
+  assert.match(await page.locator("#ride-quote-message").textContent(), /ndryshuan gjatë llogaritjes/i);
+  await page.locator("#find-destination").click();
+  await page.locator("#destination-suggestions button").first().click();
+
+  await quoteSubmit.click();
+  await quoteConfirm.waitFor({ state: "visible" });
+  assert.equal(rideApi.quoteBodies[2].pickup_label, "Rruga e Re, Ferizaj", "new quote must use the newly selected pickup");
+  assert.equal(rideApi.quoteBodies[2].destination_label, "Parku, Ferizaj", "new quote must use the newly selected destination");
+
+  // Changing the vehicle class also invalidates the price shown for the old class.
+  const vehicleType = page.locator('#ride-quote-form select[name="vehicle_type"]');
+  await vehicleType.selectOption("comfort");
+  assert.equal(await quoteConfirm.count(), 0, "changing vehicle type must invalidate the displayed quote");
+  await vehicleType.selectOption("standard");
+  await quoteSubmit.click();
+  await quoteConfirm.waitFor({ state: "visible" });
+  assert.equal(rideApi.quoteRequests, 4, "a fresh quote is required after pickup, destination and vehicle changes");
+  assert.equal(rideApi.quoteBodies[3].pickup_label, "Rruga e Re, Ferizaj");
+  assert.equal(rideApi.quoteBodies[3].destination_label, "Parku, Ferizaj");
+
+  await quoteConfirm.click();
   await page.getByRole("button", { name: "Provo përsëri" }).waitFor({ state: "visible" });
   await page.getByRole("button", { name: "Provo përsëri" }).click();
+  await page.locator("#ride-quote-result").getByText("Kërkesa për udhëtim u regjistrua").waitFor({ state: "visible" });
+  await pickupQuery.fill("Adresa për udhëtimin tjetër, Ferizaj");
   await page.locator("#ride-quote-result").getByText("Kërkesa për udhëtim u regjistrua").waitFor({ state: "visible" });
   assert.equal(rideApi.bookingKeys.length, 2, "booking retry should issue exactly two requests");
   assert.equal(rideApi.bookingKeys[0], rideApi.bookingKeys[1], "booking retry must reuse the same idempotency key");
   await page.getByRole("button", { name: "Shiko udhëtimet e mia" }).click();
   await page.locator("#account-dialog[open]").waitFor({ state: "visible" });
   await page.locator("#my-rides").getByText("Po kërkohet shofer").waitFor({ state: "visible" });
-  assert.match(await page.locator("#my-rides").textContent(), /Rruga A, Ferizaj → Sheshi, Ferizaj/);
-  console.log("PASS ride flow validates all four coordinates, quotes, retries booking idempotently and opens the saved trip");
+  assert.match(await page.locator("#my-rides").textContent(), /Rruga e Re, Ferizaj → Parku, Ferizaj/);
+  console.log("PASS ride flow validates coordinates, invalidates stale quotes after address/vehicle changes, ignores stale in-flight quotes, retries booking idempotently and opens the saved trip");
 
   await page.unroute(`${apiOrigin}/auth/login`);
   await page.unroute(`${apiOrigin}/geocode`);

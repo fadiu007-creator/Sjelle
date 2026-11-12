@@ -750,16 +750,27 @@ if (new URLSearchParams(window.location.search).get("account") === "login") open
 const rideQuoteForm = document.querySelector("#ride-quote-form");
 const rideQuoteMessage = document.querySelector("#ride-quote-message");
 const rideQuoteResult = document.querySelector("#ride-quote-result");
+let rideQuoteRevision = 0;
+function invalidateRideQuote() {
+  const hadQuote = rideQuoteResult.dataset.quoteRevision !== undefined;
+  rideQuoteRevision += 1;
+  if (hadQuote) {
+    rideQuoteResult.replaceChildren();
+    delete rideQuoteResult.dataset.quoteRevision;
+    showMessage(rideQuoteMessage, "Pikat ose shërbimi ndryshuan. Llogarit përsëri çmimin para rezervimit.");
+  }
+}
 const rideMapStatus=document.querySelector("#ride-map-status");let rideMap=null,rideMapMode="pickup",pickupMarker=null,destinationMarker=null,routeLine=null;
 function mapCityCenter(){const centers={ferizaj:[42.3702,21.1553],prishtina:[42.6629,21.1655],prizren:[42.2139,20.7397],gjilan:[42.4635,21.4694],mitrovica:[42.8856,20.8661],peja:[42.6593,20.2883]};return centers[state.selectedCity]||[42.55,20.9];}
 function initRideMap(){const el=document.querySelector("#ride-map");if(!el||!window.L||rideMap)return;rideMap=L.map(el,{zoomControl:true}).setView(mapCityCenter(),12);L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"&copy; OpenStreetMap contributors"}).addTo(rideMap);rideMap.on("click",e=>setMapPoint(rideMapMode,e.latlng.lat,e.latlng.lng));setTimeout(()=>rideMap.invalidateSize(),120);}
 function setRideMapMode(mode){rideMapMode=mode;document.querySelector("#map-pickup-mode")?.classList.toggle("is-selected",mode==="pickup");document.querySelector("#map-destination-mode")?.classList.toggle("is-selected",mode==="destination");if(rideMapStatus)rideMapStatus.textContent=mode==="pickup"?"Prek hartën për të zgjedhur pikën e nisjes.":"Prek hartën për të zgjedhur destinacionin.";}
 function updateRideMapMarkers(){if(!rideMap||!window.L)return;const f=rideQuoteForm.elements;for(const which of ["pickup","destination"]){const lat=Number(f[which+"_lat"].value),lon=Number(f[which+"_lon"].value);let m=which==="pickup"?pickupMarker:destinationMarker;if(f[which+"_lat"].value&&f[which+"_lon"].value&&Number.isFinite(lat)&&Number.isFinite(lon)){if(!m)m=L.marker([lat,lon]).addTo(rideMap).bindPopup(which==="pickup"?"Nisja":"Destinacioni");else m.setLatLng([lat,lon]);}else if(m){rideMap.removeLayer(m);m=null;}if(which==="pickup")pickupMarker=m;else destinationMarker=m;}const pts=[];if(pickupMarker)pts.push(pickupMarker.getLatLng());if(destinationMarker)pts.push(destinationMarker.getLatLng());if(routeLine){rideMap.removeLayer(routeLine);routeLine=null;}if(pts.length===2)routeLine=L.polyline(pts,{color:"#71963c",weight:4,dashArray:"7 8"}).addTo(rideMap);if(pts.length===2)rideMap.fitBounds(L.latLngBounds(pts).pad(.22),{maxZoom:15});else if(pts.length===1)rideMap.setView(pts[0],15);}
-function setMapPoint(which,lat,lon,displayLabel){if(lat<41.7||lat>43.4||lon<19.7||lon>22.0){if(rideMapStatus)rideMapStatus.textContent="Zgjedh një pikë brenda Kosovës.";return;}const f=rideQuoteForm.elements;const label=displayLabel||(which==="pickup"?"Nisja në hartë":"Destinacioni në hartë");f[which+"_query"].value=label;f[which+"_label"].value=label;f[which+"_lat"].value=String(lat);f[which+"_lon"].value=String(lon);document.querySelector("#"+which+"-suggestions").replaceChildren(node("p","menu-empty",displayLabel?"Vendndodhja u gjet dhe u vendos në hartë.":"Pika u zgjodh në hartë."));updateRideMapMarkers();if(rideMapStatus)rideMapStatus.textContent=(which==="pickup"?"Nisja":"Destinacioni")+" u zgjodh. "+(which==="pickup"?"Tani zgjidh destinacionin.":"Tani mund ta llogaritësh çmimin.");showMessage(rideQuoteMessage,(which==="pickup"?"Nisja":"Destinacioni")+" u plotësua.", "success");}
+function setMapPoint(which,lat,lon,displayLabel){if(lat<41.7||lat>43.4||lon<19.7||lon>22.0){if(rideMapStatus)rideMapStatus.textContent="Zgjedh një pikë brenda Kosovës.";return;}invalidateRideQuote();const f=rideQuoteForm.elements;const label=displayLabel||(which==="pickup"?"Nisja në hartë":"Destinacioni në hartë");f[which+"_query"].value=label;f[which+"_label"].value=label;f[which+"_lat"].value=String(lat);f[which+"_lon"].value=String(lon);document.querySelector("#"+which+"-suggestions").replaceChildren(node("p","menu-empty",displayLabel?"Vendndodhja u gjet dhe u vendos në hartë.":"Pika u zgjodh në hartë."));updateRideMapMarkers();if(rideMapStatus)rideMapStatus.textContent=(which==="pickup"?"Nisja":"Destinacioni")+" u zgjodh. "+(which==="pickup"?"Tani zgjidh destinacionin.":"Tani mund ta llogaritësh çmimin.");showMessage(rideQuoteMessage,(which==="pickup"?"Nisja":"Destinacioni")+" u plotësua.", "success");}
 document.querySelector("#map-pickup-mode")?.addEventListener("click",()=>setRideMapMode("pickup"));document.querySelector("#map-destination-mode")?.addEventListener("click",()=>setRideMapMode("destination"));document.querySelector("#map-use-location")?.addEventListener("click",()=>{if(!navigator.geolocation){rideMapStatus.textContent="GPS nuk mbështetet. Zgjidh nisjen në hartë.";return;}rideMapStatus.textContent="Po kërkojmë GPS-in…";getCurrentDevicePosition().then(p=>{setRideMapMode("pickup");setMapPoint("pickup",p.coords.latitude,p.coords.longitude);rideMap?.setView([p.coords.latitude,p.coords.longitude],16);}).catch(e=>{const m={1:"Lejo Location për Sjelle në Chrome.",2:"Telefoni s’e gjeti GPS-in. Zgjidh pikën direkt në hartë.",3:"GPS-i zgjati shumë. Provo sërish ose prek hartën."};rideMapStatus.textContent=m[e?.code]||"GPS dështoi. Zgjidh pikën në hartë.";});});
 
 
 function clearAddressSelection(which) {
+  invalidateRideQuote();
   const form = rideQuoteForm;
   form.elements[which + "_label"].value = "";
   form.elements[which + "_lat"].value = "";
@@ -784,6 +795,7 @@ async function findRideAddress(which) {
       const choice = node("button", "", item.label);
       choice.type = "button";
       choice.addEventListener("click", () => {
+        invalidateRideQuote();
         rideQuoteForm.elements[which + "_label"].value = item.label;
         rideQuoteForm.elements[which + "_lat"].value = String(item.lat);
         rideQuoteForm.elements[which + "_lon"].value = String(item.lon);
@@ -808,6 +820,7 @@ document.querySelector("#find-destination").addEventListener("click", () => find
 for (const which of ["pickup","destination"]) {
   rideQuoteForm.elements[which + "_query"].addEventListener("input", () => clearAddressSelection(which));
 }
+rideQuoteForm.elements.vehicle_type.addEventListener("change", invalidateRideQuote);
 
 const locatePickup = node("button", "secondary-button", "Përdor vendndodhjen time për nisjen");
 locatePickup.type = "button";
@@ -851,7 +864,6 @@ citySelect.addEventListener("change",()=>{
     rideQuoteForm.elements[which+"_query"].value="";
     clearAddressSelection(which);
   }
-  rideQuoteResult.replaceChildren();
   showMessage(rideQuoteMessage,"Qyteti u ndryshua. Zgjidh përsëri nisjen dhe destinacionin.");
   if(rideMap){rideMap.setView(mapCityCenter(),12);setTimeout(()=>rideMap.invalidateSize(),100);}
 });
@@ -874,7 +886,9 @@ rideQuoteForm.addEventListener("submit", async event => {
   }
   const submit = rideQuoteForm.querySelector('button[type="submit"]');
   submit.disabled = true;
+  const quoteRevisionAtRequest = rideQuoteRevision;
   rideQuoteResult.replaceChildren();
+  delete rideQuoteResult.dataset.quoteRevision;
   showMessage(rideQuoteMessage, "Po llogarisim rrugën dhe çmimin në server…");
   try {
     const result = await apiRequest("/ride-quotes", {
@@ -891,6 +905,11 @@ rideQuoteForm.addEventListener("submit", async event => {
       }),
     });
     const quote = result.data;
+    if (quoteRevisionAtRequest !== rideQuoteRevision) {
+      showMessage(rideQuoteMessage, "Pikat e udhëtimit ndryshuan gjatë llogaritjes. Llogarit përsëri çmimin para rezervimit.", "error");
+      return;
+    }
+    rideQuoteResult.dataset.quoteRevision = String(quoteRevisionAtRequest);
     // Keep one idempotency key for this quote across retries. A network timeout can
     // happen after the server committed the ride; a new key on retry could duplicate it.
     const bookingIdempotencyKey = crypto.randomUUID();
@@ -901,6 +920,10 @@ rideQuoteForm.addEventListener("submit", async event => {
     const book = node("button", "primary-button", "Konfirmo rezervimin");
     book.type = "button";
     book.addEventListener("click", async () => {
+      if (quoteRevisionAtRequest !== rideQuoteRevision) {
+        invalidateRideQuote();
+        return;
+      }
       book.disabled = true;
       book.textContent = "Po krijojmë rezervimin…";
       try {
@@ -909,6 +932,7 @@ rideQuoteForm.addEventListener("submit", async event => {
           headers: { "idempotency-key": bookingIdempotencyKey },
           body: JSON.stringify({ quote_id: quote.quote_id }),
         });
+        delete rideQuoteResult.dataset.quoteRevision;
         rideQuoteResult.replaceChildren(node("h4", "", "Kërkesa për udhëtim u regjistrua"), node("p", "", "Statusi: " + (booked.data?.status || "searching") + ". Çmimi: " + euro(booked.data?.quoted_amount_cents) + "."));
         rideQuoteResult.append(node("p", "", booked.data?.driver_offer_sent ? "Oferta iu dërgua një shoferi të përshtatshëm; prit konfirmimin e tij." : "Rezervimi u ruajt, por nuk u gjet shofer i lirë për momentin."));
         showMessage(rideQuoteMessage, "Rezervimi u krijua në sistem.", "success");
@@ -928,6 +952,10 @@ rideQuoteForm.addEventListener("submit", async event => {
     rideQuoteResult.append(book);
     showMessage(rideQuoteMessage, "Çmimi u llogarit nga distanca dhe koha e rrugës në server.", "success");
   } catch (error) {
+    if (quoteRevisionAtRequest !== rideQuoteRevision) {
+      showMessage(rideQuoteMessage, "Pikat e udhëtimit ndryshuan gjatë llogaritjes. Llogarit përsëri çmimin para rezervimit.", "error");
+      return;
+    }
     const messages = {
       ROUTING_NOT_CONFIGURED: "Shërbimi i rrugëzimit nuk është konfiguruar. Çmimi nuk u hamendësua.",
       RIDE_PRICING_NOT_CONFIGURED: "Tarifat e udhëtimit nuk janë konfiguruar për këtë qytet.",
