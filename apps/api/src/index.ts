@@ -1439,8 +1439,12 @@ export default {
           if (detail.includes("DRIVER_HAS_ACTIVE_JOB")) {
             return response({ error: { code: "DRIVER_HAS_ACTIVE_JOB", message: "Finish or cancel the active job before going offline or changing mode.", request_id: requestId } }, 409, requestId, origin, env);
           }
-          if (detail.includes("DRIVER_NOT_APPROVED")) return response({ error: { code: "DRIVER_NOT_APPROVED", request_id: requestId } }, 409, requestId, origin, env);
+          if (detail.includes("DRIVER_NOT_APPROVED")) return response({ error: { code: "DRIVER_NOT_APPROVED", message: "Driver application approval is required.", request_id: requestId } }, 409, requestId, origin, env);
           if (detail.includes("DRIVER_APPLICATION_REQUIRED")) return response({ error: { code: "DRIVER_APPLICATION_REQUIRED", request_id: requestId } }, 409, requestId, origin, env);
+          if (detail.includes("DRIVER_DOCUMENTS_NOT_APPROVED")) return response({ error: { code: "DRIVER_DOCUMENTS_NOT_APPROVED", message: "Identity, driving licence, vehicle registration and insurance must be approved and current.", request_id: requestId } }, 409, requestId, origin, env);
+          if (detail.includes("DRIVER_VEHICLE_NOT_APPROVED")) return response({ error: { code: "DRIVER_VEHICLE_NOT_APPROVED", message: "At least one approved vehicle with current documents is required.", request_id: requestId } }, 409, requestId, origin, env);
+          if (detail.includes("CITY_SERVICE_UNAVAILABLE")) return response({ error: { code: "CITY_SERVICE_UNAVAILABLE", message: "This service is not active in the selected city.", request_id: requestId } }, 409, requestId, origin, env);
+          if (detail.includes("DRIVER_LOCATION_REQUIRED")) return response({ error: { code: "DRIVER_LOCATION_REQUIRED", message: "A fresh driver location is required before going online.", request_id: requestId } }, 409, requestId, origin, env);
           return response({ error: { code: "AVAILABILITY_UPDATE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
         }
         return response({ data: payload }, 200, requestId, origin, env);
