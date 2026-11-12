@@ -163,6 +163,7 @@ try {
   const rideApi = {
     quoteRequests: 0,
     quoteBodies: [],
+    geocodeQueries: [],
     latestQuoteId: "",
     bookingKeys: [],
     ride: {
@@ -188,6 +189,7 @@ try {
   await page.route(`${apiOrigin}/geocode`, async route => {
     const requestBody = JSON.parse(route.request().postData() || "{}");
     const query = String(requestBody.query || "").toLowerCase();
+    rideApi.geocodeQueries.push(requestBody.query || "");
     const pickup = query.includes("nisja");
     const updatedPickup = pickup && query.includes("e re");
     const thirdPickup = pickup && query.includes("tjetër");
@@ -324,6 +326,9 @@ try {
   assert.equal(await quoteConfirm.count(), 0, "a quote response for coordinates changed while the request was in flight must be ignored");
   assert.match(await page.locator("#ride-quote-message").textContent(), /ndryshuan gjatë llogaritjes/i);
   await page.locator("#find-pickup").click();
+  await page.waitForFunction(() => document.querySelectorAll("#pickup-suggestions button").length > 0 || Boolean(document.querySelector("#pickup-suggestions")?.textContent?.trim()), null, { timeout: 10000 }).catch(async error => {
+    throw new Error("Pickup geocoding produced no visible result: " + JSON.stringify({ geocodeQueries: rideApi.geocodeQueries, message: await page.locator("#ride-quote-message").textContent(), suggestions: await page.locator("#pickup-suggestions").textContent(), sessionDialogOpen: await page.locator("#account-dialog").getAttribute("open") }) + "; " + error.message);
+  });
   await page.locator("#pickup-suggestions button").first().click();
 
   await quoteSubmit.click();
