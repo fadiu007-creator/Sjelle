@@ -327,7 +327,7 @@ try {
   assert.match(await page.locator("#ride-quote-message").textContent(), /ndryshuan gjatë llogaritjes/i);
   await page.locator("#find-pickup").click();
   await page.waitForFunction(() => document.querySelectorAll("#pickup-suggestions button").length > 0 || Boolean(document.querySelector("#pickup-suggestions")?.textContent?.trim()), null, { timeout: 10000 }).catch(async error => {
-    throw new Error("Pickup geocoding produced no visible result: " + JSON.stringify({ geocodeQueries: rideApi.geocodeQueries, message: await page.locator("#ride-quote-message").textContent(), suggestions: await page.locator("#pickup-suggestions").textContent(), sessionDialogOpen: await page.locator("#account-dialog").getAttribute("open") }) + "; " + error.message);
+    throw new Error("Pickup geocoding produced no visible result: " + JSON.stringify({ geocodeQueries: rideApi.geocodeQueries, message: await page.locator("#ride-quote-message").textContent(), suggestions: await page.locator("#pickup-suggestions").textContent(), pickupQuery: await pickupQuery.inputValue(), selectedCity: await page.locator("#city-select").inputValue(), findPickupDisabled: await page.locator("#find-pickup").isDisabled(), findPickupVisible: await page.locator("#find-pickup").isVisible(), quoteSubmitDisabled: await quoteSubmit.isDisabled(), accountDialogVisible: await page.locator("#account-dialog").isVisible(), pageUrl: page.url() }) + "; " + error.message);
   });
   await page.locator("#pickup-suggestions button").first().click();
 
