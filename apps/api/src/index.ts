@@ -1406,7 +1406,7 @@ export default {
           const locationCutoff = new Date(Date.now() - 120000).toISOString();
           const [docsResponse, vehicleResponse, cityResponse, locationResponse] = await Promise.all([
             databaseRequest(env, "sjelle_driver_documents?driver_id=eq." + encodeURIComponent(user.id) + "&select=document_type,review_status,expires_at,created_at&order=created_at.desc"),
-            databaseRequest(env, "sjelle_vehicles?driver_id=eq." + encodeURIComponent(user.id) + "&review_status=eq.approved&select=id&limit=1"),
+            databaseRequest(env, "sjelle_vehicles?driver_id=eq." + encodeURIComponent(user.id) + "&review_status=eq.approved&or=(document_expires_at.is.null,document_expires_at.gte." + new Date().toISOString().slice(0,10) + ")&select=id,document_expires_at&limit=1"),
             databaseRequest(env, "sjelle_cities?id=eq." + encodeURIComponent(profile.city_id) + "&select=active,rides_enabled,food_enabled&limit=1"),
             databaseRequest(env, "sjelle_driver_locations?driver_id=eq." + encodeURIComponent(user.id) + "&recorded_at=gte." + encodeURIComponent(locationCutoff) + "&select=driver_id&limit=1"),
           ]);
@@ -1495,7 +1495,7 @@ export default {
         if (body.review_status === "approved") {
           const [docsResponse, vehicleResponse] = await Promise.all([
             databaseRequest(env, "sjelle_driver_documents?driver_id=eq." + encodeURIComponent(driverReviewMatch[1]) + "&select=document_type,review_status,expires_at,created_at&order=created_at.desc"),
-            databaseRequest(env, "sjelle_vehicles?driver_id=eq." + encodeURIComponent(driverReviewMatch[1]) + "&review_status=eq.approved&select=id&limit=1"),
+            databaseRequest(env, "sjelle_vehicles?driver_id=eq." + encodeURIComponent(driverReviewMatch[1]) + "&review_status=eq.approved&or=(document_expires_at.is.null,document_expires_at.gte." + new Date().toISOString().slice(0,10) + ")&select=id,document_expires_at&limit=1"),
           ]);
           const docs = await parseJson(docsResponse) as Array<{ document_type: string; review_status: string; expires_at: string | null; created_at: string }>;
           const vehicles = await parseJson(vehicleResponse) as unknown[];
