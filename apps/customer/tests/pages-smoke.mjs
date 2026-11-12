@@ -190,13 +190,13 @@ try {
     const query = String(requestBody.query || "").toLowerCase();
     const pickup = query.includes("nisja");
     const updatedPickup = pickup && query.includes("e re");
-    const updatedDestination = !pickup && query.includes("i ri");
+    const thirdPickup = pickup && query.includes("tjetër");
     return route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({ data: [{
-        label: pickup ? (updatedPickup ? "Rruga e Re, Ferizaj" : "Rruga A, Ferizaj") : (updatedDestination ? "Parku, Ferizaj" : "Sheshi, Ferizaj"),
-        lat: pickup ? (updatedPickup ? 42.3722 : 42.3702) : (updatedDestination ? 42.3733 : 42.3712),
+        label: pickup ? (thirdPickup ? "Rruga tjetër, Ferizaj" : updatedPickup ? "Rruga e Re, Ferizaj" : "Rruga A, Ferizaj") : "Sheshi, Ferizaj",
+        lat: pickup ? (thirdPickup ? 42.3733 : updatedPickup ? 42.3722 : 42.3702) : 42.3712,
         lon: pickup ? 21.1553 : 21.1563,
       }] }),
     });
@@ -304,7 +304,6 @@ try {
   }
 
   const pickupQuery = page.locator('#ride-quote-form input[name="pickup_query"]');
-  const destinationQuery = page.locator('#ride-quote-form input[name="destination_query"]');
   const quoteSubmit = page.locator('#ride-quote-form button[type="submit"]');
   const quoteConfirm = page.locator("#ride-quote-result").getByRole("button", { name: "Konfirmo rezervimin" });
 
@@ -320,17 +319,17 @@ try {
   // A response for an older in-flight request must not restore a stale quote.
   await quoteSubmit.click();
   await secondQuoteStarted;
-  await destinationQuery.fill("Destinacioni i ri, Ferizaj");
+  await pickupQuery.fill("Nisja tjetër, Ferizaj");
   await page.waitForTimeout(400);
   assert.equal(await quoteConfirm.count(), 0, "a quote response for coordinates changed while the request was in flight must be ignored");
   assert.match(await page.locator("#ride-quote-message").textContent(), /ndryshuan gjatë llogaritjes/i);
-  await page.locator("#find-destination").click();
-  await page.locator("#destination-suggestions button").first().click();
+  await page.locator("#find-pickup").click();
+  await page.locator("#pickup-suggestions button").first().click();
 
   await quoteSubmit.click();
   await quoteConfirm.waitFor({ state: "visible" });
-  assert.equal(rideApi.quoteBodies[2].pickup_label, "Rruga e Re, Ferizaj", "new quote must use the newly selected pickup");
-  assert.equal(rideApi.quoteBodies[2].destination_label, "Parku, Ferizaj", "new quote must use the newly selected destination");
+  assert.equal(rideApi.quoteBodies[2].pickup_label, "Rruga tjetër, Ferizaj", "new quote must use the newly selected pickup");
+  assert.equal(rideApi.quoteBodies[2].destination_label, "Sheshi, Ferizaj", "unchanged destination must remain selected");
 
   // Changing the vehicle class also invalidates the price shown for the old class.
   const vehicleType = page.locator('#ride-quote-form select[name="vehicle_type"]');
@@ -340,8 +339,8 @@ try {
   await quoteSubmit.click();
   await quoteConfirm.waitFor({ state: "visible" });
   assert.equal(rideApi.quoteRequests, 4, "a fresh quote is required after pickup, destination and vehicle changes");
-  assert.equal(rideApi.quoteBodies[3].pickup_label, "Rruga e Re, Ferizaj");
-  assert.equal(rideApi.quoteBodies[3].destination_label, "Parku, Ferizaj");
+  assert.equal(rideApi.quoteBodies[3].pickup_label, "Rruga tjetër, Ferizaj");
+  assert.equal(rideApi.quoteBodies[3].destination_label, "Sheshi, Ferizaj");
 
   await quoteConfirm.click();
   await page.getByRole("button", { name: "Provo përsëri" }).waitFor({ state: "visible" });
@@ -354,7 +353,7 @@ try {
   await page.getByRole("button", { name: "Shiko udhëtimet e mia" }).click();
   await page.locator("#account-dialog[open]").waitFor({ state: "visible" });
   await page.locator("#my-rides").getByText("Po kërkohet shofer").waitFor({ state: "visible" });
-  assert.match(await page.locator("#my-rides").textContent(), /Rruga e Re, Ferizaj → Parku, Ferizaj/);
+  assert.match(await page.locator("#my-rides").textContent(), /Rruga tjetër, Ferizaj → Sheshi, Ferizaj/);
   console.log("PASS ride flow validates coordinates, invalidates stale quotes after address/vehicle changes, ignores stale in-flight quotes, retries booking idempotently and opens the saved trip");
 
   await page.unroute(`${apiOrigin}/auth/login`);
