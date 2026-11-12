@@ -39,7 +39,7 @@ async function changeDriverMode(){
   showAlert("Modaliteti u ndryshua në "+driverModeLabel(savedMode)+". Je ende online.","success");
  }catch(error){
   select.value=previous;
-  const message=error.code==="DRIVER_HAS_ACTIVE_JOB"?"Përfundo ose anulo punën aktive para se të ndryshosh modalitetin.":error.code==="CITY_SERVICE_UNAVAILABLE"?"Ky shërbim nuk është aktiv në qytetin tënd.":error.code==="DRIVER_LOCATION_REQUIRED"?"GPS-i nuk është përditësuar. Lejo vendndodhjen dhe provo përsëri.":"Modaliteti nuk u ndryshua: "+error.message;
+  const message=error.code==="DRIVER_HAS_ACTIVE_JOB"?"Përfundo ose anulo punën aktive para se të ndryshosh modalitetin.":error.code==="DRIVER_DOCUMENTS_NOT_APPROVED"?"Dokumentet e identitetit, patentës, regjistrimit dhe sigurimit duhet të jenë të aprovuara dhe të vlefshme.":error.code==="DRIVER_VEHICLE_NOT_APPROVED"?"Duhet të kesh të paktën një automjet të aprovuar me dokumente të vlefshme.":error.code==="CITY_SERVICE_UNAVAILABLE"?"Ky shërbim nuk është aktiv në qytetin tënd.":error.code==="DRIVER_LOCATION_REQUIRED"?"GPS-i nuk është përditësuar. Lejo vendndodhjen dhe provo përsëri.":"Modaliteti nuk u ndryshua: "+error.message;
   showAlert(message,"error");
  }finally{availabilityChanging=false;setAvailabilityControlsDisabled(false);}
 }
@@ -67,7 +67,14 @@ async function setAvailability(online){
   if(online)refreshLocationSilently();
  }catch(e){
   if(state.profile?.online)$("#driver-mode").value=state.profile.selected_mode||"ride";
-  showAlert("Nuk mund të ndryshohet statusi: "+e.message,"error");
+  const messages={
+   DRIVER_DOCUMENTS_NOT_APPROVED:"Dokumentet e identitetit, patentës, regjistrimit dhe sigurimit duhet të jenë të aprovuara dhe të vlefshme.",
+   DRIVER_VEHICLE_NOT_APPROVED:"Duhet të kesh të paktën një automjet të aprovuar me dokumente të vlefshme.",
+   CITY_SERVICE_UNAVAILABLE:"Ky shërbim nuk është aktiv në qytetin tënd.",
+   DRIVER_LOCATION_REQUIRED:"GPS-i nuk është përditësuar. Lejo vendndodhjen dhe provo përsëri.",
+   DRIVER_NOT_APPROVED:"Aplikimi yt duhet të aprovohet para se të dalësh online.",
+  };
+  showAlert(messages[e.code]||"Nuk mund të ndryshohet statusi: "+e.message,"error");
  }finally{availabilityChanging=false;setAvailabilityControlsDisabled(false);}
 }
 $("#driver-online").addEventListener("click",()=>setAvailability(true));$("#driver-offline").addEventListener("click",()=>setAvailability(false));
