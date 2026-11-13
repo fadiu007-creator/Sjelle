@@ -198,12 +198,14 @@ try {
     const pickup = query.includes("nisja");
     const updatedPickup = pickup && query.includes("e re");
     const thirdPickup = pickup && query.includes("tjetër");
+    const oldPickup = pickup && query.includes("e vjeter");
+    if (oldPickup) await new Promise(resolve => setTimeout(resolve, 350));
     return route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({ data: [{
-        label: pickup ? (thirdPickup ? "Rruga tjetër, Ferizaj" : updatedPickup ? "Rruga e Re, Ferizaj" : "Rruga A, Ferizaj") : "Sheshi, Ferizaj",
-        lat: pickup ? (thirdPickup ? 42.3733 : updatedPickup ? 42.3722 : 42.3702) : 42.3712,
+        label: pickup ? (thirdPickup ? "Rruga tjetër, Ferizaj" : oldPickup ? "Rruga e Vjetër, Ferizaj" : updatedPickup ? "Rruga e Re, Ferizaj" : "Rruga A, Ferizaj") : "Sheshi, Ferizaj",
+        lat: pickup ? (thirdPickup ? 42.3733 : oldPickup ? 42.3744 : updatedPickup ? 42.3722 : 42.3702) : 42.3712,
         lon: pickup ? 21.1553 : 21.1563,
       }] }),
     });
@@ -242,7 +244,7 @@ try {
         currency: "EUR",
         distance_m: 2500,
         duration_s: 420,
-        expires_at: "2026-11-11T09:05:00Z",
+        expires_at: new Date(Date.now() + (quoteNumber === 1 ? 2500 : 5 * 60 * 1000)).toISOString(),
       } }),
     });
   });
@@ -301,6 +303,18 @@ try {
   await page.locator("#find-destination").click();
   await page.locator("#destination-suggestions button").first().click();
 
+  // A slower response for an older pickup search must not overwrite the newer result.
+  const pickupAddressInput = page.locator('#ride-quote-form input[name="pickup_query"]');
+  await pickupAddressInput.fill("Nisja e vjeter, Ferizaj");
+  await page.locator("#find-pickup").click();
+  await pickupAddressInput.fill("Nisja e re, Ferizaj");
+  await page.locator("#find-pickup").click();
+  await page.locator("#pickup-suggestions button").first().waitFor({ state: "visible" });
+  assert.equal(await page.locator("#pickup-suggestions button").first().textContent(), "Rruga e Re, Ferizaj");
+  await page.waitForTimeout(450);
+  assert.equal(await page.locator("#pickup-suggestions button").first().textContent(), "Rruga e Re, Ferizaj", "a late older geocode response must not overwrite the latest pickup suggestions");
+  await page.locator("#pickup-suggestions button").first().click();
+
   for (const name of ["pickup_lon", "destination_lon"]) {
     const field = page.locator(`#ride-quote-form input[name="${name}"]`);
     const originalValue = await field.inputValue();
@@ -319,6 +333,11 @@ try {
   // Editing an address after a quote must remove the old confirmation immediately.
   await quoteSubmit.click();
   await quoteConfirm.waitFor({ state: "visible" });
+  await page.waitForFunction(() => {
+    const button = document.querySelector("#ride-quote-result button");
+    return Boolean(button?.disabled && button.textContent?.includes("Çmimi skadoi"));
+  }, null, { timeout: 6000 });
+  assert.match(await page.locator("#ride-quote-result").textContent(), /Çmimi skadoi/i, "expired server quotes must disable booking and ask the customer to recalculate");
   await pickupQuery.fill("Nisja e re, Ferizaj");
   assert.equal(await quoteConfirm.count(), 0, "changing pickup must invalidate the displayed quote and booking action");
   assert.equal(await page.locator('#ride-quote-form input[name="pickup_lat"]').inputValue(), "", "changing pickup must clear its previously selected coordinates");
@@ -369,7 +388,7 @@ try {
   await page.locator("#account-dialog[open]").waitFor({ state: "visible" });
   await page.locator("#my-rides").getByText("Po kërkohet shofer").waitFor({ state: "visible" });
   assert.match(await page.locator("#my-rides").textContent(), /Rruga tjetër, Ferizaj → Sheshi, Ferizaj/);
-  console.log("PASS ride flow validates coordinates, invalidates stale quotes after address/vehicle changes, ignores stale in-flight quotes, retries booking idempotently and opens the saved trip");
+  console.log("PASS ride flow validates coordinates, ignores out-of-order geocoding, expires stale quotes, invalidates changed addresses/vehicles, retries booking idempotently and opens the saved trip");
 
   await page.unroute(`${apiOrigin}/auth/login`);
   await page.unroute(`${apiOrigin}/auth/refresh`);
