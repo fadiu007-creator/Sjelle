@@ -1485,6 +1485,23 @@ const worker = {
       if (!isRecord(body) || typeof body.online !== "boolean" || (body.mode !== undefined && !["ride","delivery"].includes(String(body.mode)))) {
         return response({ error: { code: "INVALID_AVAILABILITY", request_id: requestId } }, 400, requestId, origin, env);
       }
+      const latitude = typeof body.latitude === "number" && Number.isFinite(body.latitude) ? body.latitude : null;
+      const longitude = typeof body.longitude === "number" && Number.isFinite(body.longitude) ? body.longitude : null;
+      const accuracy = typeof body.accuracy_m === "number" && Number.isFinite(body.accuracy_m) ? body.accuracy_m : null;
+      const hasLocationInput = body.latitude !== undefined || body.longitude !== undefined || body.accuracy_m !== undefined;
+      const hasLocation = latitude !== null && longitude !== null && accuracy !== null;
+      if (hasLocationInput && !hasLocation) {
+        return response({ error: { code: "INVALID_LOCATION", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      if (hasLocationInput && body.online !== true) {
+        return response({ error: { code: "INVALID_AVAILABILITY", message: "GPS coordinates may only accompany an online transition.", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      if (latitude !== null && longitude !== null && (latitude < 41.7 || latitude > 43.4 || longitude < 19.7 || longitude > 22.0)) {
+        return response({ error: { code: "INVALID_LOCATION", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      if (accuracy !== null && (accuracy < 0 || accuracy > 1500)) {
+        return response({ error: { code: "GPS_ACCURACY_TOO_LOW", message: "GPS accuracy must be 1,500 metres or better.", request_id: requestId } }, 422, requestId, origin, env);
+      }
       try {
         const profileResponse = await databaseRequest(env, "sjelle_driver_profiles?user_id=eq." + encodeURIComponent(user.id) + "&select=user_id,review_status,city_id,selected_mode&limit=1");
         const profiles = await parseJson(profileResponse) as Array<{ user_id: string; review_status: string; city_id: string; selected_mode: string | null }>;
@@ -1526,7 +1543,9 @@ const worker = {
             databaseRequest(env, "sjelle_driver_documents?driver_id=eq." + encodeURIComponent(user.id) + "&select=document_type,review_status,expires_at,created_at&order=created_at.desc"),
             databaseRequest(env, "sjelle_vehicles?driver_id=eq." + encodeURIComponent(user.id) + "&review_status=eq.approved&or=(document_expires_at.is.null,document_expires_at.gte." + new Date().toISOString().slice(0,10) + ")&select=id,document_expires_at&limit=1"),
             databaseRequest(env, "sjelle_cities?id=eq." + encodeURIComponent(profile.city_id) + "&select=active,rides_enabled,food_enabled&limit=1"),
-            databaseRequest(env, "sjelle_driver_locations?driver_id=eq." + encodeURIComponent(user.id) + "&recorded_at=gte." + encodeURIComponent(locationCutoff) + "&select=driver_id&limit=1"),
+            hasLocation
+              ? Promise.resolve(new Response("[]", { status: 200 }))
+              : databaseRequest(env, "sjelle_driver_locations?driver_id=eq." + encodeURIComponent(user.id) + "&recorded_at=gte." + encodeURIComponent(locationCutoff) + "&select=driver_id&limit=1"),
           ]);
           const docs = await parseJson(docsResponse) as Array<{ document_type: string; review_status: string; expires_at: string | null; created_at: string }>;
           const vehicles = await parseJson(vehicleResponse) as unknown[];
@@ -1537,7 +1556,7 @@ const worker = {
           if (!requiredDriverDocsApproved(docs) || !vehicles.length) {
             return response({ error: { code: "DRIVER_DOCUMENTS_NOT_APPROVED", message: "Identity, driving licence, vehicle registration and insurance must be approved, with at least one approved vehicle.", request_id: requestId } }, 409, requestId, origin, env);
           }
-          if (!locations.length) {
+          if (!hasLocation && !locations.length) {
             return response({ error: { code: "DRIVER_LOCATION_REQUIRED", message: "Send a fresh GPS location before going online. Location must be updated within the last 2 minutes.", request_id: requestId } }, 409, requestId, origin, env);
           }
           const city = cities[0];
@@ -1547,9 +1566,16 @@ const worker = {
         }
         // The database RPC locks the driver row and serializes this update with
         // ride/delivery assignment triggers; the earlier reads are only for clear UX errors.
-        const update = await databaseRequest(env, "rpc/sjelle_set_driver_availability", {
+        const update = await databaseRequest(env, "rpc/sjelle_set_driver_availability_with_location", {
           method: "POST",
-          body: JSON.stringify({ p_driver_id: user.id, p_online: body.online, p_mode: mode }),
+          body: JSON.stringify({
+            p_driver_id: user.id,
+            p_online: body.online,
+            p_mode: mode,
+            p_latitude: hasLocation ? latitude : null,
+            p_longitude: hasLocation ? longitude : null,
+            p_accuracy_m: hasLocation ? accuracy : null,
+          }),
         });
         const payload = await parseJson(update) as unknown;
         if (!update.ok) {
@@ -1591,13 +1617,27 @@ const worker = {
         const profiles = await parseJson(driver) as Array<{ online: boolean; review_status: string }>;
         if (!driver.ok) return response({ error: { code: "DRIVER_PROFILE_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
         if (!profiles[0] || profiles[0].review_status !== "approved") return response({ error: { code: "DRIVER_NOT_APPROVED", message: "Only an approved driver can submit GPS location.", request_id: requestId } }, 409, requestId, origin, env);
-        const result = await databaseRequest(env, "sjelle_driver_locations?on_conflict=driver_id", {
-          method: "POST", headers: { prefer: "resolution=merge-duplicates,return=minimal" },
-          body: JSON.stringify({ driver_id: user.id, latitude: body.latitude, longitude: body.longitude,
-            accuracy_m: body.accuracy_m ?? null, heading_degrees: body.heading_degrees ?? null, recorded_at: new Date().toISOString(), updated_at: new Date().toISOString() }),
+        if (!profiles[0].online) return response({ error: { code: "DRIVER_OFFLINE", message: "GPS updates are accepted only while the driver is online.", request_id: requestId } }, 409, requestId, origin, env);
+        const result = await databaseRequest(env, "rpc/sjelle_update_driver_location_if_online", {
+          method: "POST",
+          body: JSON.stringify({
+            p_driver_id: user.id,
+            p_latitude: body.latitude,
+            p_longitude: body.longitude,
+            p_accuracy_m: body.accuracy_m,
+            p_heading_degrees: body.heading_degrees ?? null,
+          }),
         });
-        if (!result.ok) return response({ error: { code: "LOCATION_UPDATE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
-        return response({ data: { recorded: true } }, 200, requestId, origin, env);
+        const payload = await parseJson(result) as unknown;
+        if (!result.ok) {
+          const detail = isRecord(payload) ? String(payload.message ?? payload.error ?? "") : "";
+          if (detail.includes("DRIVER_OFFLINE")) return response({ error: { code: "DRIVER_OFFLINE", message: "GPS updates are accepted only while the driver is online.", request_id: requestId } }, 409, requestId, origin, env);
+          if (detail.includes("DRIVER_NOT_APPROVED")) return response({ error: { code: "DRIVER_NOT_APPROVED", request_id: requestId } }, 409, requestId, origin, env);
+          if (detail.includes("GPS_ACCURACY_TOO_LOW")) return response({ error: { code: "GPS_ACCURACY_TOO_LOW", request_id: requestId } }, 422, requestId, origin, env);
+          if (detail.includes("INVALID_LOCATION")) return response({ error: { code: "INVALID_LOCATION", request_id: requestId } }, 400, requestId, origin, env);
+          return response({ error: { code: "LOCATION_UPDATE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        }
+        return response({ data: payload }, 200, requestId, origin, env);
       } catch { return response({ error: { code: "LOCATION_UPDATE_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
     }
 

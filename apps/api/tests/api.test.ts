@@ -428,7 +428,7 @@ test("driver availability uses the atomic database RPC after preflight checks", 
     if (url.includes("sjelle_rides?") || url.includes("sjelle_delivery_jobs?")) {
       return new Response("[]", { status: 200 });
     }
-    if (url.includes("/rpc/sjelle_set_driver_availability")) {
+    if (url.includes("/rpc/sjelle_set_driver_availability_with_location")) {
       return new Response(JSON.stringify({ online: false, mode: "ride" }), { status: 200 });
     }
     return new Response("[]", { status: 200 });
@@ -447,7 +447,7 @@ test("driver availability uses the atomic database RPC after preflight checks", 
     assert.equal(response.status, 200);
     assert.equal(body.data.online, false);
     assert.equal(body.data.mode, "ride");
-    assert.ok(calls.some(call => call.url.includes("/rpc/sjelle_set_driver_availability") && call.method === "POST"));
+    assert.ok(calls.some(call => call.url.includes("/rpc/sjelle_set_driver_availability_with_location") && call.method === "POST"));
     assert.equal(calls.some(call => call.url.includes("sjelle_driver_profiles?") && call.method === "PATCH"), false);
   } finally {
     globalThis.fetch = originalFetch;
@@ -472,7 +472,7 @@ test("atomic driver availability RPC remains authoritative if a job is assigned 
     if (url.includes("sjelle_rides?") || url.includes("sjelle_delivery_jobs?")) {
       return new Response("[]", { status: 200 });
     }
-    if (url.includes("/rpc/sjelle_set_driver_availability")) {
+    if (url.includes("/rpc/sjelle_set_driver_availability_with_location")) {
       return new Response(JSON.stringify({ message: "DRIVER_HAS_ACTIVE_JOB" }), { status: 409 });
     }
     return new Response("[]", { status: 200 });

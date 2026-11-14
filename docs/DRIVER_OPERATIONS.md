@@ -91,3 +91,12 @@ Do not add a second ledger write in the Worker until the SQL RPC and current sch
 ## Current verification boundary
 
 The Worker regression tests cover request-level cash validation and the absence of an RPC call for rejected input. They do not prove the SQL transaction is idempotent, prove cash changed hands, or substitute for staging tests. CI and Cloudflare deployment must be checked independently.
+
+
+## GPS privacy and online transitions
+
+- The portal sends the first GPS fix together with the online request. The API persists the location and changes availability through one database transaction; if readiness or active-job checks fail, the location write rolls back.
+- The standalone GPS endpoint accepts updates only while the driver profile is already online. A stale browser tab cannot keep writing precise coordinates after the driver goes offline.
+- Going offline deletes the driver's latest precise location in the same database transaction as the availability change. The existing five-minute cleanup job remains a secondary retention safeguard.
+- Ride tracking continues to expose a fresh driver location only for an assigned, active ride and only to an authorized participant. The customer endpoint does not become a general driver-location lookup.
+- Live GPS refreshes re-check the online flag under a database row lock, so a refresh racing with the offline action cannot recreate a location row after offline cleanup.
