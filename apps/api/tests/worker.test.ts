@@ -1175,7 +1175,7 @@ test("going online writes the GPS fix through the atomic availability RPC", asyn
   const driverId = "00000000-0000-4000-8000-000000000099";
   const cityId = "00000000-0000-4000-8000-000000000088";
   const requests: Array<{ url: string; method: string; body?: string }> = [];
-  let rpcBody: Record<string, unknown> | null = null;
+  const rpcBodies: Record<string, unknown>[] = [];
   const docs = ["identity", "driving_licence", "vehicle_registration", "insurance"].map(document_type => ({
     document_type, review_status: "approved", expires_at: null, created_at: new Date().toISOString(),
   }));
@@ -1193,7 +1193,7 @@ test("going online writes the GPS fix through the atomic availability RPC", asyn
       active: true, rides_enabled: true, food_enabled: true,
     }]), { status: 200 });
     if (url.includes("/rest/v1/rpc/sjelle_set_driver_availability_with_location")) {
-      rpcBody = JSON.parse(String(init?.body || "{}")) as Record<string, unknown>;
+      rpcBodies.push(JSON.parse(String(init?.body || "{}")) as Record<string, unknown>);
       return new Response(JSON.stringify({ user_id: driverId, online: true, selected_mode: "ride" }), { status: 200 });
     }
     if (url.includes("/rest/v1/sjelle_driver_locations?")) {
@@ -1212,11 +1212,11 @@ test("going online writes the GPS fix through the atomic availability RPC", asyn
       SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
     } as never);
     assert.equal(result.status, 200);
-    assert.equal(rpcBody?.p_online, true);
-    assert.equal(rpcBody?.p_mode, "ride");
-    assert.equal(rpcBody?.p_latitude, 42.66);
-    assert.equal(rpcBody?.p_longitude, 21.16);
-    assert.equal(rpcBody?.p_accuracy_m, 8);
+    assert.equal(rpcBodies[0]?.p_online, true);
+    assert.equal(rpcBodies[0]?.p_mode, "ride");
+    assert.equal(rpcBodies[0]?.p_latitude, 42.66);
+    assert.equal(rpcBodies[0]?.p_longitude, 21.16);
+    assert.equal(rpcBodies[0]?.p_accuracy_m, 8);
     assert.equal(requests.some(request => request.method === "POST" && request.url.includes("sjelle_driver_locations?")), false);
   } finally {
     globalThis.fetch = originalFetch;
