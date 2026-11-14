@@ -377,7 +377,7 @@ test("online GPS refresh uses a database lock against concurrent offline transit
   const originalFetch = globalThis.fetch;
   const driverId = "00000000-0000-4000-8000-000000000099";
   const requests: string[] = [];
-  let rpcBody: Record<string, unknown> | null = null;
+  const rpcBodies: Record<string, unknown>[] = [];
   globalThis.fetch = async (input, init) => {
     const url = String(input);
     requests.push(url);
@@ -386,7 +386,7 @@ test("online GPS refresh uses a database lock against concurrent offline transit
       online: true, review_status: "approved",
     }]), { status: 200 });
     if (url.includes("/rest/v1/rpc/sjelle_update_driver_location_if_online")) {
-      rpcBody = JSON.parse(String(init?.body || "{}")) as Record<string, unknown>;
+      rpcBodies.push(JSON.parse(String(init?.body || "{}")) as Record<string, unknown>);
       return new Response(JSON.stringify({ recorded: true }), { status: 200 });
     }
     if (url.includes("/rest/v1/sjelle_driver_locations?")) {
@@ -405,11 +405,11 @@ test("online GPS refresh uses a database lock against concurrent offline transit
       SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
     } as never);
     assert.equal(result.status, 200);
-    assert.equal(rpcBody?.p_driver_id, driverId);
-    assert.equal(rpcBody?.p_latitude, 42.66);
-    assert.equal(rpcBody?.p_longitude, 21.16);
-    assert.equal(rpcBody?.p_accuracy_m, 8);
-    assert.equal(rpcBody?.p_heading_degrees, 90);
+    assert.equal(rpcBodies[0]?.p_driver_id, driverId);
+    assert.equal(rpcBodies[0]?.p_latitude, 42.66);
+    assert.equal(rpcBodies[0]?.p_longitude, 21.16);
+    assert.equal(rpcBodies[0]?.p_accuracy_m, 8);
+    assert.equal(rpcBodies[0]?.p_heading_degrees, 90);
     assert.equal(requests.some(url => url.includes("/rest/v1/sjelle_driver_locations?")), false);
   } finally {
     globalThis.fetch = originalFetch;
