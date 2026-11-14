@@ -64,6 +64,8 @@ try {
   const apiOrigin = "https://saavqlbwffrwxingbnri.supabase.co/functions/v1/sjelle-api/api/v1";
   const adminRequests = [];
   let adminRoleAllowed = true;
+  let adminDocumentPending = false;
+  let adminSignedUrlResponseSent = false;
   await page.route(`${apiOrigin}/**`, async route => {
     const request = route.request();
     const pathname = new URL(request.url()).pathname.replace("/functions/v1/sjelle-api/api/v1", "");
@@ -77,9 +79,14 @@ try {
       return route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: { code: "FORBIDDEN" } }) });
     }
     adminRequests.push(pathname);
+    if (pathname.startsWith("/admin/driver-documents/") && pathname.endsWith("/signed-url")) {
+      await new Promise(resolve => setTimeout(resolve, 250));
+      adminSignedUrlResponseSent = true;
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { url: `${new URL(apiOrigin).origin}/storage/v1/object/sign/sjelle-driver-documents/smoke.pdf?token=smoke` } }) });
+    }
     const payloads = {
       "/admin/cities": { data: [] },
-      "/admin/driver-documents": { data: { documents: [], vehicles: [], drivers: [] } },
+      "/admin/driver-documents": { data: { documents: adminDocumentPending ? [{ id: "33333333-3333-4333-8333-333333333333", document_type: "identity", driver_id: "smoke-driver", document_number_last4: "1234", expires_at: "2027-12-31" }] : [], vehicles: [], drivers: [] } },
       "/admin/restaurants": { data: [] },
       "/admin/support-tickets": { data: [] },
     };
@@ -100,6 +107,26 @@ try {
   assert.ok(adminRequests.includes("/admin/restaurants"), "admin login must load the protected restaurant application queue");
   assert.match(await page.locator("#admin-alert").textContent(), /Paneli administrativ u ngarkua/i, "admin dashboard should report a successful protected load");
   console.log("PASS admin login returns to the admin dashboard and loads protected driver/restaurant queues with the session token");
+
+  adminDocumentPending = true;
+  await page.locator("#queue-refresh").click();
+  await page.getByText("Dokument · identity").waitFor({ state: "visible" });
+  const storageOrigin = new URL(apiOrigin).origin;
+  await page.route(`${storageOrigin}/storage/v1/object/sign/**`, route => route.fulfill({ status: 200, contentType: "text/html", body: "<!doctype html><title>Document preview smoke</title><p>Document preview</p>" }));
+  adminSignedUrlResponseSent = false;
+  const documentPopupPromise = page.waitForEvent("popup");
+  await page.getByRole("button", { name: "Shiko dokumentin" }).click();
+  const documentPopup = await documentPopupPromise;
+  assert.equal(adminSignedUrlResponseSent, false, "document preview tab must open synchronously before the signed-URL request resolves");
+  await documentPopup.waitForURL(url => url.startsWith(`${storageOrigin}/storage/v1/object/sign/`), { timeout: 10000 });
+  assert.equal(adminSignedUrlResponseSent, true, "the signed document URL should be loaded after the preview tab is opened");
+  assert.equal(await documentPopup.evaluate(() => window.opener), null, "document preview must not retain an opener reference");
+  await documentPopup.close();
+  await page.unroute(`${storageOrigin}/storage/v1/object/sign/**`);
+  adminDocumentPending = false;
+  await page.locator("#queue-refresh").click();
+  await page.getByText("Nuk ka dokumente, automjete ose aplikime në pritje.").waitFor({ state: "visible" });
+  console.log("PASS admin document review opens the private signed document in a new tab before the asynchronous request and clears opener access");
 
   adminRoleAllowed = false;
   await page.locator("#queue-refresh").click();
