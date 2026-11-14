@@ -167,3 +167,67 @@ $function$;
 
 revoke all on function public.sjelle_set_driver_availability_with_location(uuid, boolean, text, double precision, double precision, real) from public, anon, authenticated;
 grant execute on function public.sjelle_set_driver_availability_with_location(uuid, boolean, text, double precision, double precision, real) to service_role;
+
+
+-- Live GPS refreshes also lock the driver profile so an update cannot race an
+-- offline transition and recreate a location row after the offline cleanup.
+create or replace function public.sjelle_update_driver_location_if_online(
+  p_driver_id uuid,
+  p_latitude double precision,
+  p_longitude double precision,
+  p_accuracy_m real,
+  p_heading_degrees real
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'pg_catalog', 'public'
+as $function$
+declare
+  v_profile public.sjelle_driver_profiles%rowtype;
+begin
+  select * into v_profile
+  from public.sjelle_driver_profiles
+  where user_id = p_driver_id
+  for update;
+
+  if not found then
+    raise exception using errcode='P0001', message='DRIVER_APPLICATION_REQUIRED';
+  end if;
+  if v_profile.review_status <> 'approved' then
+    raise exception using errcode='P0001', message='DRIVER_NOT_APPROVED';
+  end if;
+  if not v_profile.online then
+    raise exception using errcode='P0001', message='DRIVER_OFFLINE';
+  end if;
+  if p_latitude is null or p_longitude is null
+    or p_latitude < 41.7 or p_latitude > 43.4
+    or p_longitude < 19.7 or p_longitude > 22.0 then
+    raise exception using errcode='P0001', message='INVALID_LOCATION';
+  end if;
+  if p_accuracy_m is null or p_accuracy_m < 0 or p_accuracy_m > 1500 then
+    raise exception using errcode='P0001', message='GPS_ACCURACY_TOO_LOW';
+  end if;
+  if p_heading_degrees is not null and (p_heading_degrees < 0 or p_heading_degrees >= 360) then
+    raise exception using errcode='P0001', message='INVALID_LOCATION';
+  end if;
+
+  insert into public.sjelle_driver_locations (
+    driver_id, latitude, longitude, accuracy_m, heading_degrees, recorded_at, updated_at
+  ) values (
+    p_driver_id, p_latitude, p_longitude, p_accuracy_m, p_heading_degrees, now(), now()
+  )
+  on conflict (driver_id) do update
+  set latitude=excluded.latitude,
+      longitude=excluded.longitude,
+      accuracy_m=excluded.accuracy_m,
+      heading_degrees=excluded.heading_degrees,
+      recorded_at=now(),
+      updated_at=now();
+
+  return jsonb_build_object('recorded', true, 'recorded_at', now());
+end;
+$function$;
+
+revoke all on function public.sjelle_update_driver_location_if_online(uuid, double precision, double precision, real, real) from public, anon, authenticated;
+grant execute on function public.sjelle_update_driver_location_if_online(uuid, double precision, double precision, real, real) to service_role;

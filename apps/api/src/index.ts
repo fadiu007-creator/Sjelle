@@ -1500,13 +1500,26 @@ export default {
         if (!driver.ok) return response({ error: { code: "DRIVER_PROFILE_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
         if (!profiles[0] || profiles[0].review_status !== "approved") return response({ error: { code: "DRIVER_NOT_APPROVED", message: "Only an approved driver can submit GPS location.", request_id: requestId } }, 409, requestId, origin, env);
         if (!profiles[0].online) return response({ error: { code: "DRIVER_OFFLINE", message: "GPS updates are accepted only while the driver is online.", request_id: requestId } }, 409, requestId, origin, env);
-        const result = await databaseRequest(env, "sjelle_driver_locations?on_conflict=driver_id", {
-          method: "POST", headers: { prefer: "resolution=merge-duplicates,return=minimal" },
-          body: JSON.stringify({ driver_id: user.id, latitude: body.latitude, longitude: body.longitude,
-            accuracy_m: body.accuracy_m ?? null, heading_degrees: body.heading_degrees ?? null, recorded_at: new Date().toISOString(), updated_at: new Date().toISOString() }),
+        const result = await databaseRequest(env, "rpc/sjelle_update_driver_location_if_online", {
+          method: "POST",
+          body: JSON.stringify({
+            p_driver_id: user.id,
+            p_latitude: body.latitude,
+            p_longitude: body.longitude,
+            p_accuracy_m: body.accuracy_m,
+            p_heading_degrees: body.heading_degrees ?? null,
+          }),
         });
-        if (!result.ok) return response({ error: { code: "LOCATION_UPDATE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
-        return response({ data: { recorded: true } }, 200, requestId, origin, env);
+        const payload = await parseJson(result) as unknown;
+        if (!result.ok) {
+          const detail = isRecord(payload) ? String(payload.message ?? payload.error ?? "") : "";
+          if (detail.includes("DRIVER_OFFLINE")) return response({ error: { code: "DRIVER_OFFLINE", message: "GPS updates are accepted only while the driver is online.", request_id: requestId } }, 409, requestId, origin, env);
+          if (detail.includes("DRIVER_NOT_APPROVED")) return response({ error: { code: "DRIVER_NOT_APPROVED", request_id: requestId } }, 409, requestId, origin, env);
+          if (detail.includes("GPS_ACCURACY_TOO_LOW")) return response({ error: { code: "GPS_ACCURACY_TOO_LOW", request_id: requestId } }, 422, requestId, origin, env);
+          if (detail.includes("INVALID_LOCATION")) return response({ error: { code: "INVALID_LOCATION", request_id: requestId } }, 400, requestId, origin, env);
+          return response({ error: { code: "LOCATION_UPDATE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        }
+        return response({ data: payload }, 200, requestId, origin, env);
       } catch { return response({ error: { code: "LOCATION_UPDATE_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
     }
 

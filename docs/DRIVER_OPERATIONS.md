@@ -99,3 +99,4 @@ The Worker regression tests cover request-level cash validation and the absence 
 - The standalone GPS endpoint accepts updates only while the driver profile is already online. A stale browser tab cannot keep writing precise coordinates after the driver goes offline.
 - Going offline deletes the driver's latest precise location in the same database transaction as the availability change. The existing five-minute cleanup job remains a secondary retention safeguard.
 - Ride tracking continues to expose a fresh driver location only for an assigned, active ride and only to an authorized participant. The customer endpoint does not become a general driver-location lookup.
+- Live GPS refreshes re-check the online flag under a database row lock, so a refresh racing with the offline action cannot recreate a location row after offline cleanup.
