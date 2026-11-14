@@ -118,7 +118,7 @@ try {
   await page.getByRole("button", { name: "Shiko dokumentin" }).click();
   const documentPopup = await documentPopupPromise;
   assert.equal(adminSignedUrlResponseSent, false, "document preview tab must open synchronously before the signed-URL request resolves");
-  await documentPopup.waitForURL(url => url.startsWith(`${storageOrigin}/storage/v1/object/sign/`), { timeout: 10000 });
+  await documentPopup.waitForURL(url => url.toString().startsWith(`${storageOrigin}/storage/v1/object/sign/`), { timeout: 10000 });
   assert.equal(adminSignedUrlResponseSent, true, "the signed document URL should be loaded after the preview tab is opened");
   assert.equal(await documentPopup.evaluate(() => window.opener), null, "document preview must not retain an opener reference");
   await documentPopup.close();
