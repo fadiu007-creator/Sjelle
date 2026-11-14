@@ -2,7 +2,7 @@
 
 Sjelle is configured to use the existing Supabase project **zikos** (`saavqlbwffrwxingbnri`). Use only this repository-configured project. Do not create a new Supabase project or point Sjelle at another project unless the project owner explicitly changes the configuration.
 
-The project is shared with other applications. Treat every migration as production-sensitive and keep all Sjelle database changes isolated:
+The project is shared with other applications. Treat every migration as production-sensitive and keep all Sjelle database changes isolated. The existing `rental_*` tables are legacy Sjelle-owned objects from already-applied rental migrations; keep their names for compatibility, do not confuse them with another app's tables, and do not create new generic tables. New Sjelle objects should use the `sjelle_*` namespace.
 
 1. Add or modify only Sjelle-owned objects (normally the `sjelle_*` tables, functions, policies, indexes and triggers) and Sjelle-owned storage resources such as the private `sjelle-driver-documents` bucket.
 2. Never alter, rename, truncate, reset, seed, or drop objects or data belonging to Fiskalo, Dhuroje, Kafja, MikroTekos, Newchat or any other application.
