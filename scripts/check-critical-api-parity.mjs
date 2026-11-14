@@ -28,6 +28,8 @@ function readConflictCodes(source, file) {
 }
 
 for (const [file, source] of [[apiPath, api], [edgePath, edge]]) {
+  assert.ok(source.includes("rpc/sjelle_set_driver_availability_with_location"), `${file}: online GPS and availability must be committed through the atomic database RPC`);
+  assert.ok(source.includes("DRIVER_OFFLINE"), `${file}: offline drivers must not be allowed to update precise GPS location`);
   assert.ok(source.includes("rpc/sjelle_apply_for_driver"), `${file}: driver application must use the atomic database RPC`);
   assert.ok(source.includes("rpc/sjelle_driver_update_job"), `${file}: driver job transitions must use the authoritative database RPC`);
   assert.ok(source.includes("CASH_COLLECTION_CONFIRMATION_REQUIRED"), `${file}: cash completion guard is missing`);
@@ -53,6 +55,11 @@ const cashMigration = readFileSync("supabase/migrations/20261108082418_sjelle_pa
 assert.ok(cashMigration.includes("v_ride.payment_method='cash'"), "cash migration must guard ride completion by payment method");
 assert.ok(cashMigration.includes("v_order.payment_method='cash'"), "cash migration must guard delivery completion by payment method");
 assert.ok(cashMigration.includes("'not_due'::public.sjelle_cash_status"), "online jobs must not remain in the cash-due ledger state");
+
+const driverLocationMigration = readFileSync("supabase/migrations/20261114090000_sjelle_atomic_driver_location_availability.sql", "utf8");
+assert.ok(driverLocationMigration.includes("delete from public.sjelle_driver_locations"), "going offline must delete the driver's precise GPS row");
+assert.ok(driverLocationMigration.includes("sjelle_set_driver_availability_with_location"), "online availability must persist GPS and status atomically");
+assert.ok(driverLocationMigration.includes("grant execute on function public.sjelle_set_driver_availability_with_location"), "only the service role may execute the atomic availability RPC");
 
 const onlinePaymentMigration = readFileSync("supabase/migrations/20261108083041_sjelle_block_unconfigured_online_payments.sql", "utf8");
 assert.ok(onlinePaymentMigration.includes("v_ride.payment_method='online'"), "online rides must fail closed until payment is configured");

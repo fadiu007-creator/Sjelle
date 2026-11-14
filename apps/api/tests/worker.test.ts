@@ -373,6 +373,41 @@ test("driver location rejects coordinates outside Kosovo before database access"
 });
 
 
+test("approved drivers cannot write GPS locations while offline", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = async input => {
+    const url = String(input);
+    requests.push(url);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({
+      id: "00000000-0000-4000-8000-000000000099",
+    }), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_driver_profiles?")) return new Response(JSON.stringify([{
+      online: false, review_status: "approved",
+    }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_driver_locations?")) {
+      throw new Error("Offline drivers must not write precise GPS coordinates.");
+    }
+    throw new Error("Unexpected backend request for offline GPS update: " + url);
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/driver/location", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ latitude: 42.66, longitude: 21.16, accuracy_m: 8 }),
+    }), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(result.status, 409);
+    assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "DRIVER_OFFLINE");
+    assert.equal(requests.some(url => url.includes("/rest/v1/sjelle_driver_locations?")), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("driver cannot complete a cash ride without confirming collection", async () => {
   const originalFetch = globalThis.fetch;
   const requests: string[] = [];
@@ -1106,7 +1141,7 @@ test("approved online driver can switch modes when the target city service and r
       active: true, rides_enabled: true, food_enabled: true,
     }]), { status: 200 });
     if (url.includes("/rest/v1/sjelle_driver_locations?")) return new Response(JSON.stringify([{ driver_id: driverId }]), { status: 200 });
-    if (url.includes("/rest/v1/rpc/sjelle_set_driver_availability")) {
+    if (url.includes("/rest/v1/rpc/sjelle_set_driver_availability_with_location")) {
       rpcBodies.push(JSON.parse(String(init?.body || "{}")) as Record<string, unknown>);
       return new Response(JSON.stringify({ user_id: driverId, online: true, selected_mode: "delivery" }), { status: 200 });
     }
@@ -1130,6 +1165,59 @@ test("approved online driver can switch modes when the target city service and r
     assert.equal(rpcBodies[0]?.p_mode, "delivery");
     assert.ok(requests.some(url => url.includes("sjelle_driver_documents?")));
     assert.ok(requests.some(url => url.includes("sjelle_driver_locations?")));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("going online writes the GPS fix through the atomic availability RPC", async () => {
+  const originalFetch = globalThis.fetch;
+  const driverId = "00000000-0000-4000-8000-000000000099";
+  const cityId = "00000000-0000-4000-8000-000000000088";
+  const requests: Array<{ url: string; method: string; body?: string }> = [];
+  let rpcBody: Record<string, unknown> | null = null;
+  const docs = ["identity", "driving_licence", "vehicle_registration", "insurance"].map(document_type => ({
+    document_type, review_status: "approved", expires_at: null, created_at: new Date().toISOString(),
+  }));
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    requests.push({ url, method: init?.method ?? "GET", body: typeof init?.body === "string" ? init.body : undefined });
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: driverId }), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_driver_profiles?")) return new Response(JSON.stringify([{
+      user_id: driverId, review_status: "approved", city_id: cityId, selected_mode: "ride",
+    }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_rides?") || url.includes("/rest/v1/sjelle_delivery_jobs?")) return new Response("[]", { status: 200 });
+    if (url.includes("/rest/v1/sjelle_driver_documents?")) return new Response(JSON.stringify(docs), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_vehicles?")) return new Response(JSON.stringify([{ id: "approved-vehicle" }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_cities?")) return new Response(JSON.stringify([{
+      active: true, rides_enabled: true, food_enabled: true,
+    }]), { status: 200 });
+    if (url.includes("/rest/v1/rpc/sjelle_set_driver_availability_with_location")) {
+      rpcBody = JSON.parse(String(init?.body || "{}")) as Record<string, unknown>;
+      return new Response(JSON.stringify({ user_id: driverId, online: true, selected_mode: "ride" }), { status: 200 });
+    }
+    if (url.includes("/rest/v1/sjelle_driver_locations?")) {
+      throw new Error("Fresh coordinates in the availability request must not be written through the standalone GPS endpoint.");
+    }
+    throw new Error("Unexpected backend request during atomic go-online: " + url);
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/driver/availability", {
+      method: "PATCH",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ online: true, mode: "ride", latitude: 42.66, longitude: 21.16, accuracy_m: 8 }),
+    }), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(result.status, 200);
+    assert.equal(rpcBody?.p_online, true);
+    assert.equal(rpcBody?.p_mode, "ride");
+    assert.equal(rpcBody?.p_latitude, 42.66);
+    assert.equal(rpcBody?.p_longitude, 21.16);
+    assert.equal(rpcBody?.p_accuracy_m, 8);
+    assert.equal(requests.some(request => request.method === "POST" && request.url.includes("sjelle_driver_locations?")), false);
   } finally {
     globalThis.fetch = originalFetch;
   }

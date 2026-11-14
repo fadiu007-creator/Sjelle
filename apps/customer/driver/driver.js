@@ -21,6 +21,15 @@ function setAvailabilityControlsDisabled(disabled){
  $("#driver-mode").disabled=disabled;
 }
 function driverModeLabel(mode){return mode==="delivery"?"Dërgesa":"Udhëtim";}
+async function currentDriverLocation(){
+ if(!navigator.geolocation)throw new Error("Ky shfletues nuk e mbështet GPS-in. Provo Chrome në HTTPS.");
+ const position=await new Promise((resolve,reject)=>navigator.geolocation.getCurrentPosition(resolve,error=>{
+  const messages={1:"Lejo Location për Sjelle te cilësimet e shfletuesit.",2:"Telefoni nuk e gjeti GPS-in. Aktivizo Location dhe provo përsëri.",3:"Kërkimi i GPS-it zgjati shumë. Provo përsëri."};
+  reject(new Error(messages[error.code]||"GPS nuk është i disponueshëm."));
+ },{enableHighAccuracy:true,timeout:10000,maximumAge:5000}));
+ if(!Number.isFinite(position.coords.accuracy)||position.coords.accuracy>1500)throw new Error("GPS-i nuk është mjaftueshëm i saktë. Dil në një vend më të hapur dhe provo përsëri (duhet 1,500 m ose më mirë).");
+ return {latitude:position.coords.latitude,longitude:position.coords.longitude,accuracy_m:position.coords.accuracy};
+}
 async function changeDriverMode(){
  const select=$("#driver-mode");
  if(!state.profile)return;
@@ -31,7 +40,8 @@ async function changeDriverMode(){
  if(availabilityChanging){select.value=previous;return;}
  availabilityChanging=true;setAvailabilityControlsDisabled(true);
  try{
-  const result=await api("/driver/availability",{method:"PATCH",body:JSON.stringify({online:true,mode:next})});
+  const location=state.profile.online?await currentDriverLocation():{};
+  const result=await api("/driver/availability",{method:"PATCH",body:JSON.stringify({online:true,mode:next,...location})});
   const savedMode=result.data?.selected_mode||next;
   state.profile={...state.profile,online:true,selected_mode:savedMode};
   select.value=savedMode;
@@ -50,16 +60,8 @@ async function setAvailability(online){
  const mode=$("#driver-mode").value;
  setAvailabilityControlsDisabled(true);
  try{
-  if(online){
-   if(!navigator.geolocation)throw new Error("Ky shfletues nuk e mbështet GPS-in. Provo Chrome në HTTPS.");
-   const position=await new Promise((resolve,reject)=>navigator.geolocation.getCurrentPosition(resolve,error=>{
-    const messages={1:"Lejo Location për Sjelle te cilësimet e shfletuesit.",2:"Telefoni nuk e gjeti GPS-in. Aktivizo Location dhe provo përsëri.",3:"Kërkimi i GPS-it zgjati shumë. Provo përsëri."};
-    reject(new Error(messages[error.code]||"GPS nuk është i disponueshëm."));
-   },{enableHighAccuracy:true,timeout:10000,maximumAge:5000}));
-   if(!Number.isFinite(position.coords.accuracy)||position.coords.accuracy>1500)throw new Error("GPS-i nuk është mjaftueshëm i saktë. Dil në një vend më të hapur dhe provo përsëri (duhet 1,500 m ose më mirë).");
-   await api("/driver/location",{method:"POST",body:JSON.stringify({latitude:position.coords.latitude,longitude:position.coords.longitude,accuracy_m:position.coords.accuracy})});
-  }
-  const result=await api("/driver/availability",{method:"PATCH",body:JSON.stringify({online,mode})});
+  const location=online?await currentDriverLocation():{};
+  const result=await api("/driver/availability",{method:"PATCH",body:JSON.stringify({online,mode,...location})});
   if(state.profile)state.profile={...state.profile,online:result.data?.online??online,selected_mode:result.data?.selected_mode||mode};
   showAlert(online?"GPS u verifikua. Je online dhe mund të marrësh oferta.":"Je offline.","success");
   await refreshProfile();
