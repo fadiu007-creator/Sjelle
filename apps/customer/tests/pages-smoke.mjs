@@ -138,7 +138,9 @@ try {
   assert.match(driverSource, /Anulo udhëtimin/, "driver portal must provide an explicit cancellation action");
   assert.match(driverSource, /async function changeDriverMode\(\)/, "driver portal must handle an explicit mode change");
   assert.ok(driverSource.includes('$("#driver-mode").addEventListener("change",changeDriverMode)'), "driver mode selector must apply changes immediately while online");
-  assert.ok(driverSource.includes('JSON.stringify({online:true,mode:next})'), "online mode changes must use the server-authoritative availability endpoint");
+  assert.ok(driverSource.includes('JSON.stringify({online:true,mode:next,...location})'), "online mode changes must send a fresh GPS fix through the server-authoritative availability endpoint");
+  assert.ok(driverSource.includes('JSON.stringify({online,mode,...location})'), "going online must persist GPS and availability together instead of writing location separately");
+  assert.ok(driverSource.includes('async function currentDriverLocation()'), "driver portal must validate GPS before requesting an online transition");
   assert.ok(driverSource.includes('DRIVER_HAS_ACTIVE_JOB'), "driver mode changes must explain when an active job blocks switching");
   const driverHtmlResponse = await page.request.get(new URL("driver/", baseUrl).toString());
   assert.equal(driverHtmlResponse.status(), 200, "driver portal markup should load");
