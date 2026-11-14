@@ -57,7 +57,7 @@ assert.ok(cashMigration.includes("v_ride.payment_method='cash'"), "cash migratio
 assert.ok(cashMigration.includes("v_order.payment_method='cash'"), "cash migration must guard delivery completion by payment method");
 assert.ok(cashMigration.includes("'not_due'::public.sjelle_cash_status"), "online jobs must not remain in the cash-due ledger state");
 
-const driverLocationMigration = readFileSync("supabase/migrations/20261114090000_sjelle_atomic_driver_location_availability.sql", "utf8");
+const driverLocationMigration = readFileSync("supabase/migrations/20261114091207_sjelle_atomic_driver_location_availability.sql", "utf8");
 assert.ok(driverLocationMigration.includes("delete from public.sjelle_driver_locations"), "going offline must delete the driver's precise GPS row");
 assert.ok(driverLocationMigration.includes("sjelle_set_driver_availability_with_location"), "online availability must persist GPS and status atomically");
 assert.ok(driverLocationMigration.includes("grant execute on function public.sjelle_set_driver_availability_with_location"), "only the service role may execute the atomic availability RPC");
