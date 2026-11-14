@@ -64,6 +64,17 @@ assert.ok(driverLocationMigration.includes("grant execute on function public.sje
 assert.ok(driverLocationMigration.includes("sjelle_update_driver_location_if_online"), "live GPS refresh must serialize with offline transitions");
 assert.ok(driverLocationMigration.includes("grant execute on function public.sjelle_update_driver_location_if_online"), "only the service role may execute the live GPS RPC");
 
+const serializedLocationMigration = readFileSync("supabase/migrations/20261114092034_sjelle_serialize_driver_gps_transitions.sql", "utf8");
+const availabilityWrapperStart = serializedLocationMigration.indexOf("create or replace function public.sjelle_set_driver_availability_with_location");
+const availabilityWrapperEnd = serializedLocationMigration.indexOf("$function$;", availabilityWrapperStart);
+assert.ok(availabilityWrapperStart >= 0 && availabilityWrapperEnd > availabilityWrapperStart, "serialized availability migration must define the atomic location RPC");
+const availabilityWrapper = serializedLocationMigration.slice(availabilityWrapperStart, availabilityWrapperEnd);
+const profileLockPosition = availabilityWrapper.indexOf("for update");
+const locationWritePosition = availabilityWrapper.indexOf("insert into public.sjelle_driver_locations");
+assert.ok(profileLockPosition >= 0 && locationWritePosition > profileLockPosition, "availability must lock the driver profile before writing precise GPS to avoid lock-order deadlocks");
+assert.ok(availabilityWrapper.includes("DRIVER_APPLICATION_REQUIRED"), "availability must reject users without a driver profile before writing GPS");
+assert.ok(availabilityWrapper.includes("return public.sjelle_set_driver_availability(p_driver_id, p_online, p_mode)"), "availability must preserve the authoritative readiness and active-job checks");
+
 const onlinePaymentMigration = readFileSync("supabase/migrations/20261108083041_sjelle_block_unconfigured_online_payments.sql", "utf8");
 assert.ok(onlinePaymentMigration.includes("v_ride.payment_method='online'"), "online rides must fail closed until payment is configured");
 assert.ok(onlinePaymentMigration.includes("v_order.payment_method='online'"), "online deliveries must fail closed until payment is configured");
