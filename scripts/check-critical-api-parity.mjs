@@ -64,7 +64,7 @@ assert.ok(driverLocationMigration.includes("grant execute on function public.sje
 assert.ok(driverLocationMigration.includes("sjelle_update_driver_location_if_online"), "live GPS refresh must serialize with offline transitions");
 assert.ok(driverLocationMigration.includes("grant execute on function public.sjelle_update_driver_location_if_online"), "only the service role may execute the live GPS RPC");
 
-const serializedLocationMigration = readFileSync("supabase/migrations/20261114092034_sjelle_serialize_driver_gps_transitions.sql", "utf8");
+const serializedLocationMigration = readFileSync("supabase/migrations/20261114093553_sjelle_serialize_driver_gps_transitions.sql", "utf8");
 const availabilityWrapperStart = serializedLocationMigration.indexOf("create or replace function public.sjelle_set_driver_availability_with_location");
 const availabilityWrapperEnd = serializedLocationMigration.indexOf("$function$;", availabilityWrapperStart);
 assert.ok(availabilityWrapperStart >= 0 && availabilityWrapperEnd > availabilityWrapperStart, "serialized availability migration must define the atomic location RPC");
