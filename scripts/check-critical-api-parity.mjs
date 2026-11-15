@@ -80,7 +80,7 @@ assert.ok(onlinePaymentMigration.includes("v_ride.payment_method='online'"), "on
 assert.ok(onlinePaymentMigration.includes("v_order.payment_method='online'"), "online deliveries must fail closed until payment is configured");
 
 
-const assignmentGateMigration = readFileSync("supabase/migrations/20261115090000_sjelle_revalidate_driver_assignment_eligibility.sql", "utf8");
+const assignmentGateMigration = readFileSync("supabase/migrations/20261115081948_sjelle_revalidate_driver_assignment_eligibility.sql", "utf8");
 assert.ok(assignmentGateMigration.includes("create or replace function public.sjelle_guard_driver_assignment()"), "assignment gate migration must replace the shared ride/delivery assignment guard");
 assert.ok(assignmentGateMigration.includes("for update"), "assignment guard must lock the driver profile while validating eligibility");
 assert.ok(assignmentGateMigration.includes("v_profile.city_id is distinct from v_city_id"), "assignment must keep driver and job in the same city");
