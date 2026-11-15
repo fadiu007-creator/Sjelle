@@ -100,3 +100,18 @@ The Worker regression tests cover request-level cash validation and the absence 
 - Going offline deletes the driver's latest precise location in the same database transaction as the availability change. The existing five-minute cleanup job remains a secondary retention safeguard.
 - Ride tracking continues to expose a fresh driver location only for an assigned, active ride and only to an authorized participant. The customer endpoint does not become a general driver-location lookup.
 - Live GPS refreshes re-check the online flag under a database row lock, so a refresh racing with the offline action cannot recreate a location row after offline cleanup.
+
+
+## Eligibility revalidation at assignment
+
+The ride and delivery assignment triggers now revalidate the full driver-readiness contract at the final database write, not only when the dispatch offer is created. This closes the interval in which a driver could be suspended, moved offline, change mode, lose an approved document/vehicle, let GPS go stale, or have the city service disabled while an offer was pending.
+
+For every new assignment, the database locks the driver profile first and verifies:
+- the profile remains approved and online in the correct ride/delivery mode and city;
+- the relevant city and service switch remain active;
+- the latest identity, driving licence, vehicle registration and insurance records are all approved and unexpired;
+- an approved, unexpired vehicle exists and, for rides, matches the requested vehicle class;
+- a location with acceptable accuracy was recorded within the previous two minutes;
+- no other active ride or delivery is already assigned to the driver.
+
+Both the ride and delivery assignment triggers call the same guard. A failed check aborts the assignment transaction; the offer cannot bypass these checks. This does not approve any driver or create test supply. The driver must still complete the normal identity, licence, registration and insurance review before going online or receiving a job.
