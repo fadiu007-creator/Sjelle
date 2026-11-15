@@ -78,3 +78,24 @@ assert.ok(availabilityWrapper.includes("return public.sjelle_set_driver_availabi
 const onlinePaymentMigration = readFileSync("supabase/migrations/20261108083041_sjelle_block_unconfigured_online_payments.sql", "utf8");
 assert.ok(onlinePaymentMigration.includes("v_ride.payment_method='online'"), "online rides must fail closed until payment is configured");
 assert.ok(onlinePaymentMigration.includes("v_order.payment_method='online'"), "online deliveries must fail closed until payment is configured");
+
+
+const assignmentGateMigration = readFileSync("supabase/migrations/20261115090000_sjelle_revalidate_driver_assignment_eligibility.sql", "utf8");
+assert.ok(assignmentGateMigration.includes("create or replace function public.sjelle_guard_driver_assignment()"), "assignment gate migration must replace the shared ride/delivery assignment guard");
+assert.ok(assignmentGateMigration.includes("for update"), "assignment guard must lock the driver profile while validating eligibility");
+assert.ok(assignmentGateMigration.includes("v_profile.city_id is distinct from v_city_id"), "assignment must keep driver and job in the same city");
+assert.ok(assignmentGateMigration.includes("c.active"), "assignment must reject inactive cities");
+assert.ok(assignmentGateMigration.includes("c.rides_enabled"), "ride assignment must re-check the city ride switch");
+assert.ok(assignmentGateMigration.includes("c.food_enabled"), "delivery assignment must re-check the city food switch");
+assert.ok(assignmentGateMigration.includes("document_type in ('identity', 'driving_licence', 'vehicle_registration', 'insurance')"), "assignment must require all four mandatory driver document types");
+assert.ok(assignmentGateMigration.includes("order by document_type, created_at desc, id desc"), "assignment must evaluate the latest document for each type deterministically");
+assert.ok(assignmentGateMigration.includes("v_approved_document_count <> 4"), "assignment must fail closed when any required document is missing, pending, rejected or expired");
+assert.ok(assignmentGateMigration.includes("v.vehicle_type = v_vehicle_type"), "ride assignment must match an approved vehicle to the requested class");
+assert.ok(assignmentGateMigration.includes("v.document_expires_at >= current_date"), "assignment must reject expired vehicle documents");
+assert.ok(assignmentGateMigration.includes("l.recorded_at >= now() - interval '2 minutes'"), "assignment must require a fresh GPS fix");
+assert.ok(assignmentGateMigration.includes("l.accuracy_m <= 1500"), "assignment must reject inaccurate GPS fixes");
+assert.ok(assignmentGateMigration.includes("DRIVER_HAS_ACTIVE_JOB"), "assignment must preserve cross-service exclusive driver assignment");
+assert.ok(assignmentGateMigration.includes("revoke all on function public.sjelle_guard_driver_assignment() from public, anon, authenticated"), "assignment guard must not be executable by untrusted client roles");
+assert.ok(assignmentGateMigration.includes("grant execute on function public.sjelle_guard_driver_assignment() to service_role"), "assignment guard must remain service-role only");
+
+console.log("Driver assignment eligibility migration assertions passed.");
