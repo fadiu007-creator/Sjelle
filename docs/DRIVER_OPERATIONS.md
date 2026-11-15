@@ -115,3 +115,8 @@ For every new assignment, the database locks the driver profile first and verifi
 - no other active ride or delivery is already assigned to the driver.
 
 Both the ride and delivery assignment triggers call the same guard. A failed check aborts the assignment transaction; the offer cannot bypass these checks. This does not approve any driver or create test supply. The driver must still complete the normal identity, licence, registration and insurance review before going online or receiving a job.
+
+
+## Readiness evidence writes and assignment locking
+
+Driver document uploads/reviews and vehicle registration/reviews now acquire the same driver-profile row lock used by ride and delivery assignment before the evidence mutation is committed. This serializes pending/rejected/expired document changes and vehicle revocations against the final assignment check. If a review or upload wins the lock first, the assignment sees the new readiness state; if assignment wins first, the evidence change waits until that assignment transaction commits. The database remains authoritative even when the admin and driver portals use separate HTTP requests.
