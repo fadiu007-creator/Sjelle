@@ -101,7 +101,7 @@ assert.ok(assignmentGateMigration.includes("grant execute on function public.sje
 console.log("Driver assignment eligibility migration assertions passed.");
 
 
-const readinessSerializationMigration = readFileSync("supabase/migrations/20261115090000_sjelle_serialize_readiness_evidence_changes.sql", "utf8");
+const readinessSerializationMigration = readFileSync("supabase/migrations/20261115082354_sjelle_serialize_readiness_evidence_changes.sql", "utf8");
 assert.ok(readinessSerializationMigration.includes("create or replace function public.sjelle_lock_driver_readiness_profile()"), "readiness evidence writes must use a shared profile-lock trigger");
 assert.ok(readinessSerializationMigration.includes("before insert or update or delete on public.sjelle_driver_documents"), "document uploads, reviews and removals must serialize with assignment");
 assert.ok(readinessSerializationMigration.includes("before insert or update or delete on public.sjelle_vehicles"), "vehicle registration and review changes must serialize with assignment");
