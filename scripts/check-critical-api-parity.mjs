@@ -99,3 +99,14 @@ assert.ok(assignmentGateMigration.includes("revoke all on function public.sjelle
 assert.ok(assignmentGateMigration.includes("grant execute on function public.sjelle_guard_driver_assignment() to service_role"), "assignment guard must remain service-role only");
 
 console.log("Driver assignment eligibility migration assertions passed.");
+
+
+const readinessSerializationMigration = readFileSync("supabase/migrations/20261115090000_sjelle_serialize_readiness_evidence_changes.sql", "utf8");
+assert.ok(readinessSerializationMigration.includes("create or replace function public.sjelle_lock_driver_readiness_profile()"), "readiness evidence writes must use a shared profile-lock trigger");
+assert.ok(readinessSerializationMigration.includes("before insert or update or delete on public.sjelle_driver_documents"), "document uploads, reviews and removals must serialize with assignment");
+assert.ok(readinessSerializationMigration.includes("before insert or update or delete on public.sjelle_vehicles"), "vehicle registration and review changes must serialize with assignment");
+assert.ok(readinessSerializationMigration.includes("from public.sjelle_driver_profiles") && readinessSerializationMigration.includes("for update"), "readiness changes must acquire the driver profile row lock");
+assert.ok(readinessSerializationMigration.includes("order by driver_id"), "ownership corrections must lock old/new driver profiles in stable order");
+assert.ok(readinessSerializationMigration.includes("revoke all on function public.sjelle_lock_driver_readiness_profile() from public, anon, authenticated"), "readiness lock helper must not be directly executable by client roles");
+
+console.log("Driver readiness evidence serialization assertions passed.");
