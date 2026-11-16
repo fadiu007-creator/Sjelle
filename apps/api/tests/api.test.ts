@@ -1085,13 +1085,14 @@ test("customer live-location requests return only fresh coordinates for their ac
     }
     if (url.includes("sjelle_driver_locations?")) {
       locationUrl = url;
+      const timestamp = new Date().toISOString();
       return new Response(JSON.stringify([{
         latitude: 42.3702,
         longitude: 21.1553,
         heading_degrees: 90,
         accuracy_m: 12,
-        recorded_at: "2026-11-11T09:00:00Z",
-        updated_at: new Date().toISOString(),
+        recorded_at: timestamp,
+        updated_at: timestamp,
       }]), { status: 200 });
     }
     throw new Error("Unexpected database request: " + url);
@@ -1111,6 +1112,9 @@ test("customer live-location requests return only fresh coordinates for their ac
     assert.equal(body.data.longitude, 21.1553);
     assert.ok(locationUrl.includes("driver_id=eq." + driverId));
     assert.ok(locationUrl.includes("updated_at=gte."), "driver coordinates must be limited to the last two minutes");
+    assert.ok(locationUrl.includes("recorded_at.gte."), "the GPS fix itself must be recent");
+    assert.ok(locationUrl.includes("recorded_at.lte."), "future-dated GPS fixes must be rejected");
+    assert.ok(locationUrl.includes("accuracy_m=lte.1500"), "inaccurate GPS fixes must be rejected");
   } finally {
     globalThis.fetch = originalFetch;
   }
