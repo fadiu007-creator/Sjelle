@@ -417,6 +417,7 @@ try {
   await page.locator("#account-dialog[open]").waitFor({ state: "visible" });
   await page.locator("#my-rides").getByText("Po kërkohet shofer").waitFor({ state: "visible" });
   assert.match(await page.locator("#my-rides").textContent(), /Rruga tjetër, Ferizaj → Sheshi, Ferizaj/);
+  await page.locator("#account-close").click();
 
   // A malformed server quote must never receive an invented client-side expiry window.
   await pickupQuery.fill("Nisja me çmim pa afat, Ferizaj");
