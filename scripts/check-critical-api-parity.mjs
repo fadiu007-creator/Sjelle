@@ -31,6 +31,9 @@ for (const [file, source] of [[apiPath, api], [edgePath, edge]]) {
   assert.ok(source.includes("rpc/sjelle_set_driver_availability_with_location"), `${file}: online GPS and availability must be committed through the atomic database RPC`);
   assert.ok(source.includes("rpc/sjelle_update_driver_location_if_online"), `${file}: live GPS refresh must lock and recheck online state in the database`);
   assert.ok(source.includes("DRIVER_OFFLINE"), `${file}: offline drivers must not be allowed to update precise GPS location`);
+  assert.ok(source.includes("&and=(recorded_at.gte."), `${file}: customer tracking must require a fresh recorded GPS fix`);
+  assert.ok(source.includes("&accuracy_m=lte.1500"), `${file}: customer tracking must reject inaccurate GPS fixes`);
+  assert.ok(source.includes("recordedAt >= now - 120000") && source.includes("recordedAt <= now + 15000"), `${file}: customer tracking must fail closed on stale or future-dated GPS timestamps`);
   assert.ok(source.includes("rpc/sjelle_apply_for_driver"), `${file}: driver application must use the atomic database RPC`);
   assert.ok(source.includes("rpc/sjelle_driver_update_job"), `${file}: driver job transitions must use the authoritative database RPC`);
   assert.ok(source.includes("CASH_COLLECTION_CONFIRMATION_REQUIRED"), `${file}: cash completion guard is missing`);

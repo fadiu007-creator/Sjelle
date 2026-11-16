@@ -339,6 +339,131 @@ test("ride quotes reject destinations outside active service areas before routin
 });
 
 
+test("customer ride tracking returns only a fresh, accurate Kosovo driver location", async () => {
+  const originalFetch = globalThis.fetch;
+  const customerId = "00000000-0000-4000-8000-000000000099";
+  const driverId = "00000000-0000-4000-8000-000000000098";
+  const rideId = "00000000-0000-4000-8000-000000000097";
+  let locationQuery = "";
+  globalThis.fetch = async input => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: customerId }), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_rides?")) {
+      assert.ok(url.includes("customer_id=eq." + customerId), "tracking lookup must be scoped to the authenticated customer");
+      return new Response(JSON.stringify([{ id: rideId, driver_id: driverId, status: "in_progress" }]), { status: 200 });
+    }
+    if (url.includes("/rest/v1/sjelle_driver_locations?")) {
+      locationQuery = url;
+      const timestamp = new Date().toISOString();
+      return new Response(JSON.stringify([{
+        latitude: 42.66, longitude: 21.16, heading_degrees: 90, accuracy_m: 12,
+        recorded_at: timestamp, updated_at: timestamp,
+      }]), { status: 200 });
+    }
+    throw new Error("Unexpected request during customer ride tracking: " + url);
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/rides/" + rideId + "/driver-location", {
+      headers: { authorization: "Bearer customer-token" },
+    }), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    const payload = await result.json() as { data?: { available?: boolean; latitude?: number; accuracy_m?: number } };
+    assert.equal(result.status, 200);
+    assert.equal(payload.data?.available, true);
+    assert.equal(payload.data?.latitude, 42.66);
+    assert.equal(payload.data?.accuracy_m, 12);
+    assert.ok(locationQuery.includes("updated_at=gte."), "tracking must require a recently updated location row");
+    assert.ok(locationQuery.includes("recorded_at.gte."), "tracking must require a fresh GPS fix, not only a refreshed row");
+    assert.ok(locationQuery.includes("recorded_at.lte."), "future-dated GPS fixes must be excluded");
+    assert.ok(locationQuery.includes("accuracy_m=lte.1500"), "tracking must exclude inaccurate GPS fixes");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("customer ride tracking hides stale, future-dated, inaccurate and terminal locations", async () => {
+  const originalFetch = globalThis.fetch;
+  const customerId = "00000000-0000-4000-8000-000000000099";
+  const driverId = "00000000-0000-4000-8000-000000000098";
+  const rideId = "00000000-0000-4000-8000-000000000097";
+  const now = Date.now();
+  const scenarios = [
+    { name: "stale GPS fix", status: "in_progress", location: { latitude: 42.66, longitude: 21.16, accuracy_m: 10, recorded_at: new Date(now - 121000).toISOString(), updated_at: new Date(now).toISOString() } },
+    { name: "future GPS fix", status: "in_progress", location: { latitude: 42.66, longitude: 21.16, accuracy_m: 10, recorded_at: new Date(now + 60000).toISOString(), updated_at: new Date(now).toISOString() } },
+    { name: "inaccurate GPS fix", status: "in_progress", location: { latitude: 42.66, longitude: 21.16, accuracy_m: 1501, recorded_at: new Date(now).toISOString(), updated_at: new Date(now).toISOString() } },
+    { name: "completed ride", status: "completed", location: null },
+  ];
+  try {
+    for (const scenario of scenarios) {
+      let locationQueries = 0;
+      globalThis.fetch = async input => {
+        const url = String(input);
+        if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: customerId }), { status: 200 });
+        if (url.includes("/rest/v1/sjelle_rides?")) {
+          return new Response(JSON.stringify([{ id: rideId, driver_id: driverId, status: scenario.status }]), { status: 200 });
+        }
+        if (url.includes("/rest/v1/sjelle_driver_locations?")) {
+          locationQueries += 1;
+          return new Response(JSON.stringify(scenario.location ? [{
+            ...scenario.location, heading_degrees: null,
+          }] : []), { status: 200 });
+        }
+        throw new Error("Unexpected request during " + scenario.name + ": " + url);
+      };
+      const result = await worker.fetch(new Request("https://api.example/api/v1/rides/" + rideId + "/driver-location", {
+        headers: { authorization: "Bearer customer-token" },
+      }), {
+        APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+        SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+        SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+      } as never);
+      const payload = await result.json() as { data?: { available?: boolean } };
+      assert.equal(result.status, 200, scenario.name);
+      assert.equal(payload.data?.available, false, scenario.name + " must never be exposed to the customer");
+      assert.equal(locationQueries, scenario.status === "completed" ? 0 : 1, scenario.name + " location query count");
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("customer ride tracking does not look up a driver's location for a different customer's ride", async () => {
+  const originalFetch = globalThis.fetch;
+  const customerId = "00000000-0000-4000-8000-000000000099";
+  const rideId = "00000000-0000-4000-8000-000000000097";
+  let locationQueries = 0;
+  globalThis.fetch = async input => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: customerId }), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_rides?")) return new Response("[]", { status: 200 });
+    if (url.includes("/rest/v1/sjelle_driver_locations?")) {
+      locationQueries += 1;
+      throw new Error("A non-owner must not trigger a driver location lookup.");
+    }
+    throw new Error("Unexpected request during non-owner tracking test: " + url);
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/rides/" + rideId + "/driver-location", {
+      headers: { authorization: "Bearer customer-token" },
+    }), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(result.status, 404);
+    assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "RIDE_NOT_FOUND");
+    assert.equal(locationQueries, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
 test("driver location rejects coordinates outside Kosovo before database access", async () => {
   const originalFetch = globalThis.fetch;
   const requests: string[] = [];

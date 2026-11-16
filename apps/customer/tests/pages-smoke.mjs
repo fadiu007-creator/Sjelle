@@ -419,6 +419,82 @@ try {
   assert.match(await page.locator("#my-rides").textContent(), /Rruga tjetër, Ferizaj → Sheshi, Ferizaj/);
   console.log("PASS ride flow validates coordinates, ignores out-of-order geocoding, expires stale quotes, invalidates changed addresses/vehicles, retries booking idempotently and opens the saved trip");
 
+  rideApi.ride.status = "driver_assigned";
+  let locationRequestCount = 0;
+  const locationWaiters = new Map();
+  const waitForLocationCount = count => locationRequestCount >= count
+    ? Promise.resolve()
+    : new Promise(resolve => locationWaiters.set(count, resolve));
+  await page.route(`${apiOrigin}/rides/${rideApi.ride.id}/driver-location`, async route => {
+    locationRequestCount += 1;
+    locationWaiters.get(locationRequestCount)?.();
+    const timestamp = new Date().toISOString();
+    if (locationRequestCount === 1 || locationRequestCount === 3) {
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: {
+        available: true, latitude: 42.371, longitude: 21.155, accuracy_m: 15, recorded_at: timestamp, updated_at: timestamp,
+      } }) });
+    }
+    if (locationRequestCount === 2) {
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { available: false } }) });
+    }
+    return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { code: "DRIVER_LOCATION_UNAVAILABLE" } }) });
+  });
+  await page.evaluate(() => {
+    window.__sjelleTrackingMaps = [];
+    const layer = (kind, latlng) => ({
+      kind, latlng,
+      addTo(map) { this.map = map; map.layers.push(this); return this; },
+      bindPopup() { return this; },
+      setLatLng(value) { this.latlng = value; return this; },
+    });
+    window.L = {
+      map() {
+        const map = {
+          layers: [], zoom: 13,
+          setView(latlng, zoom) { this.center = latlng; if (zoom !== undefined) this.zoom = zoom; return this; },
+          getZoom() { return this.zoom; },
+          invalidateSize() {},
+          removeLayer(target) { this.layers = this.layers.filter(item => item !== target); },
+        };
+        window.__sjelleTrackingMaps.push(map);
+        return map;
+      },
+      tileLayer() { return { addTo() { return this; } }; },
+      marker(latlng) { return layer("marker", latlng); },
+      circleMarker(latlng) { return layer("driver", latlng); },
+    };
+    const original = window.setInterval.bind(window);
+    window.__sjelleOriginalSetInterval = original;
+    window.__sjelleTrackingCallbacks = [];
+    window.setInterval = (callback, delay, ...args) => {
+      if (delay === 10000) {
+        window.__sjelleTrackingCallbacks.push(callback);
+        return 0;
+      }
+      return original(callback, delay, ...args);
+    };
+  });
+  await page.locator("#my-rides-open").click();
+  await waitForLocationCount(1);
+  await page.locator("#my-rides").getByText("Shoferi u përditësua").waitFor({ state: "visible" });
+  assert.equal(await page.evaluate(() => window.__sjelleTrackingMaps[0].layers.filter(layer => layer.kind === "driver").length), 1, "a fresh authorized driver location should display one live marker");
+
+  await page.evaluate(() => window.__sjelleTrackingCallbacks[0]());
+  await waitForLocationCount(2);
+  await page.waitForFunction(() => window.__sjelleTrackingMaps[0].layers.filter(layer => layer.kind === "driver").length === 0);
+  assert.match(await page.locator("#my-rides").textContent(), /Po presim vendndodhjen e shoferit/i, "a location revoked or gone stale must clear the old marker");
+
+  await page.evaluate(() => window.__sjelleTrackingCallbacks[0]());
+  await waitForLocationCount(3);
+  await page.waitForFunction(() => window.__sjelleTrackingMaps[0].layers.filter(layer => layer.kind === "driver").length === 1);
+  await page.evaluate(() => window.__sjelleTrackingCallbacks[0]());
+  await waitForLocationCount(4);
+  await page.waitForFunction(() => window.__sjelleTrackingMaps[0].layers.filter(layer => layer.kind === "driver").length === 0);
+  assert.match(await page.locator("#my-rides").textContent(), /Vendndodhja live s’është e disponueshme/i, "an API error must also clear the last precise driver location");
+  await page.evaluate(() => { window.setInterval = window.__sjelleOriginalSetInterval; });
+  await page.unroute(`${apiOrigin}/rides/${rideApi.ride.id}/driver-location`);
+  console.log("PASS customer live tracking removes stale/revoked driver pins, rejects delayed responses and clears the marker on API errors");
+
   await page.unroute(`${apiOrigin}/auth/login`);
   await page.unroute(`${apiOrigin}/auth/refresh`);
   await page.unroute(`${apiOrigin}/geocode`);
