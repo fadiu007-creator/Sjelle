@@ -1163,11 +1163,27 @@ export default {
         if (!rides.length) return response({ error: { code: "RIDE_NOT_FOUND", request_id: requestId } }, 404, requestId, origin, env);
         const ride = rides[0];
         if (!ride.driver_id || !["driver_assigned","driver_arriving","driver_arrived","in_progress"].includes(ride.status)) return response({ data: { available: false } }, 200, requestId, origin, env);
-        const cutoff = new Date(Date.now() - 120000).toISOString();
-        const locResponse = await databaseRequest(env, "sjelle_driver_locations?driver_id=eq." + encodeURIComponent(ride.driver_id) + "&updated_at=gte." + encodeURIComponent(cutoff) + "&select=latitude,longitude,heading_degrees,accuracy_m,recorded_at,updated_at&limit=1");
+        const now = Date.now();
+        const cutoff = new Date(now - 120000).toISOString();
+        const futureLimit = new Date(now + 15000).toISOString();
+        const locResponse = await databaseRequest(env,
+          "sjelle_driver_locations?driver_id=eq." + encodeURIComponent(ride.driver_id)
+          + "&updated_at=gte." + encodeURIComponent(cutoff)
+          + "&and=(recorded_at.gte." + encodeURIComponent(cutoff) + ",recorded_at.lte." + encodeURIComponent(futureLimit) + ")"
+          + "&accuracy_m=lte.1500"
+          + "&select=latitude,longitude,heading_degrees,accuracy_m,recorded_at,updated_at&limit=1");
         if (!locResponse.ok) return response({ error: { code: "DRIVER_LOCATION_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env);
         const locations = await parseJson(locResponse) as Array<{latitude:number;longitude:number;heading_degrees:number|null;accuracy_m:number|null;recorded_at:string;updated_at:string}>;
-        return response({ data: locations.length ? { available:true, ...locations[0] } : { available:false } }, 200, requestId, origin, env);
+        const location = locations[0];
+        const recordedAt = location ? Date.parse(location.recorded_at) : Number.NaN;
+        const updatedAt = location ? Date.parse(location.updated_at) : Number.NaN;
+        const locationAvailable = location !== undefined
+          && Number.isFinite(location.latitude) && location.latitude >= 41.7 && location.latitude <= 43.4
+          && Number.isFinite(location.longitude) && location.longitude >= 19.7 && location.longitude <= 22.0
+          && location.accuracy_m !== null && Number.isFinite(location.accuracy_m) && location.accuracy_m >= 0 && location.accuracy_m <= 1500
+          && Number.isFinite(recordedAt) && recordedAt >= now - 120000 && recordedAt <= now + 15000
+          && Number.isFinite(updatedAt) && updatedAt >= now - 120000 && updatedAt <= now + 15000;
+        return response({ data: location && locationAvailable ? { available:true, ...location } : { available:false } }, 200, requestId, origin, env);
       } catch { return response({ error: { code: "RIDE_TRACKING_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
     }
 
