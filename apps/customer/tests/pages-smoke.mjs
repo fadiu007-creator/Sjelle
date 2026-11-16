@@ -248,7 +248,7 @@ try {
     rideApi.quoteBodies.push(requestBody);
     assert.equal(requestBody.city, "ferizaj", "ride quote must use the selected city");
     assert.equal(requestBody.vehicle_type, "standard", "ride quote must send the selected vehicle type");
-    const quoteId = ["44444444-4444-4444-8444-444444444444", "66666666-6666-4666-8666-666666666666", "77777777-7777-4777-8777-777777777777", "88888888-8888-4888-8888-888888888888"][quoteNumber - 1];
+    const quoteId = ["44444444-4444-4444-8444-444444444444", "66666666-6666-4666-8666-666666666666", "77777777-7777-4777-8777-777777777777", "88888888-8888-4888-8888-888888888888", "99999999-9999-4999-8999-999999999999"][quoteNumber - 1];
     rideApi.latestQuoteId = quoteId;
     if (quoteNumber === 2) {
       secondQuoteStartedResolve();
@@ -273,7 +273,7 @@ try {
         currency: "EUR",
         distance_m: 2500,
         duration_s: 420,
-        expires_at: new Date(Date.now() + (quoteNumber === 1 ? 2500 : 5 * 60 * 1000)).toISOString(),
+        ...(quoteNumber === 5 ? {} : { expires_at: new Date(Date.now() + (quoteNumber === 1 ? 2500 : 5 * 60 * 1000)).toISOString() }),
       } }),
     });
   });
@@ -417,7 +417,16 @@ try {
   await page.locator("#account-dialog[open]").waitFor({ state: "visible" });
   await page.locator("#my-rides").getByText("Po kërkohet shofer").waitFor({ state: "visible" });
   assert.match(await page.locator("#my-rides").textContent(), /Rruga tjetër, Ferizaj → Sheshi, Ferizaj/);
-  console.log("PASS ride flow validates coordinates, ignores out-of-order geocoding, expires stale quotes, invalidates changed addresses/vehicles, retries booking idempotently and opens the saved trip");
+
+  // A malformed server quote must never receive an invented client-side expiry window.
+  await pickupQuery.fill("Nisja me çmim pa afat, Ferizaj");
+  await page.locator("#find-pickup").click();
+  await page.locator("#pickup-suggestions button").first().click();
+  await quoteSubmit.click();
+  await page.waitForFunction(() => document.querySelector("#ride-quote-message")?.textContent?.includes("Serveri nuk ktheu një afat të vlefshëm"));
+  assert.equal(await quoteConfirm.count(), 0, "a quote without a valid server expiry must not expose a booking action");
+  assert.equal(rideApi.quoteRequests, 5, "the missing-expiry scenario must be exercised against the mocked quote API");
+  console.log("PASS ride flow validates coordinates, ignores out-of-order geocoding, fails closed on missing/expired quote expiry, invalidates changed addresses/vehicles, retries booking idempotently and opens the saved trip");
 
   rideApi.ride.status = "driver_assigned";
   let locationRequestCount = 0;

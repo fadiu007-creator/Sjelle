@@ -927,9 +927,13 @@ rideQuoteForm.addEventListener("submit", async event => {
       showMessage(rideQuoteMessage, "Pikat e udhëtimit ndryshuan gjatë llogaritjes. Llogarit përsëri çmimin para rezervimit.", "error");
       return;
     }
+    const parsedQuoteExpiry = Date.parse(quote?.expires_at || "");
+    if (!Number.isFinite(parsedQuoteExpiry) || parsedQuoteExpiry <= Date.now()) {
+      showMessage(rideQuoteMessage, "Serveri nuk ktheu një afat të vlefshëm për çmimin. Për siguri, rezervimi nuk mund të vazhdojë. Llogarit përsëri çmimin.", "error");
+      return;
+    }
     rideQuoteResult.dataset.quoteRevision = String(quoteRevisionAtRequest);
-    const parsedQuoteExpiry = Date.parse(quote.expires_at || "");
-    const quoteExpiresAt = Number.isFinite(parsedQuoteExpiry) ? parsedQuoteExpiry : Date.now() + 5 * 60 * 1000;
+    const quoteExpiresAt = parsedQuoteExpiry;
     // Keep one idempotency key for this quote across retries. A network timeout can
     // happen after the server committed the ride; a new key on retry could duplicate it.
     const bookingIdempotencyKey = crypto.randomUUID();
