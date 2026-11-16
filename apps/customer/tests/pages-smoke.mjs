@@ -427,6 +427,7 @@ try {
   await page.waitForFunction(() => document.querySelector("#ride-quote-message")?.textContent?.includes("Serveri nuk ktheu një afat të vlefshëm"));
   assert.equal(await quoteConfirm.count(), 0, "a quote without a valid server expiry must not expose a booking action");
   assert.equal(rideApi.quoteRequests, 5, "the missing-expiry scenario must be exercised against the mocked quote API");
+  await page.locator("#account-open").click();
   console.log("PASS ride flow validates coordinates, ignores out-of-order geocoding, fails closed on missing/expired quote expiry, invalidates changed addresses/vehicles, retries booking idempotently and opens the saved trip");
 
   rideApi.ride.status = "driver_assigned";
