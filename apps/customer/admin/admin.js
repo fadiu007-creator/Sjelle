@@ -236,7 +236,7 @@ if(reconciliationForm){
  reconciliationForm.addEventListener("submit",e=>{e.preventDefault();loadReconciliation(true);});
  for(const field of [reconciliationForm.elements.from,reconciliationForm.elements.to]){
   field.addEventListener("change",()=>{
-   reconciliationRangeDirty=true;reconciliationRequestVersion+=1;
+   reconciliationRangeDirty=true;reconciliationRequestVersion+=1;reconciliationLoading=false;
    $("#reconciliation-pagination")?.replaceChildren();
    $("#reconciliation-summary")?.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Periudha ndryshoi. Ngarko raportin për të rifreskuar përmbledhjen."}));
   });
