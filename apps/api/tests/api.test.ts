@@ -1509,7 +1509,7 @@ test("admin driver approval succeeds only with all four latest approved document
   const adminId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   const driverId = "11111111-1111-4111-8111-111111111111";
   const requested: Array<{ url: string; method: string }> = [];
-  let profilePatch: Record<string, unknown> | null = null;
+  const profilePatches: Record<string, unknown>[] = [];
   let auditWritten = false;
   const documents = [
     { id: "00000000-0000-4000-8000-000000000001", document_type: "identity", review_status: "approved", expires_at: null, created_at: "2026-11-10T10:00:00.000Z" },
@@ -1532,7 +1532,7 @@ test("admin driver approval succeeds only with all four latest approved document
       return new Response(JSON.stringify([{ id: "vehicle-1" }]), { status: 200 });
     }
     if (url.includes("sjelle_driver_profiles?user_id=eq." + driverId) && method === "PATCH") {
-      profilePatch = JSON.parse(String(init?.body || "{}")) as Record<string, unknown>;
+      profilePatches.push(JSON.parse(String(init?.body || "{}")) as Record<string, unknown>);
       return new Response(JSON.stringify([{ user_id: driverId }]), { status: 200 });
     }
     if (url.endsWith("/sjelle_audit_logs") && method === "POST") {
@@ -1556,6 +1556,7 @@ test("admin driver approval succeeds only with all four latest approved document
     assert.equal(body.data.user_id, driverId);
     assert.equal(body.data.review_status, "approved");
     assert.equal(body.data.online, false);
+    const profilePatch = profilePatches[0];
     assert.equal(profilePatch?.review_status, "approved");
     assert.equal(profilePatch?.approved_by, adminId);
     assert.equal(profilePatch?.online, false, "approval must leave the driver offline until a separate readiness-checked online transition");
