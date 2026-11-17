@@ -1676,10 +1676,10 @@ const worker = {
       try {
         if (body.review_status === "approved") {
           const [docsResponse, vehicleResponse] = await Promise.all([
-            databaseRequest(env, "sjelle_driver_documents?driver_id=eq." + encodeURIComponent(driverReviewMatch[1]) + "&select=document_type,review_status,expires_at,created_at&order=created_at.desc"),
+            databaseRequest(env, "sjelle_driver_documents?driver_id=eq." + encodeURIComponent(driverReviewMatch[1]) + "&select=id,document_type,review_status,expires_at,created_at&order=created_at.desc,id.desc"),
             databaseRequest(env, "sjelle_vehicles?driver_id=eq." + encodeURIComponent(driverReviewMatch[1]) + "&review_status=eq.approved&or=(document_expires_at.is.null,document_expires_at.gte." + new Date().toISOString().slice(0,10) + ")&select=id,document_expires_at&limit=1"),
           ]);
-          const docs = await parseJson(docsResponse) as Array<{ document_type: string; review_status: string; expires_at: string | null; created_at: string }>;
+          const docs = await parseJson(docsResponse) as Array<{ id: string; document_type: string; review_status: string; expires_at: string | null; created_at: string }>;
           const vehicles = await parseJson(vehicleResponse) as unknown[];
           if (!docsResponse.ok || !vehicleResponse.ok) return response({ error: { code: "DRIVER_READINESS_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env);
           if (!requiredDriverDocsApproved(docs) || !vehicles.length) {
