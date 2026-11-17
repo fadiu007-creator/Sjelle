@@ -115,7 +115,7 @@ assert.ok(readinessSerializationMigration.includes("revoke all on function publi
 console.log("Driver readiness evidence serialization assertions passed.");
 
 
-const reconciliationMigration = readFileSync("supabase/migrations/20261117081200_sjelle_admin_reconciliation_keyset_pagination.sql", "utf8");
+const reconciliationMigration = readFileSync("supabase/migrations/20261117082811_sjelle_admin_reconciliation_keyset_pagination.sql", "utf8");
 for (const [file, source] of [[apiPath, api], [edgePath, edge]]) {
   assert.ok(source.includes("rpc/sjelle_admin_reconciliation_page"), `${file}: admin reconciliation must use the bounded database keyset RPC`);
   assert.ok(!source.includes("sjelle_ledger_entries?select=id,related_ride_id"), `${file}: admin reconciliation must not read a fixed 1,000-row table window`);
