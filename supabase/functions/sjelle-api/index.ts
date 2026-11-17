@@ -1914,7 +1914,7 @@ const worker = {
 
       const from = url.searchParams.get("from") ?? new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);
       const to = url.searchParams.get("to") ?? new Date().toISOString().slice(0, 10);
-      const isDate = (value: string) => /^\\d{4}-\\d{2}-\\d{2}$/.test(value)
+      const isDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value)
         && !Number.isNaN(Date.parse(value + "T00:00:00.000Z"))
         && new Date(value + "T00:00:00.000Z").toISOString().slice(0, 10) === value;
       if (!isDate(from) || !isDate(to) || from > to
@@ -1924,14 +1924,14 @@ const worker = {
 
       const limitText = url.searchParams.get("limit") ?? "100";
       const limit = Number(limitText);
-      if (!/^\\d+$/.test(limitText) || !Number.isSafeInteger(limit) || limit < 1 || limit > 250) {
+      if (!/^\d+$/.test(limitText) || !Number.isSafeInteger(limit) || limit < 1 || limit > 250) {
         return response({ error: { code: "INVALID_PAGE_SIZE", message: "Use a page size from 1 to 250.", request_id: requestId } }, 400, requestId, origin, env);
       }
 
       const cursorCreatedAt = url.searchParams.get("cursor_created_at");
       const cursorId = url.searchParams.get("cursor_id");
       const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      const cursorDatePattern = /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$/;
+      const cursorDatePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
       const rangeStart = Date.parse(from + "T00:00:00.000Z");
       const toExclusive = new Date(Date.parse(to + "T00:00:00.000Z") + 86400000).toISOString();
       const rangeEnd = Date.parse(toExclusive);
@@ -1977,7 +1977,7 @@ const worker = {
             || (row.related_ride_id !== null && typeof row.related_ride_id !== "string")
             || (row.related_order_id !== null && typeof row.related_order_id !== "string")
             || (row.account_user_id !== null && typeof row.account_user_id !== "string")
-            || !isRecord(row.metadata)) {
+            ) {
             return response({ error: { code: "RECONCILIATION_DATA_INVALID", request_id: requestId } }, 503, requestId, origin, env);
           }
           normalizedRows.push({ ...row, amount_cents: amount });
