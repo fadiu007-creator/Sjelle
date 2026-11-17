@@ -173,6 +173,11 @@ try {
   assert.equal(driverHtmlResponse.status(), 200, "driver portal markup should load");
   const driverHtml = await driverHtmlResponse.text();
   assert.match(driverHtml, /ndërrimi i modalitetit zbatohet menjëherë/, "driver portal must explain online mode switching");
+  assert.ok(driverHtml.includes('id="document-requirements"'), "driver portal must show the four-document readiness checklist");
+  assert.ok(driverHtml.includes("driver-document-readiness-20261117"), "driver portal must refresh cached readiness assets");
+  assert.ok(driverSource.includes('const required=[["identity","Dokument identiteti"]'), "driver portal must enumerate all four required document types");
+  assert.ok(driverSource.includes('status="missing"') && driverSource.includes('status=expired?"expired"'), "driver portal must distinguish missing and expired documents");
+  assert.ok(driverSource.includes('const aId=String(a.id||"")'), "driver portal must deterministically choose the latest document when timestamps tie");
   await page.waitForFunction(
     () => document.querySelectorAll("#city-select option").length >= 2,
     { timeout: 15000 },
