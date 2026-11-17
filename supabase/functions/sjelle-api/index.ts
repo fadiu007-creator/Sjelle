@@ -217,9 +217,14 @@ async function hasRestaurantPermission(env: Env, userId: string, restaurantId: s
 }
 
 
-function requiredDriverDocsApproved(docs: Array<{ document_type: string; review_status: string; expires_at: string | null; created_at: string }>): boolean {
+function requiredDriverDocsApproved(docs: Array<{ id: string; document_type: string; review_status: string; expires_at: string | null; created_at: string }>): boolean {
   const latest = new Map<string, { review_status: string; expires_at: string | null; created_at: string }>();
-  for (const doc of [...docs].sort((a,b) => Date.parse(b.created_at)-Date.parse(a.created_at))) {
+  for (const doc of [...docs].sort((a,b) => {
+    const createdOrder = Date.parse(b.created_at) - Date.parse(a.created_at);
+    if (createdOrder) return createdOrder;
+    const aId = String(a.id).toLowerCase(), bId = String(b.id).toLowerCase();
+    return bId < aId ? -1 : bId > aId ? 1 : 0;
+  })) {
     if (!latest.has(doc.document_type)) latest.set(doc.document_type, doc);
   }
   const today = new Date().toISOString().slice(0,10);
@@ -1372,7 +1377,7 @@ const worker = {
         const [profileResponse, vehicleResponse, documentResponse] = await Promise.all([
           databaseRequest(env, "sjelle_driver_profiles?user_id=eq." + encodeURIComponent(user.id) + "&select=user_id,review_status,online,selected_mode,city_id,approved_at,created_at,updated_at&limit=1"),
           databaseRequest(env, "sjelle_vehicles?driver_id=eq." + encodeURIComponent(user.id) + "&select=id,vehicle_type,make,model,color,registration_number,capacity,review_status,document_expires_at,verified_at,created_at&order=created_at.desc"),
-          databaseRequest(env, "sjelle_driver_documents?driver_id=eq." + encodeURIComponent(user.id) + "&select=id,document_type,document_number_last4,expires_at,review_status,reviewed_at,rejection_reason,created_at&order=created_at.desc"),
+          databaseRequest(env, "sjelle_driver_documents?driver_id=eq." + encodeURIComponent(user.id) + "&select=id,document_type,document_number_last4,expires_at,review_status,reviewed_at,rejection_reason,created_at&order=created_at.desc,id.desc"),
         ]);
         if (!profileResponse.ok || !vehicleResponse.ok || !documentResponse.ok) return response({ error: { code: "DRIVER_PROFILE_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
         const [profiles, vehicles, documents] = await Promise.all([parseJson(profileResponse), parseJson(vehicleResponse), parseJson(documentResponse)]);
@@ -1556,18 +1561,17 @@ const worker = {
         if (body.online) {
           const locationCutoff = new Date(Date.now() - 120000).toISOString();
           const [docsResponse, vehicleResponse, cityResponse, locationResponse] = await Promise.all([
-            databaseRequest(env, "sjelle_driver_documents?driver_id=eq." + encodeURIComponent(user.id) + "&select=document_type,review_status,expires_at,created_at&order=created_at.desc"),
+            databaseRequest(env, "sjelle_driver_documents?driver_id=eq." + encodeURIComponent(user.id) + "&select=id,document_type,review_status,expires_at,created_at&order=created_at.desc,id.desc"),
             databaseRequest(env, "sjelle_vehicles?driver_id=eq." + encodeURIComponent(user.id) + "&review_status=eq.approved&or=(document_expires_at.is.null,document_expires_at.gte." + new Date().toISOString().slice(0,10) + ")&select=id,document_expires_at&limit=1"),
             databaseRequest(env, "sjelle_cities?id=eq." + encodeURIComponent(profile.city_id) + "&select=active,rides_enabled,food_enabled&limit=1"),
             hasLocation
               ? Promise.resolve(new Response("[]", { status: 200 }))
               : databaseRequest(env, "sjelle_driver_locations?driver_id=eq." + encodeURIComponent(user.id) + "&recorded_at=gte." + encodeURIComponent(locationCutoff) + "&select=driver_id&limit=1"),
           ]);
-          const docs = await parseJson(docsResponse) as Array<{ document_type: string; review_status: string; expires_at: string | null; created_at: string }>;
+          const docs = await parseJson(docsResponse) as Array<{ id: string; document_type: string; review_status: string; expires_at: string | null; created_at: string }>;
           const vehicles = await parseJson(vehicleResponse) as unknown[];
           const cities = await parseJson(cityResponse) as Array<{ active: boolean; rides_enabled: boolean; food_enabled: boolean }>;
           const locations = await parseJson(locationResponse) as unknown[];
-          const required = ["identity","driving_licence","vehicle_registration","insurance"];
           if (!docsResponse.ok || !vehicleResponse.ok || !cityResponse.ok || !locationResponse.ok) return response({ error: { code: "DRIVER_READINESS_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env);
           if (!requiredDriverDocsApproved(docs) || !vehicles.length) {
             return response({ error: { code: "DRIVER_DOCUMENTS_NOT_APPROVED", message: "Identity, driving licence, vehicle registration and insurance must be approved, with at least one approved vehicle.", request_id: requestId } }, 409, requestId, origin, env);
