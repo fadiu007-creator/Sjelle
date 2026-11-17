@@ -113,3 +113,18 @@ assert.ok(readinessSerializationMigration.includes("order by driver_id"), "owner
 assert.ok(readinessSerializationMigration.includes("revoke all on function public.sjelle_lock_driver_readiness_profile() from public, anon, authenticated"), "readiness lock helper must not be directly executable by client roles");
 
 console.log("Driver readiness evidence serialization assertions passed.");
+
+
+const reconciliationMigration = readFileSync("supabase/migrations/20261117081200_sjelle_admin_reconciliation_keyset_pagination.sql", "utf8");
+for (const [file, source] of [[apiPath, api], [edgePath, edge]]) {
+  assert.ok(source.includes("rpc/sjelle_admin_reconciliation_page"), `${file}: admin reconciliation must use the bounded database keyset RPC`);
+  assert.ok(!source.includes("sjelle_ledger_entries?select=id,related_ride_id"), `${file}: admin reconciliation must not read a fixed 1,000-row table window`);
+}
+assert.ok(reconciliationMigration.includes("create or replace function public.sjelle_admin_reconciliation_page"), "reconciliation migration must provide the paginated summary RPC");
+assert.ok(reconciliationMigration.includes("order by created_at desc, id desc"), "reconciliation pages must use a deterministic keyset order");
+assert.ok(reconciliationMigration.includes("revoke all on function public.sjelle_admin_reconciliation_page"), "reconciliation RPC must revoke public/client execution");
+assert.ok(reconciliationMigration.includes("grant execute on function public.sjelle_admin_reconciliation_page"), "reconciliation RPC must be callable by the trusted service role only");
+assert.ok(adminJs.includes("reconciliationPageCursors") && adminJs.includes("Më të vjetra") && adminJs.includes("Më të reja"), "admin reconciliation UI must support cursor-based next/previous pages");
+assert.ok(adminHtml.includes('id="reconciliation-pagination"'), "admin reconciliation UI must provide a pagination control region");
+
+console.log("Admin reconciliation keyset pagination assertions passed.");

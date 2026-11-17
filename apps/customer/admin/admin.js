@@ -145,20 +145,26 @@ function localDateInput(date){
  const y=date.getFullYear(),m=String(date.getMonth()+1).padStart(2,"0"),d=String(date.getDate()).padStart(2,"0");
  return y+"-"+m+"-"+d;
 }
+let reconciliationPageCursors=[null];
+let reconciliationPageIndex=0;
+let reconciliationRequestVersion=0;
+let reconciliationRange=null;
+let reconciliationRangeDirty=false;
+let reconciliationLoading=false;
 function renderReconciliationSummary(summary,meta){
  const root=$("#reconciliation-summary");root.replaceChildren();
  const note=document.createElement("p");note.className="portal-muted";
- note.textContent="Periudha "+meta.from+" — "+meta.to+" · "+meta.returned+" hyrje"+(meta.possibly_truncated?" · KUJDES: u arrit kufiri prej 1,000 hyrjesh; ky nuk është raport i plotë.":"");
+ note.textContent="Periudha "+meta.from+" — "+meta.to+" · "+meta.total_entries+" hyrje gjithsej · "+meta.returned+" në këtë faqe";
  root.append(note);
  for(const item of summary||[]){
   const c=makeCard(item.account_type,String(item.entry_count)+" hyrje · "+(Number(item.net_amount_cents)/100).toFixed(2)+" € neto");
   root.append(c);
  }
 }
-function renderReconciliationEntries(rows,meta){
+function renderReconciliationEntries(rows){
  const root=$("#reconciliation-entries");root.replaceChildren();
- const entries=(rows||[]).slice(0,100);
- if(!entries.length){root.append(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Nuk ka hyrje financiare në këtë periudhë."}));return;}
+ const entries=Array.isArray(rows)?rows:[];
+ if(!entries.length){root.append(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Nuk ka hyrje financiare në këtë faqe."}));return;}
  for(const row of entries){
   const related=row.related_ride_id?"Udhëtimi "+row.related_ride_id:row.related_order_id?"Porosia "+row.related_order_id:"Pa lidhje";
   const signed=(Number(row.amount_cents)/100).toFixed(2)+" "+(Number(row.amount_cents)<0?"€ (dalje)":"€ (hyrje)");
@@ -166,29 +172,60 @@ function renderReconciliationEntries(rows,meta){
   const detail=document.createElement("p");detail.className="portal-muted";detail.textContent=row.account_type+" · "+row.currency+" · idempotency: "+row.idempotency_key;c.append(detail);
   root.append(c);
  }
- if((rows||[]).length>entries.length){
-  const note=document.createElement("p");note.className="portal-muted";
-  note.textContent="Po shfaqen "+entries.length+" hyrjet e para nga "+rows.length+" të kthyera. Përdor një periudhë më të shkurtër për të kontrolluar detajet.";
-  root.append(note);
+}
+function renderReconciliationPagination(meta){
+ const root=$("#reconciliation-pagination");if(!root)return;root.replaceChildren();
+ const info=document.createElement("p");info.className="portal-muted";
+ info.textContent="Faqja "+(reconciliationPageIndex+1)+" · "+meta.returned+" hyrje të shfaqura nga "+meta.total_entries;
+ root.append(info);
+ if(reconciliationPageIndex>0){
+  root.append(button("Më të reja","secondary-button",()=>{
+   if(reconciliationLoading)return;
+   reconciliationPageIndex=Math.max(0,reconciliationPageIndex-1);
+   loadReconciliation(false);
+  }));
  }
- if(meta?.possibly_truncated){
-  const warning=document.createElement("p");warning.className="portal-alert";warning.dataset.kind="error";
-  warning.textContent="Raporti ka arritur kufirin e API-së (1,000 hyrje). Për shifra përfundimtare duhet ndarë periudha në intervale më të shkurtra.";
-  root.prepend(warning);
+ if(meta.has_more&&meta.next_cursor){
+  root.append(button("Më të vjetra","secondary-button",()=>{
+   if(reconciliationLoading)return;
+   reconciliationPageCursors=reconciliationPageCursors.slice(0,reconciliationPageIndex+1);
+   reconciliationPageCursors.push(meta.next_cursor);
+   reconciliationPageIndex+=1;
+   loadReconciliation(false);
+  }));
  }
 }
-async function loadReconciliation(){
- const form=$("#reconciliation-form");const from=form.elements.from.value,to=form.elements.to.value;
+async function loadReconciliation(reset=false){
+ if(reconciliationLoading)return;
+ const form=$("#reconciliation-form");
+ if(reset||!reconciliationRange){
+  reconciliationRange={from:form.elements.from.value,to:form.elements.to.value};
+  reconciliationPageCursors=[null];reconciliationPageIndex=0;reconciliationRangeDirty=false;
+ }
+ if(reconciliationRangeDirty)return;
+ const {from,to}=reconciliationRange;
+ const cursor=reconciliationPageCursors[reconciliationPageIndex]||null;
  const summary=$("#reconciliation-summary"),entries=$("#reconciliation-entries");
- summary.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Po ngarkohet raporti…"}));entries.replaceChildren();
+ const pagination=$("#reconciliation-pagination");
+ summary.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Po ngarkohet raporti…"}));
+ entries.replaceChildren();pagination?.replaceChildren();
+ const requestVersion=++reconciliationRequestVersion;reconciliationLoading=true;
  try{
-  const result=await api("/admin/reconciliation?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to));
-  renderReconciliationSummary(result.summary||[],result.meta||{from,to,returned:(result.data||[]).length});
-  renderReconciliationEntries(result.data||[],result.meta||{});
-  alertMsg("Raporti financiar u ngarkua. Kontrollo nëse periudha është e plotë para se të marrësh vendime.","success");
+  const params=new URLSearchParams({from,to,limit:"100"});
+  if(cursor){params.set("cursor_created_at",cursor.created_at);params.set("cursor_id",cursor.id);}
+  const result=await api("/admin/reconciliation?"+params.toString());
+  if(requestVersion!==reconciliationRequestVersion||reconciliationRangeDirty)return;
+  renderReconciliationSummary(result.summary||[],result.meta||{from,to,total_entries:0,returned:0});
+  renderReconciliationEntries(result.data||[]);
+  renderReconciliationPagination(result.meta||{returned:0,total_entries:0,has_more:false,next_cursor:null});
+  alertMsg("Raporti financiar u ngarkua. Përmbledhja përfshin të gjithë periudhën e zgjedhur.", "success");
  }catch(err){
+  if(requestVersion!==reconciliationRequestVersion)return;
   summary.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Raporti nuk mund të ngarkohet: "+err.message}));
+  pagination?.replaceChildren();
   alertMsg("Rakordimi dështoi: "+err.message,"error");
+ }finally{
+  if(requestVersion===reconciliationRequestVersion)reconciliationLoading=false;
  }
 }
 const reconciliationForm=$("#reconciliation-form");
@@ -196,8 +233,15 @@ if(reconciliationForm){
  const now=new Date(),monthAgo=new Date(now);monthAgo.setDate(monthAgo.getDate()-29);
  reconciliationForm.elements.from.value=localDateInput(monthAgo);
  reconciliationForm.elements.to.value=localDateInput(now);
- reconciliationForm.addEventListener("submit",e=>{e.preventDefault();loadReconciliation();});
- $("#reconciliation-refresh").addEventListener("click",loadReconciliation);
+ reconciliationForm.addEventListener("submit",e=>{e.preventDefault();loadReconciliation(true);});
+ for(const field of [reconciliationForm.elements.from,reconciliationForm.elements.to]){
+  field.addEventListener("change",()=>{
+   reconciliationRangeDirty=true;reconciliationRequestVersion+=1;reconciliationLoading=false;
+   $("#reconciliation-pagination")?.replaceChildren();
+   $("#reconciliation-summary")?.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Periudha ndryshoi. Ngarko raportin për të rifreskuar përmbledhjen."}));
+  });
+ }
+ $("#reconciliation-refresh").addEventListener("click",()=>loadReconciliation(true));
 }
 
 

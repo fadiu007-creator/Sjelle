@@ -1804,40 +1804,112 @@ export default {
         return response({ error: { code: "INVALID_DATE_RANGE", message: "Use valid YYYY-MM-DD dates; from must be on or before to and the range cannot exceed 366 days.", request_id: requestId } }, 400, requestId, origin, env);
       }
 
+      const limitText = url.searchParams.get("limit") ?? "100";
+      const limit = Number(limitText);
+      if (!/^\d+$/.test(limitText) || !Number.isSafeInteger(limit) || limit < 1 || limit > 250) {
+        return response({ error: { code: "INVALID_PAGE_SIZE", message: "Use a page size from 1 to 250.", request_id: requestId } }, 400, requestId, origin, env);
+      }
+
+      const cursorCreatedAt = url.searchParams.get("cursor_created_at");
+      const cursorId = url.searchParams.get("cursor_id");
+      const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const cursorDatePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+      const rangeStart = Date.parse(from + "T00:00:00.000Z");
+      const toExclusive = new Date(Date.parse(to + "T00:00:00.000Z") + 86400000).toISOString();
+      const rangeEnd = Date.parse(toExclusive);
+      const hasCursor = cursorCreatedAt !== null || cursorId !== null;
+      if (hasCursor && (!cursorCreatedAt || !cursorId
+        || !cursorDatePattern.test(cursorCreatedAt) || !Number.isFinite(Date.parse(cursorCreatedAt))
+        || !uuidPattern.test(cursorId)
+        || Date.parse(cursorCreatedAt) < rangeStart || Date.parse(cursorCreatedAt) >= rangeEnd)) {
+        return response({ error: { code: "INVALID_RECONCILIATION_CURSOR", message: "The pagination cursor is invalid for this date range.", request_id: requestId } }, 400, requestId, origin, env);
+      }
+
       try {
-        const filter = "and=(created_at.gte." + encodeURIComponent(from + "T00:00:00.000Z")
-          + ",created_at.lt." + encodeURIComponent(new Date(Date.parse(to + "T00:00:00.000Z") + 86400000).toISOString()) + ")";
-        const result = await databaseRequest(env,
-          "sjelle_ledger_entries?select=id,related_ride_id,related_order_id,account_type,account_user_id,amount_cents,currency,entry_type,idempotency_key,metadata,created_at&"
-          + filter + "&order=created_at.desc&limit=1000");
+        const result = await databaseRequest(env, "rpc/sjelle_admin_reconciliation_page", {
+          method: "POST",
+          body: JSON.stringify({
+            p_from: from + "T00:00:00.000Z",
+            p_to: toExclusive,
+            p_limit: limit,
+            p_cursor_created_at: cursorCreatedAt,
+            p_cursor_id: cursorId,
+          }),
+        });
         if (!result.ok) return response({ error: { code: "RECONCILIATION_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
-        const rows = await parseJson(result) as Array<{
-          id: string; related_ride_id: string | null; related_order_id: string | null;
-          account_type: string; account_user_id: string | null; amount_cents: number | string;
-          currency: string; entry_type: string; idempotency_key: string; metadata: Record<string, unknown>;
-          created_at: string;
-        }>;
-        if (!Array.isArray(rows)) return response({ error: { code: "RECONCILIATION_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
-        const totals = new Map<string, { entry_count: number; net_amount_cents: number }>();
-        for (const row of rows) {
-          const amount = Number(row.amount_cents);
-          if (!Number.isSafeInteger(amount) || row.currency !== "EUR"
-            || typeof row.account_type !== "string" || row.account_type.length === 0) {
+        const payload = await parseJson(result);
+        if (!isRecord(payload) || !Array.isArray(payload.data) || !Array.isArray(payload.summary) || !isRecord(payload.meta)) {
+          return response({ error: { code: "RECONCILIATION_DATA_INVALID", request_id: requestId } }, 503, requestId, origin, env);
+        }
+
+        const safeInteger = (value: unknown): number | null => {
+          if (typeof value !== "string" && typeof value !== "number") return null;
+          const parsed = Number(value);
+          return Number.isSafeInteger(parsed) ? parsed : null;
+        };
+        const normalizedRows: Array<Record<string, unknown>> = [];
+        for (const row of payload.data) {
+          if (!isRecord(row)) return response({ error: { code: "RECONCILIATION_DATA_INVALID", request_id: requestId } }, 503, requestId, origin, env);
+          const amount = safeInteger(row.amount_cents);
+          if (amount === null) return response({ error: { code: "RECONCILIATION_TOTAL_OVERFLOW", request_id: requestId } }, 503, requestId, origin, env);
+          if (row.currency !== "EUR" || typeof row.id !== "string" || !uuidPattern.test(row.id)
+            || typeof row.account_type !== "string" || !row.account_type
+            || typeof row.entry_type !== "string" || typeof row.idempotency_key !== "string"
+            || typeof row.created_at !== "string" || !Number.isFinite(Date.parse(row.created_at))
+            || (row.related_ride_id !== null && typeof row.related_ride_id !== "string")
+            || (row.related_order_id !== null && typeof row.related_order_id !== "string")
+            || (row.account_user_id !== null && typeof row.account_user_id !== "string")
+            ) {
             return response({ error: { code: "RECONCILIATION_DATA_INVALID", request_id: requestId } }, 503, requestId, origin, env);
           }
-          const total = totals.get(row.account_type) ?? { entry_count: 0, net_amount_cents: 0 };
-          const net = total.net_amount_cents + amount;
-          if (!Number.isSafeInteger(net)) {
+          normalizedRows.push({ ...row, amount_cents: amount });
+        }
+
+        const normalizedSummary: Array<{ account_type: string; entry_count: number; net_amount_cents: number }> = [];
+        const seenAccountTypes = new Set<string>();
+        let summaryEntryCount = 0;
+        for (const item of payload.summary) {
+          if (!isRecord(item) || typeof item.account_type !== "string" || !item.account_type || seenAccountTypes.has(item.account_type)) {
+            return response({ error: { code: "RECONCILIATION_DATA_INVALID", request_id: requestId } }, 503, requestId, origin, env);
+          }
+          const entryCount = safeInteger(item.entry_count);
+          const netAmount = safeInteger(item.net_amount_cents);
+          if (entryCount === null || entryCount < 0 || netAmount === null) {
             return response({ error: { code: "RECONCILIATION_TOTAL_OVERFLOW", request_id: requestId } }, 503, requestId, origin, env);
           }
-          total.entry_count += 1;
-          total.net_amount_cents = net;
-          totals.set(row.account_type, total);
+          summaryEntryCount += entryCount;
+          if (!Number.isSafeInteger(summaryEntryCount)) {
+            return response({ error: { code: "RECONCILIATION_TOTAL_OVERFLOW", request_id: requestId } }, 503, requestId, origin, env);
+          }
+          seenAccountTypes.add(item.account_type);
+          normalizedSummary.push({ account_type: item.account_type, entry_count: entryCount, net_amount_cents: netAmount });
         }
+
+        const totalEntries = safeInteger(payload.meta.total_entries);
+        const returned = safeInteger(payload.meta.returned);
+        const databaseLimit = safeInteger(payload.meta.limit);
+        const hasMore = payload.meta.has_more;
+        const nextCursor = payload.meta.next_cursor;
+        if (totalEntries === null || returned === null || databaseLimit !== limit
+          || returned !== normalizedRows.length || returned > limit || totalEntries < returned
+          || summaryEntryCount !== totalEntries || typeof hasMore !== "boolean") {
+          return response({ error: { code: "RECONCILIATION_DATA_INVALID", request_id: requestId } }, 503, requestId, origin, env);
+        }
+        if (hasMore) {
+          const lastRow = normalizedRows[normalizedRows.length - 1];
+          if (normalizedRows.length !== limit || !lastRow || !isRecord(nextCursor)
+            || typeof nextCursor.created_at !== "string" || !uuidPattern.test(String(nextCursor.id))
+            || nextCursor.created_at !== lastRow.created_at || nextCursor.id !== lastRow.id) {
+            return response({ error: { code: "RECONCILIATION_DATA_INVALID", request_id: requestId } }, 503, requestId, origin, env);
+          }
+        } else if (nextCursor !== null) {
+          return response({ error: { code: "RECONCILIATION_DATA_INVALID", request_id: requestId } }, 503, requestId, origin, env);
+        }
+
         return response({
-          data: rows,
-          summary: Array.from(totals.entries()).map(([account_type, total]) => ({ account_type, ...total })),
-          meta: { from, to, returned: rows.length, limit: 1000, possibly_truncated: rows.length === 1000 },
+          data: normalizedRows,
+          summary: normalizedSummary,
+          meta: { from, to, returned, total_entries: totalEntries, limit, has_more: hasMore, next_cursor: nextCursor },
         }, 200, requestId, origin, env);
       } catch {
         return response({ error: { code: "RECONCILIATION_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
