@@ -834,7 +834,7 @@ test("admin reconciliation rejects invalid date ranges before reading ledger ent
     } as never);
     assert.equal(result.status, 400);
     assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "INVALID_DATE_RANGE");
-    assert.equal(requests.some(url => url.includes("/rest/v1/sjelle_ledger_entries")), false);
+    assert.equal(requests.some(url => url.includes("/rest/v1/rpc/sjelle_admin_reconciliation_page")), false);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -844,29 +844,45 @@ test("admin reconciliation rejects invalid date ranges before reading ledger ent
 test("admin reconciliation returns signed ledger totals grouped by account type", async () => {
   const originalFetch = globalThis.fetch;
   const requests: string[] = [];
-  globalThis.fetch = async (input) => {
+  let rpcBody: Record<string, unknown> | null = null;
+  globalThis.fetch = async (input, init) => {
     const url = String(input);
     requests.push(url);
-    if (url.endsWith("/auth/v1/user")) {
-      return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), {
-        status: 200, headers: { "content-type": "application/json" },
-      });
-    }
-    if (url.includes("/rest/v1/sjelle_user_roles?")) {
-      return new Response(JSON.stringify([{ role: "admin" }]), {
-        status: 200, headers: { "content-type": "application/json" },
-      });
-    }
-    if (url.includes("/rest/v1/sjelle_ledger_entries?")) {
-      return new Response(JSON.stringify([
-        { id: "1", related_ride_id: "ride-1", related_order_id: null, account_type: "customer_cash_due", account_user_id: "customer-1", amount_cents: "-850", currency: "EUR", entry_type: "cash_collection_customer_due_cleared", idempotency_key: "ride:1:customer", metadata: {}, created_at: "2026-10-21T10:00:00Z" },
-        { id: "2", related_ride_id: "ride-1", related_order_id: null, account_type: "driver_cash_collected", account_user_id: "driver-1", amount_cents: "850", currency: "EUR", entry_type: "cash_collection_driver_received", idempotency_key: "ride:1:driver", metadata: {}, created_at: "2026-10-21T10:00:00Z" },
-      ]), { status: 200, headers: { "content-type": "application/json" } });
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_user_roles?")) return new Response(JSON.stringify([{ role: "admin" }]), { status: 200 });
+    if (url.includes("/rest/v1/rpc/sjelle_admin_reconciliation_page")) {
+      rpcBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({
+        data: [{
+          id: "11111111-1111-4111-8111-111111111111",
+          related_ride_id: "33333333-3333-4333-8333-333333333333",
+          related_order_id: null,
+          account_type: "customer_cash_due",
+          account_user_id: "44444444-4444-4444-8444-444444444444",
+          amount_cents: "-850",
+          currency: "EUR",
+          entry_type: "cash_collection_customer_due_cleared",
+          idempotency_key: "ride:1:customer",
+          metadata: {},
+          created_at: "2026-10-21T10:00:00+00:00"
+        }],
+        summary: [
+          { account_type: "customer_cash_due", entry_count: "1", net_amount_cents: "-850" },
+          { account_type: "driver_cash_collected", entry_count: "1", net_amount_cents: "850" }
+        ],
+        meta: {
+          total_entries: "2",
+          returned: 1,
+          limit: 1,
+          has_more: true,
+          next_cursor: { created_at: "2026-10-21T10:00:00+00:00", id: "11111111-1111-4111-8111-111111111111" }
+        }
+      }), { status: 200, headers: { "content-type": "application/json" } });
     }
     throw new Error("Unexpected reconciliation request: " + url);
   };
   try {
-    const result = await worker.fetch(new Request("https://api.example/api/v1/admin/reconciliation?from=2026-10-21&to=2026-10-21", {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/admin/reconciliation?from=2026-10-21&to=2026-10-21&limit=1", {
       method: "GET",
       headers: { authorization: "Bearer test-token" },
     }), {
@@ -876,15 +892,31 @@ test("admin reconciliation returns signed ledger totals grouped by account type"
       SUPABASE_PUBLISHABLE_KEY: "public-test-key",
       SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
     } as never);
-    const payload = await result.json() as { data?: unknown[]; summary?: Array<{ account_type: string; entry_count: number; net_amount_cents: number }>; meta?: { possibly_truncated: boolean } };
+    const payload = await result.json() as {
+      data?: Array<{ amount_cents: number }>;
+      summary?: Array<{ account_type: string; entry_count: number; net_amount_cents: number }>;
+      meta?: { total_entries: number; returned: number; limit: number; has_more: boolean; next_cursor: { id: string } | null };
+    };
     assert.equal(result.status, 200);
-    assert.equal(payload.data?.length, 2);
+    assert.equal(payload.data?.length, 1);
+    assert.equal(payload.data?.[0]?.amount_cents, -850);
     assert.deepEqual(payload.summary, [
       { account_type: "customer_cash_due", entry_count: 1, net_amount_cents: -850 },
       { account_type: "driver_cash_collected", entry_count: 1, net_amount_cents: 850 },
     ]);
-    assert.equal(payload.meta?.possibly_truncated, false);
-    assert.equal(requests.some(url => url.includes("sjelle_ledger_entries") && url.includes("limit=1000")), true);
+    assert.deepEqual(payload.meta, {
+      from: "2026-10-21", to: "2026-10-21", returned: 1, total_entries: 2, limit: 1,
+      has_more: true, next_cursor: { created_at: "2026-10-21T10:00:00+00:00", id: "11111111-1111-4111-8111-111111111111" }
+    });
+    assert.deepEqual(rpcBody, {
+      p_from: "2026-10-21T00:00:00.000Z",
+      p_to: "2026-10-22T00:00:00.000Z",
+      p_limit: 1,
+      p_cursor_created_at: null,
+      p_cursor_id: null,
+    });
+    assert.equal(requests.some(url => url.includes("/rpc/sjelle_admin_reconciliation_page")), true);
+    assert.equal(requests.some(url => url.includes("/rest/v1/sjelle_ledger_entries?")), false);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -897,10 +929,14 @@ test("admin reconciliation fails closed when account totals overflow safe intege
     const url = String(input);
     if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), { status: 200 });
     if (url.includes("/rest/v1/sjelle_user_roles?")) return new Response(JSON.stringify([{ role: "admin" }]), { status: 200 });
-    if (url.includes("/rest/v1/sjelle_ledger_entries?")) return new Response(JSON.stringify([
-      { id: "1", related_ride_id: "r1", related_order_id: null, account_type: "driver_cash_collected", account_user_id: "d1", amount_cents: "9007199254740991", currency: "EUR", entry_type: "test", idempotency_key: "k1", metadata: {}, created_at: "2026-10-21T10:00:00Z" },
-      { id: "2", related_ride_id: "r2", related_order_id: null, account_type: "driver_cash_collected", account_user_id: "d1", amount_cents: "1", currency: "EUR", entry_type: "test", idempotency_key: "k2", metadata: {}, created_at: "2026-10-21T10:00:01Z" }
-    ]), { status: 200 });
+    if (url.includes("/rest/v1/rpc/sjelle_admin_reconciliation_page")) return new Response(JSON.stringify({
+      data: [
+        { id: "11111111-1111-4111-8111-111111111111", related_ride_id: "33333333-3333-4333-8333-333333333333", related_order_id: null, account_type: "driver_cash_collected", account_user_id: "44444444-4444-4444-8444-444444444444", amount_cents: "9007199254740991", currency: "EUR", entry_type: "test", idempotency_key: "k1", metadata: {}, created_at: "2026-10-21T10:00:01+00:00" },
+        { id: "22222222-2222-4222-8222-222222222222", related_ride_id: "33333333-3333-4333-8333-333333333333", related_order_id: null, account_type: "driver_cash_collected", account_user_id: "44444444-4444-4444-8444-444444444444", amount_cents: "1", currency: "EUR", entry_type: "test", idempotency_key: "k2", metadata: {}, created_at: "2026-10-21T10:00:00+00:00" }
+      ],
+      summary: [{ account_type: "driver_cash_collected", entry_count: "2", net_amount_cents: "9007199254740992" }],
+      meta: { total_entries: "2", returned: 2, limit: 100, has_more: false, next_cursor: null }
+    }), { status: 200 });
     throw new Error("Unexpected reconciliation request: " + url);
   };
   try {
@@ -919,7 +955,11 @@ test("admin reconciliation rejects non-EUR ledger rows instead of mixing currenc
     const url = String(input);
     if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), { status: 200 });
     if (url.includes("/rest/v1/sjelle_user_roles?")) return new Response(JSON.stringify([{ role: "admin" }]), { status: 200 });
-    if (url.includes("/rest/v1/sjelle_ledger_entries?")) return new Response(JSON.stringify([{ id: "1", related_ride_id: null, related_order_id: "o1", account_type: "driver_cash_collected", account_user_id: "d1", amount_cents: "100", currency: "USD", entry_type: "test", idempotency_key: "k1", metadata: {}, created_at: "2026-10-21T10:00:00Z" }]), { status: 200 });
+    if (url.includes("/rest/v1/rpc/sjelle_admin_reconciliation_page")) return new Response(JSON.stringify({
+      data: [{ id: "11111111-1111-4111-8111-111111111111", related_ride_id: null, related_order_id: "33333333-3333-4333-8333-333333333333", account_type: "driver_cash_collected", account_user_id: "44444444-4444-4444-8444-444444444444", amount_cents: "100", currency: "USD", entry_type: "test", idempotency_key: "k1", metadata: {}, created_at: "2026-10-21T10:00:00+00:00" }],
+      summary: [{ account_type: "driver_cash_collected", entry_count: "1", net_amount_cents: "100" }],
+      meta: { total_entries: "1", returned: 1, limit: 100, has_more: false, next_cursor: null }
+    }), { status: 200 });
     throw new Error("Unexpected reconciliation request: " + url);
   };
   try {
@@ -1426,3 +1466,80 @@ test("driver mode switch is rejected before readiness checks when an active ride
     globalThis.fetch = originalFetch;
   }
 });
+
+test("admin reconciliation rejects oversized pages and partial cursors before database RPC work", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    requests.push(url);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_user_roles?")) return new Response(JSON.stringify([{ role: "admin" }]), { status: 200 });
+    throw new Error("Invalid reconciliation pagination must be rejected before the RPC");
+  };
+  try {
+    const env = {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never;
+    const oversized = await worker.fetch(new Request("https://api.example/api/v1/admin/reconciliation?from=2026-10-21&to=2026-10-21&limit=251", {
+      method: "GET", headers: { authorization: "Bearer test-token" },
+    }), env);
+    assert.equal(oversized.status, 400);
+    assert.equal((await oversized.json() as { error?: { code?: string } }).error?.code, "INVALID_PAGE_SIZE");
+    const partialCursor = await worker.fetch(new Request("https://api.example/api/v1/admin/reconciliation?from=2026-10-21&to=2026-10-21&cursor_id=11111111-1111-4111-8111-111111111111", {
+      method: "GET", headers: { authorization: "Bearer test-token" },
+    }), env);
+    assert.equal(partialCursor.status, 400);
+    assert.equal((await partialCursor.json() as { error?: { code?: string } }).error?.code, "INVALID_RECONCILIATION_CURSOR");
+    assert.equal(requests.some(url => url.includes("/rest/v1/rpc/sjelle_admin_reconciliation_page")), false);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+
+test("admin reconciliation passes a valid keyset cursor to the database and preserves full-period totals", async () => {
+  const originalFetch = globalThis.fetch;
+  let rpcBody: Record<string, unknown> | null = null;
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_user_roles?")) return new Response(JSON.stringify([{ role: "admin" }]), { status: 200 });
+    if (url.includes("/rest/v1/rpc/sjelle_admin_reconciliation_page")) {
+      rpcBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({
+        data: [{ id: "22222222-2222-4222-8222-222222222222", related_ride_id: "33333333-3333-4333-8333-333333333333", related_order_id: null, account_type: "driver_cash_collected", account_user_id: "44444444-4444-4444-8444-444444444444", amount_cents: "850", currency: "EUR", entry_type: "cash_collection_driver_received", idempotency_key: "ride:1:driver", metadata: {}, created_at: "2026-10-21T09:59:00+00:00" }],
+        summary: [
+          { account_type: "customer_cash_due", entry_count: "1", net_amount_cents: "-850" },
+          { account_type: "driver_cash_collected", entry_count: "1", net_amount_cents: "850" }
+        ],
+        meta: { total_entries: "2", returned: 1, limit: 1, has_more: false, next_cursor: null }
+      }), { status: 200 });
+    }
+    throw new Error("Unexpected database request: " + url);
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/admin/reconciliation?from=2026-10-21&to=2026-10-21&limit=1&cursor_created_at=2026-10-21T10%3A00%3A00.000Z&cursor_id=11111111-1111-4111-8111-111111111111", {
+      method: "GET", headers: { authorization: "Bearer test-token" },
+    }), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(result.status, 200);
+    assert.deepEqual(rpcBody, {
+      p_from: "2026-10-21T00:00:00.000Z",
+      p_to: "2026-10-22T00:00:00.000Z",
+      p_limit: 1,
+      p_cursor_created_at: "2026-10-21T10:00:00.000Z",
+      p_cursor_id: "11111111-1111-4111-8111-111111111111",
+    });
+    const payload = await result.json() as { meta?: { total_entries: number; returned: number; has_more: boolean }; summary?: Array<{ entry_count: number }> };
+    assert.equal(payload.meta?.total_entries, 2);
+    assert.equal(payload.meta?.returned, 1);
+    assert.equal(payload.meta?.has_more, false);
+    assert.equal(payload.summary?.reduce((sum, item) => sum + item.entry_count, 0), 2);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+
