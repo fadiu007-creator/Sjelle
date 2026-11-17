@@ -40,6 +40,12 @@ where related_ride_id = '00000000-0000-4000-8000-000000000001'
 order by created_at, account_type;
 ```
 
+## Paginated admin reconciliation
+
+Migration: `20261117081200_sjelle_admin_reconciliation_keyset_pagination.sql`.
+
+The API calls the service-role-only RPC `sjelle_admin_reconciliation_page`. The RPC validates the date range, page size and cursor, calculates full-period counts and signed totals, and returns a deterministic keyset page. The API validates the response shape, EUR currency, safe integer cents, full-period count reconciliation and cursor consistency before exposing the report. The admin portal keeps a cursor stack for newer/older pages and resets it whenever the date range changes.
+
 ## Important limitations before launch
 
 This is a cash-collection journal, not a complete double-entry accounting or settlement product. It does not yet calculate or post platform commission, driver net earnings, restaurant payable, courier delivery earnings, cash handover, refunds, disputes, or settlement adjustments. The API returns at most 1,000 rows per request and marks a result that reaches that cap as potentially truncated. Do not use a truncated result as a complete export. Keep all cities disabled until finance rules, real database migration tests, operational reconciliation, and legal/tax review are complete.
