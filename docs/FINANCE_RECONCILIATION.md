@@ -42,7 +42,7 @@ order by created_at, account_type;
 
 ## Paginated admin reconciliation
 
-Migration: `20261117081200_sjelle_admin_reconciliation_keyset_pagination.sql`.
+Migration: `20261117082811_sjelle_admin_reconciliation_keyset_pagination.sql`.
 
 The API calls the service-role-only RPC `sjelle_admin_reconciliation_page`. The RPC validates the date range, page size and cursor, calculates full-period counts and signed totals, and returns a deterministic keyset page. The API validates the response shape, EUR currency, safe integer cents, full-period count reconciliation and cursor consistency before exposing the report. The admin portal keeps a cursor stack for newer/older pages and resets it whenever the date range changes.
 
