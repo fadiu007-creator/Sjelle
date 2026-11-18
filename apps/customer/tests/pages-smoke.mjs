@@ -65,6 +65,7 @@ try {
   const adminRequests = [];
   let adminRoleAllowed = true;
   let adminDocumentPending = false;
+  let adminReadiness = [];
   let adminSignedUrlResponseSent = false;
   await page.route(`${apiOrigin}/**`, async route => {
     const request = route.request();
@@ -86,7 +87,7 @@ try {
     }
     const payloads = {
       "/admin/cities": { data: [] },
-      "/admin/driver-documents": { data: { documents: adminDocumentPending ? [{ id: "33333333-3333-4333-8333-333333333333", document_type: "identity", driver_id: "smoke-driver", document_number_last4: "1234", expires_at: "2027-12-31" }] : [], vehicles: [], drivers: [] } },
+      "/admin/driver-documents": { data: { documents: adminDocumentPending ? [{ id: "33333333-3333-4333-8333-333333333333", document_type: "identity", driver_id: "smoke-driver", document_number_last4: "1234", expires_at: "2027-12-31" }] : [], vehicles: [], drivers: [], readiness: adminReadiness, readiness_meta: { possibly_truncated: false } } },
       "/admin/restaurants": { data: [] },
       "/admin/support-tickets": { data: [] },
     };
@@ -100,6 +101,7 @@ try {
   await page.locator("#auth-submit").click();
   await page.waitForURL(url => url.pathname.endsWith("/admin/"), { timeout: 15000 });
   await page.getByText("Nuk ka dokumente, automjete ose aplikime në pritje.").waitFor({ state: "visible", timeout: 15000 });
+  await page.getByText("Nuk ka profile shoferësh për t’u shfaqur.").waitFor({ state: "visible", timeout: 15000 });
   await page.getByText("Nuk ka aplikime restorantesh në pritje.").waitFor({ state: "visible", timeout: 15000 });
   assert.equal(await page.locator("#driver-queue-count").textContent(), "0", "admin dashboard must show zero pending driver review items when queue is empty");
   assert.equal(await page.locator("#restaurant-queue-count").textContent(), "0", "admin dashboard must show zero pending restaurant applications when queue is empty");
@@ -127,6 +129,41 @@ try {
   await page.locator("#queue-refresh").click();
   await page.getByText("Nuk ka dokumente, automjete ose aplikime në pritje.").waitFor({ state: "visible" });
   console.log("PASS admin document review opens the private signed document in a new tab before the asynchronous request and clears opener access");
+  adminReadiness = [
+    {
+      user_id: "smoke-rejected-driver", city_id: "smoke-city", selected_mode: "ride",
+      review_status: "rejected", online: false, evidence_ready: false,
+      documents: [
+        { document_type: "identity", status: "rejected", expires_at: null, rejection_reason: "Foto e paqartë" },
+        { document_type: "driving_licence", status: "missing", expires_at: null, rejection_reason: null },
+        { document_type: "vehicle_registration", status: "missing", expires_at: null, rejection_reason: null },
+        { document_type: "insurance", status: "missing", expires_at: null, rejection_reason: null }
+      ],
+      vehicles: [{ vehicle_type: "standard", make: "Test", model: "Vehicle", color: null, status: "expired", document_expires_at: "2026-01-01" }]
+    },
+    {
+      user_id: "smoke-approved-driver", city_id: "smoke-city", selected_mode: "ride",
+      review_status: "approved", online: false, evidence_ready: false,
+      documents: [
+        { document_type: "identity", status: "missing", expires_at: null, rejection_reason: null },
+        { document_type: "driving_licence", status: "missing", expires_at: null, rejection_reason: null },
+        { document_type: "vehicle_registration", status: "missing", expires_at: null, rejection_reason: null },
+        { document_type: "insurance", status: "missing", expires_at: null, rejection_reason: null }
+      ],
+      vehicles: []
+    }
+  ];
+  await page.locator("#queue-refresh").click();
+  const readinessText = await page.locator("#driver-readiness").textContent();
+  assert.match(readinessText, /smoke-rejected-driver/, "admin readiness must include rejected driver profiles");
+  assert.match(readinessText, /Aplikimi: Refuzuar/, "admin readiness must show rejected profile status");
+  assert.match(readinessText, /Identiteti: Refuzuar/, "admin readiness must show the latest rejected document");
+  assert.match(readinessText, /Foto e paqartë/, "admin readiness must show the recorded rejection reason");
+  assert.match(readinessText, /smoke-approved-driver/, "admin readiness must include already-approved driver profiles");
+  assert.match(readinessText, /Aplikimi: Aprovuar/, "admin readiness must distinguish approved profiles");
+  assert.match(readinessText, /Evidenca: e paplotë/, "an approved profile with missing evidence must not be presented as evidence-ready");
+  console.log("PASS admin readiness lists all driver profile states and distinguishes rejected, missing and incomplete evidence");
+
 
   adminRoleAllowed = false;
   await page.locator("#queue-refresh").click();

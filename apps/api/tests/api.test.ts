@@ -858,6 +858,9 @@ test("admin driver queue returns pending documents, vehicles and driver applicat
     if (url.includes("sjelle_driver_profiles?review_status=eq.pending")) {
       return new Response(JSON.stringify([{ user_id: userId, city_id: "22222222-2222-4222-8222-222222222222", selected_mode: "ride" }]), { status: 200 });
     }
+    if (url.includes("sjelle_driver_profiles?select=user_id,city_id,selected_mode,review_status,online,created_at,updated_at")) return new Response("[]", { status: 200 });
+    if (url.includes("sjelle_driver_documents?select=id,driver_id,document_type,review_status,expires_at,created_at,rejection_reason")) return new Response("[]", { status: 200 });
+    if (url.includes("sjelle_vehicles?select=id,driver_id,vehicle_type,make,model,color,review_status,document_expires_at,created_at")) return new Response("[]", { status: 200 });
     throw new Error("Unexpected admin queue request: " + url);
   }) as typeof fetch;
   try {
@@ -868,11 +871,16 @@ test("admin driver queue returns pending documents, vehicles and driver applicat
       SUPABASE_PUBLISHABLE_KEY: "test-publishable",
       SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
     });
-    const body = await response.json() as { data: { documents: Array<{ document_type: string }>; vehicles: Array<{ registration_number: string }>; drivers: Array<{ user_id: string }> } };
+    const body = await response.json() as { data: { documents: Array<{ document_type: string }>; vehicles: Array<{ registration_number: string }>; drivers: Array<{ user_id: string }>; readiness: unknown[]; readiness_meta: { possibly_truncated: boolean } } };
     assert.equal(response.status, 200);
     assert.equal(body.data.documents[0]?.document_type, "identity");
     assert.equal(body.data.vehicles[0]?.registration_number, "01-123-AA");
     assert.equal(body.data.drivers[0]?.user_id, userId);
+    assert.deepEqual(body.data.readiness, [], "all-driver readiness is returned separately from the pending review queue");
+    assert.equal(body.data.readiness_meta.possibly_truncated, false);
+    assert.ok(requestedUrls.some(url => url.includes("sjelle_driver_profiles?select=user_id,city_id,selected_mode,review_status,online")));
+    assert.ok(requestedUrls.some(url => url.includes("sjelle_driver_documents?select=id,driver_id,document_type")));
+    assert.ok(requestedUrls.some(url => url.includes("sjelle_vehicles?select=id,driver_id,vehicle_type")));
     assert.ok(requestedUrls.some(url => url.includes("sjelle_driver_documents?review_status=eq.pending")));
     assert.ok(requestedUrls.some(url => url.includes("sjelle_vehicles?review_status=eq.pending")));
     assert.ok(requestedUrls.some(url => url.includes("sjelle_driver_profiles?review_status=eq.pending")));
@@ -1563,6 +1571,109 @@ test("admin driver approval succeeds only with all four latest approved document
     assert.equal(auditWritten, true, "successful approval must be audit logged");
     const documentRead = requested.find(item => item.url.includes("sjelle_driver_documents?driver_id=eq." + driverId));
     assert.ok(documentRead?.url.includes("&select=id,document_type,review_status,expires_at,created_at&order=created_at.desc,id.desc"));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("admin driver readiness includes every profile state and evaluates latest unexpired evidence", async () => {
+  const originalFetch = globalThis.fetch;
+  const adminId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const expiredDriver = "11111111-1111-4111-8111-111111111111";
+  const readyDriver = "22222222-2222-4222-8222-222222222222";
+  const rejectedDriver = "33333333-3333-4333-8333-333333333333";
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const timestamp = "2026-11-10T10:00:00.000Z";
+  const profiles = [
+    { user_id: expiredDriver, city_id: "city-a", selected_mode: "ride", review_status: "approved", online: false, created_at: timestamp, updated_at: timestamp },
+    { user_id: readyDriver, city_id: "city-a", selected_mode: "ride", review_status: "approved", online: false, created_at: timestamp, updated_at: timestamp },
+    { user_id: rejectedDriver, city_id: "city-b", selected_mode: "delivery", review_status: "rejected", online: false, created_at: timestamp, updated_at: timestamp },
+  ];
+  const documents = [
+    ...["identity", "vehicle_registration", "insurance"].map((document_type, index) => ({
+      id: "10000000-0000-4000-8000-00000000000" + (index + 1),
+      driver_id: expiredDriver, document_type, review_status: "approved", expires_at: future, created_at: timestamp,
+    })),
+    { id: "10000000-0000-4000-8000-000000000004", driver_id: expiredDriver, document_type: "driving_licence", review_status: "approved", expires_at: yesterday, created_at: timestamp },
+    ...["identity", "driving_licence", "vehicle_registration", "insurance"].map((document_type, index) => ({
+      id: "20000000-0000-4000-8000-00000000000" + (index + 1),
+      driver_id: readyDriver, document_type, review_status: "approved", expires_at: future, created_at: timestamp,
+    })),
+    { id: "30000000-0000-4000-8000-000000000001", driver_id: rejectedDriver, document_type: "identity", review_status: "approved", expires_at: null, created_at: timestamp },
+    { id: "30000000-0000-4000-8000-000000000002", driver_id: rejectedDriver, document_type: "identity", review_status: "rejected", expires_at: null, created_at: timestamp, rejection_reason: "Illegible image" },
+  ];
+  const vehicles = [
+    { id: "40000000-0000-4000-8000-000000000001", driver_id: expiredDriver, vehicle_type: "standard", make: "Test", model: "Expired", color: null, review_status: "approved", document_expires_at: yesterday, created_at: timestamp },
+    { id: "40000000-0000-4000-8000-000000000002", driver_id: readyDriver, vehicle_type: "standard", make: "Test", model: "Valid", color: null, review_status: "approved", document_expires_at: future, created_at: timestamp },
+    { id: "40000000-0000-4000-8000-000000000003", driver_id: rejectedDriver, vehicle_type: "standard", make: "Test", model: "Pending", color: null, review_status: "pending", document_expires_at: future, created_at: timestamp },
+  ];
+  const requested: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    requested.push(url);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: adminId }), { status: 200 });
+    if (url.includes("sjelle_user_roles?") && url.includes("role=eq.admin")) {
+      return new Response(JSON.stringify([{ role: "admin" }]), { status: 200 });
+    }
+    if (url.includes("sjelle_driver_documents?review_status=eq.pending")) return new Response("[]", { status: 200 });
+    if (url.includes("sjelle_vehicles?review_status=eq.pending")) return new Response("[]", { status: 200 });
+    if (url.includes("sjelle_driver_profiles?review_status=eq.pending")) return new Response("[]", { status: 200 });
+    if (url.includes("sjelle_driver_profiles?select=user_id,city_id,selected_mode,review_status,online,created_at,updated_at")) {
+      return new Response(JSON.stringify(profiles), { status: 200 });
+    }
+    if (url.includes("sjelle_driver_documents?select=id,driver_id,document_type,review_status,expires_at,created_at,rejection_reason")) {
+      return new Response(JSON.stringify(documents), { status: 200 });
+    }
+    if (url.includes("sjelle_vehicles?select=id,driver_id,vehicle_type,make,model,color,review_status,document_expires_at,created_at")) {
+      return new Response(JSON.stringify(vehicles), { status: 200 });
+    }
+    throw new Error("Unexpected admin readiness request: " + url);
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/admin/driver-documents", {
+      method: "GET",
+      headers: { authorization: "Bearer test-token" },
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as {
+      data: {
+        readiness: Array<{
+          user_id: string;
+          review_status: string;
+          online: boolean;
+          evidence_ready: boolean;
+          documents: Array<{ document_type: string; status: string; rejection_reason: string | null }>;
+          vehicles: Array<{ status: string }>;
+        }>;
+        readiness_meta: { possibly_truncated: boolean; profiles: number; documents: number; vehicles: number };
+      };
+    };
+    assert.equal(response.status, 200);
+    assert.equal(body.data.readiness.length, 3, "approved and rejected profiles must remain visible alongside pending profiles");
+    const expired = body.data.readiness.find(driver => driver.user_id === expiredDriver)!;
+    assert.equal(expired.review_status, "approved");
+    assert.equal(expired.evidence_ready, false, "an approved profile with expired evidence must not be marked evidence-ready");
+    assert.equal(expired.documents.find(document => document.document_type === "driving_licence")?.status, "expired");
+    assert.equal(expired.vehicles[0]?.status, "expired");
+    const ready = body.data.readiness.find(driver => driver.user_id === readyDriver)!;
+    assert.equal(ready.evidence_ready, true, "all four current documents and one current approved vehicle complete the evidence checklist");
+    assert.equal(ready.online, false, "evidence completeness must not imply online availability");
+    const rejected = body.data.readiness.find(driver => driver.user_id === rejectedDriver)!;
+    assert.equal(rejected.review_status, "rejected");
+    assert.equal(rejected.documents.find(document => document.document_type === "identity")?.status, "rejected", "the deterministic latest document must win when timestamps tie");
+    assert.equal(rejected.documents.find(document => document.document_type === "insurance")?.status, "missing");
+    assert.equal(rejected.evidence_ready, false);
+    assert.equal(body.data.readiness_meta.possibly_truncated, false);
+    assert.equal(body.data.readiness_meta.profiles, 3);
+    const allDocumentsRead = requested.find(url => url.includes("sjelle_driver_documents?select=id,driver_id,document_type"));
+    assert.ok(allDocumentsRead?.includes("order=created_at.desc,id.desc"));
+    assert.ok(!allDocumentsRead?.includes("storage_path"), "readiness summaries must never expose private storage paths");
+    assert.ok(requested.some(url => url.includes("sjelle_driver_profiles?select=user_id,city_id,selected_mode,review_status,online")));
   } finally {
     globalThis.fetch = originalFetch;
   }

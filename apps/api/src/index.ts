@@ -216,20 +216,119 @@ async function hasRestaurantPermission(env: Env, userId: string, restaurantId: s
 }
 
 
-function requiredDriverDocsApproved(docs: Array<{ id: string; document_type: string; review_status: string; expires_at: string | null; created_at: string }>): boolean {
-  const latest = new Map<string, { review_status: string; expires_at: string | null; created_at: string }>();
+type DriverReadinessDocument = {
+  id: string;
+  driver_id?: string;
+  document_type: string;
+  review_status: string;
+  expires_at: string | null;
+  created_at: string;
+  rejection_reason?: string | null;
+};
+
+type DriverReadinessVehicle = {
+  id: string;
+  driver_id: string;
+  vehicle_type: string;
+  make: string | null;
+  model: string | null;
+  color: string | null;
+  review_status: string;
+  document_expires_at: string | null;
+  created_at: string;
+};
+
+type DriverReadinessProfile = {
+  user_id: string;
+  city_id: string | null;
+  selected_mode: string | null;
+  review_status: string;
+  online: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+const REQUIRED_DRIVER_DOCUMENT_TYPES = ["identity", "driving_licence", "vehicle_registration", "insurance"] as const;
+
+function latestDriverDocumentMap(docs: DriverReadinessDocument[]): Map<string, DriverReadinessDocument> {
+  const latest = new Map<string, DriverReadinessDocument>();
   for (const doc of [...docs].sort((a,b) => {
     const createdOrder = Date.parse(b.created_at) - Date.parse(a.created_at);
-    if (createdOrder) return createdOrder;
+    if (Number.isFinite(createdOrder) && createdOrder !== 0) return createdOrder;
     const aId = String(a.id).toLowerCase(), bId = String(b.id).toLowerCase();
     return bId < aId ? -1 : bId > aId ? 1 : 0;
   })) {
     if (!latest.has(doc.document_type)) latest.set(doc.document_type, doc);
   }
+  return latest;
+}
+
+function currentEvidenceStatus(status: string, expiresAt: string | null, today: string): string {
+  return status === "approved" && expiresAt !== null && expiresAt < today ? "expired" : status;
+}
+
+function requiredDriverDocsApproved(docs: DriverReadinessDocument[]): boolean {
+  const latest = latestDriverDocumentMap(docs);
   const today = new Date().toISOString().slice(0,10);
-  return ["identity","driving_licence","vehicle_registration","insurance"].every(type => {
+  return REQUIRED_DRIVER_DOCUMENT_TYPES.every(type => {
     const doc = latest.get(type);
-    return Boolean(doc && doc.review_status === "approved" && (!doc.expires_at || doc.expires_at >= today));
+    return Boolean(doc && currentEvidenceStatus(doc.review_status, doc.expires_at, today) === "approved");
+  });
+}
+
+function buildDriverReadiness(
+  profiles: DriverReadinessProfile[],
+  documents: DriverReadinessDocument[],
+  vehicles: DriverReadinessVehicle[],
+): Array<Record<string, unknown>> {
+  const today = new Date().toISOString().slice(0,10);
+  const documentsByDriver = new Map<string, DriverReadinessDocument[]>();
+  const vehiclesByDriver = new Map<string, DriverReadinessVehicle[]>();
+  for (const document of documents) {
+    if (!document.driver_id) continue;
+    const rows = documentsByDriver.get(document.driver_id) ?? [];
+    rows.push(document);
+    documentsByDriver.set(document.driver_id, rows);
+  }
+  for (const vehicle of vehicles) {
+    const rows = vehiclesByDriver.get(vehicle.driver_id) ?? [];
+    rows.push(vehicle);
+    vehiclesByDriver.set(vehicle.driver_id, rows);
+  }
+
+  return profiles.map(profile => {
+    const latestDocuments = latestDriverDocumentMap(documentsByDriver.get(profile.user_id) ?? []);
+    const documentReadiness = REQUIRED_DRIVER_DOCUMENT_TYPES.map(documentType => {
+      const document = latestDocuments.get(documentType);
+      return {
+        document_type: documentType,
+        status: document ? currentEvidenceStatus(document.review_status, document.expires_at, today) : "missing",
+        expires_at: document?.expires_at ?? null,
+        rejection_reason: document?.review_status === "rejected" ? document.rejection_reason ?? null : null,
+      };
+    });
+    const vehicleReadiness = (vehiclesByDriver.get(profile.user_id) ?? []).map(vehicle => ({
+      vehicle_type: vehicle.vehicle_type,
+      make: vehicle.make,
+      model: vehicle.model,
+      color: vehicle.color,
+      status: currentEvidenceStatus(vehicle.review_status, vehicle.document_expires_at, today),
+      document_expires_at: vehicle.document_expires_at,
+    }));
+    const evidenceReady = documentReadiness.every(document => document.status === "approved")
+      && vehicleReadiness.some(vehicle => vehicle.status === "approved");
+
+    return {
+      user_id: profile.user_id,
+      city_id: profile.city_id,
+      selected_mode: profile.selected_mode,
+      review_status: profile.review_status,
+      online: profile.online,
+      updated_at: profile.updated_at,
+      documents: documentReadiness,
+      vehicles: vehicleReadiness,
+      evidence_ready: evidenceReady,
+    };
   });
 }
 
@@ -2261,14 +2360,48 @@ export default {
       try { if (!await hasSjelleRole(env, user.id, "admin")) return response({ error: { code: "FORBIDDEN", request_id: requestId } }, 403, requestId, origin, env); }
       catch { return response({ error: { code: "ROLE_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
       try {
-        const [docsResponse, vehiclesResponse, driversResponse] = await Promise.all([
+        const [
+          docsResponse, vehiclesResponse, driversResponse,
+          readinessProfilesResponse, readinessDocumentsResponse, readinessVehiclesResponse,
+        ] = await Promise.all([
           databaseRequest(env, "sjelle_driver_documents?review_status=eq.pending&select=id,driver_id,document_type,document_number_last4,expires_at,review_status,created_at&order=created_at.asc&limit=100"),
           databaseRequest(env, "sjelle_vehicles?review_status=eq.pending&select=id,driver_id,vehicle_type,make,model,color,registration_number,document_expires_at,created_at&order=created_at.asc&limit=100"),
           databaseRequest(env, "sjelle_driver_profiles?review_status=eq.pending&select=user_id,city_id,selected_mode,created_at&order=created_at.asc&limit=100"),
+          databaseRequest(env, "sjelle_driver_profiles?select=user_id,city_id,selected_mode,review_status,online,created_at,updated_at&order=updated_at.desc,user_id.desc&limit=1000"),
+          databaseRequest(env, "sjelle_driver_documents?select=id,driver_id,document_type,review_status,expires_at,created_at,rejection_reason&order=created_at.desc,id.desc&limit=1000"),
+          databaseRequest(env, "sjelle_vehicles?select=id,driver_id,vehicle_type,make,model,color,review_status,document_expires_at,created_at&order=created_at.desc,id.desc&limit=1000"),
         ]);
-        if (!docsResponse.ok || !vehiclesResponse.ok || !driversResponse.ok) return response({ error: { code: "ADMIN_DRIVER_QUEUE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
-        const [documents, vehicles, drivers] = await Promise.all([parseJson(docsResponse), parseJson(vehiclesResponse), parseJson(driversResponse)]);
-        return response({ data: { documents, vehicles, drivers } }, 200, requestId, origin, env);
+        if ([docsResponse, vehiclesResponse, driversResponse, readinessProfilesResponse, readinessDocumentsResponse, readinessVehiclesResponse].some(result => !result.ok)) {
+          return response({ error: { code: "ADMIN_DRIVER_QUEUE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        }
+        const [
+          documents, vehicles, drivers, readinessProfiles, readinessDocuments, readinessVehicles,
+        ] = await Promise.all([
+          parseJson(docsResponse), parseJson(vehiclesResponse), parseJson(driversResponse),
+          parseJson(readinessProfilesResponse), parseJson(readinessDocumentsResponse), parseJson(readinessVehiclesResponse),
+        ]);
+        if (![documents, vehicles, drivers, readinessProfiles, readinessDocuments, readinessVehicles].every(Array.isArray)) {
+          return response({ error: { code: "ADMIN_DRIVER_QUEUE_INVALID_RESPONSE", request_id: requestId } }, 503, requestId, origin, env);
+        }
+        const readiness = buildDriverReadiness(
+          readinessProfiles as DriverReadinessProfile[],
+          readinessDocuments as DriverReadinessDocument[],
+          readinessVehicles as DriverReadinessVehicle[],
+        );
+        const possiblyTruncated = (readinessProfiles as unknown[]).length >= 1000
+          || (readinessDocuments as unknown[]).length >= 1000
+          || (readinessVehicles as unknown[]).length >= 1000;
+        return response({
+          data: {
+            documents, vehicles, drivers, readiness,
+            readiness_meta: {
+              possibly_truncated: possiblyTruncated,
+              profiles: (readinessProfiles as unknown[]).length,
+              documents: (readinessDocuments as unknown[]).length,
+              vehicles: (readinessVehicles as unknown[]).length,
+            },
+          },
+        }, 200, requestId, origin, env);
       } catch { return response({ error: { code: "ADMIN_DRIVER_QUEUE_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
     }
 
