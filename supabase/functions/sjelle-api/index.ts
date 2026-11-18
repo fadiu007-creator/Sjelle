@@ -2478,27 +2478,45 @@ const worker = {
       try { if (!await hasSjelleRole(env, user.id, "admin")) return response({ error: { code: "FORBIDDEN", request_id: requestId } }, 403, requestId, origin, env); }
       catch { return response({ error: { code: "ROLE_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
       try {
+        const readReadinessPages = async (query: string): Promise<{ rows: unknown[]; possibly_truncated: boolean }> => {
+          const rows: unknown[] = [];
+          const pageSize = 1000;
+          const maximumRows = 10000;
+          for (let offset = 0; offset < maximumRows; offset += pageSize) {
+            const pageResponse = await databaseRequest(env, query + "&limit=" + pageSize + "&offset=" + offset);
+            if (!pageResponse.ok) throw new Error("ADMIN_READINESS_PAGE_FAILED");
+            const page = await parseJson(pageResponse);
+            if (!Array.isArray(page)) throw new Error("ADMIN_READINESS_PAGE_INVALID");
+            rows.push(...page);
+            if (page.length < pageSize) return { rows, possibly_truncated: false };
+          }
+          const overflowResponse = await databaseRequest(env, query + "&limit=1&offset=" + maximumRows);
+          if (!overflowResponse.ok) throw new Error("ADMIN_READINESS_OVERFLOW_CHECK_FAILED");
+          const overflow = await parseJson(overflowResponse);
+          if (!Array.isArray(overflow)) throw new Error("ADMIN_READINESS_OVERFLOW_INVALID");
+          return { rows, possibly_truncated: overflow.length > 0 };
+        };
         const [
           docsResponse, vehiclesResponse, driversResponse,
-          readinessProfilesResponse, readinessDocumentsResponse, readinessVehiclesResponse,
+          readinessProfilesPage, readinessDocumentsPage, readinessVehiclesPage,
         ] = await Promise.all([
           databaseRequest(env, "sjelle_driver_documents?review_status=eq.pending&select=id,driver_id,document_type,document_number_last4,expires_at,review_status,created_at&order=created_at.asc&limit=100"),
           databaseRequest(env, "sjelle_vehicles?review_status=eq.pending&select=id,driver_id,vehicle_type,make,model,color,registration_number,document_expires_at,created_at&order=created_at.asc&limit=100"),
           databaseRequest(env, "sjelle_driver_profiles?review_status=eq.pending&select=user_id,city_id,selected_mode,created_at&order=created_at.asc&limit=100"),
-          databaseRequest(env, "sjelle_driver_profiles?select=user_id,city_id,selected_mode,review_status,online,created_at,updated_at&order=updated_at.desc,user_id.desc&limit=1000"),
-          databaseRequest(env, "sjelle_driver_documents?select=id,driver_id,document_type,review_status,expires_at,created_at,rejection_reason&order=created_at.desc,id.desc&limit=1000"),
-          databaseRequest(env, "sjelle_vehicles?select=id,driver_id,vehicle_type,make,model,color,review_status,document_expires_at,created_at&order=created_at.desc,id.desc&limit=1000"),
+          readReadinessPages("sjelle_driver_profiles?select=user_id,city_id,selected_mode,review_status,online,created_at,updated_at&order=updated_at.desc,user_id.desc"),
+          readReadinessPages("sjelle_driver_documents?select=id,driver_id,document_type,review_status,expires_at,created_at,rejection_reason&order=created_at.desc,id.desc"),
+          readReadinessPages("sjelle_vehicles?select=id,driver_id,vehicle_type,make,model,color,review_status,document_expires_at,created_at&order=created_at.desc,id.desc"),
         ]);
-        if ([docsResponse, vehiclesResponse, driversResponse, readinessProfilesResponse, readinessDocumentsResponse, readinessVehiclesResponse].some(result => !result.ok)) {
+        if ([docsResponse, vehiclesResponse, driversResponse].some(result => !result.ok)) {
           return response({ error: { code: "ADMIN_DRIVER_QUEUE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
         }
-        const [
-          documents, vehicles, drivers, readinessProfiles, readinessDocuments, readinessVehicles,
-        ] = await Promise.all([
+        const [documents, vehicles, drivers] = await Promise.all([
           parseJson(docsResponse), parseJson(vehiclesResponse), parseJson(driversResponse),
-          parseJson(readinessProfilesResponse), parseJson(readinessDocumentsResponse), parseJson(readinessVehiclesResponse),
         ]);
-        if (![documents, vehicles, drivers, readinessProfiles, readinessDocuments, readinessVehicles].every(Array.isArray)) {
+        const readinessProfiles = readinessProfilesPage.rows;
+        const readinessDocuments = readinessDocumentsPage.rows;
+        const readinessVehicles = readinessVehiclesPage.rows;
+        if (![documents, vehicles, drivers].every(Array.isArray)) {
           return response({ error: { code: "ADMIN_DRIVER_QUEUE_INVALID_RESPONSE", request_id: requestId } }, 503, requestId, origin, env);
         }
         const readiness = buildDriverReadiness(
@@ -2506,9 +2524,9 @@ const worker = {
           readinessDocuments as DriverReadinessDocument[],
           readinessVehicles as DriverReadinessVehicle[],
         );
-        const possiblyTruncated = (readinessProfiles as unknown[]).length >= 1000
-          || (readinessDocuments as unknown[]).length >= 1000
-          || (readinessVehicles as unknown[]).length >= 1000;
+        const possiblyTruncated = readinessProfilesPage.possibly_truncated
+          || readinessDocumentsPage.possibly_truncated
+          || readinessVehiclesPage.possibly_truncated;
         return response({
           data: {
             documents, vehicles, drivers, readiness,
