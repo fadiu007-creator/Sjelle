@@ -858,6 +858,9 @@ test("admin driver queue returns pending documents, vehicles and driver applicat
     if (url.includes("sjelle_driver_profiles?review_status=eq.pending")) {
       return new Response(JSON.stringify([{ user_id: userId, city_id: "22222222-2222-4222-8222-222222222222", selected_mode: "ride" }]), { status: 200 });
     }
+    if (url.includes("sjelle_driver_profiles?select=user_id,city_id,selected_mode,review_status,online,created_at,updated_at")) return new Response("[]", { status: 200 });
+    if (url.includes("sjelle_driver_documents?select=id,driver_id,document_type,review_status,expires_at,created_at,rejection_reason")) return new Response("[]", { status: 200 });
+    if (url.includes("sjelle_vehicles?select=id,driver_id,vehicle_type,make,model,color,review_status,document_expires_at,created_at")) return new Response("[]", { status: 200 });
     throw new Error("Unexpected admin queue request: " + url);
   }) as typeof fetch;
   try {
@@ -868,11 +871,16 @@ test("admin driver queue returns pending documents, vehicles and driver applicat
       SUPABASE_PUBLISHABLE_KEY: "test-publishable",
       SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
     });
-    const body = await response.json() as { data: { documents: Array<{ document_type: string }>; vehicles: Array<{ registration_number: string }>; drivers: Array<{ user_id: string }> } };
+    const body = await response.json() as { data: { documents: Array<{ document_type: string }>; vehicles: Array<{ registration_number: string }>; drivers: Array<{ user_id: string }>; readiness: unknown[]; readiness_meta: { possibly_truncated: boolean } } };
     assert.equal(response.status, 200);
     assert.equal(body.data.documents[0]?.document_type, "identity");
     assert.equal(body.data.vehicles[0]?.registration_number, "01-123-AA");
     assert.equal(body.data.drivers[0]?.user_id, userId);
+    assert.deepEqual(body.data.readiness, [], "all-driver readiness is returned separately from the pending review queue");
+    assert.equal(body.data.readiness_meta.possibly_truncated, false);
+    assert.ok(requestedUrls.some(url => url.includes("sjelle_driver_profiles?select=user_id,city_id,selected_mode,review_status,online")));
+    assert.ok(requestedUrls.some(url => url.includes("sjelle_driver_documents?select=id,driver_id,document_type")));
+    assert.ok(requestedUrls.some(url => url.includes("sjelle_vehicles?select=id,driver_id,vehicle_type")));
     assert.ok(requestedUrls.some(url => url.includes("sjelle_driver_documents?review_status=eq.pending")));
     assert.ok(requestedUrls.some(url => url.includes("sjelle_vehicles?review_status=eq.pending")));
     assert.ok(requestedUrls.some(url => url.includes("sjelle_driver_profiles?review_status=eq.pending")));
