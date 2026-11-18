@@ -37,5 +37,5 @@ Seksioni **Gjendja e të gjithë shoferëve** nuk është vetëm radhë aprovimi
 - Dokumenti më i ri sipas `created_at` dhe, kur koha është e barabartë, sipas ID-së zëvendëson statusin e dokumentit të vjetër.
 - Dokumentet ose regjistrimet e automjeteve të skaduara shfaqen si **Skaduar**; mungesa shfaqet si **Mungon**.
 - **Evidencë e plotë** do të thotë vetëm katër dokumentet e kërkuara të aprovuara dhe të vlefshme plus të paktën një automjet të aprovuar e të vlefshëm. Kjo nuk garanton GPS të freskët, qytet/shërbim aktiv, modalitet të saktë, mungesë udhëtimi aktiv ose gatishmëri për caktim.
-- Pamja administrative përdor lexime të kufizuara në 1,000 rreshta për burim. Nëse shfaqet paralajmërimi për listë të pjesshme, mos e trajto pamjen si inventar të plotë; kërkohet faqëzim për instalime me shumë shoferë.
+- Pamja administrative lexon faqet prej 1,000 rreshtash dhe i bashkon deri në 10,000 rreshta për secilin burim. Bën edhe një kontroll shtesë për rreshta përtej kufirit. Nëse shfaqet paralajmërimi për listë të pjesshme, mos e trajto pamjen si inventar të plotë; filtro/ndaje shqyrtimin dhe rifresko para vendimeve.
 - Kjo pamje nuk jep aprovime automatike dhe nuk ndryshon asnjë dokument, automjet ose status shoferi.

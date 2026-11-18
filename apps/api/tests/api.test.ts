@@ -1604,6 +1604,16 @@ test("admin driver readiness includes every profile state and evaluates latest u
     { id: "30000000-0000-4000-8000-000000000001", driver_id: rejectedDriver, document_type: "identity", review_status: "approved", expires_at: null, created_at: timestamp },
     { id: "30000000-0000-4000-8000-000000000002", driver_id: rejectedDriver, document_type: "identity", review_status: "rejected", expires_at: null, created_at: timestamp, rejection_reason: "Illegible image" },
   ];
+  for (let index = 0; index < 990; index += 1) {
+    documents.push({
+      id: "90000000-0000-4000-8000-" + String(index).padStart(12, "0"),
+      driver_id: "99999999-9999-4999-8999-999999999999",
+      document_type: "identity",
+      review_status: "pending",
+      expires_at: future,
+      created_at: timestamp,
+    });
+  }
   const vehicles = [
     { id: "40000000-0000-4000-8000-000000000001", driver_id: expiredDriver, vehicle_type: "standard", make: "Test", model: "Expired", color: null, review_status: "approved", document_expires_at: yesterday, created_at: timestamp },
     { id: "40000000-0000-4000-8000-000000000002", driver_id: readyDriver, vehicle_type: "standard", make: "Test", model: "Valid", color: null, review_status: "approved", document_expires_at: future, created_at: timestamp },
@@ -1622,6 +1632,9 @@ test("admin driver readiness includes every profile state and evaluates latest u
     if (url.includes("sjelle_driver_profiles?review_status=eq.pending")) return new Response("[]", { status: 200 });
     if (url.includes("sjelle_driver_profiles?select=user_id,city_id,selected_mode,review_status,online,created_at,updated_at")) {
       return new Response(JSON.stringify(profiles), { status: 200 });
+    }
+    if (url.includes("sjelle_driver_documents?select=id,driver_id,document_type,review_status,expires_at,created_at,rejection_reason") && url.includes("&offset=1000")) {
+      return new Response("[]", { status: 200 });
     }
     if (url.includes("sjelle_driver_documents?select=id,driver_id,document_type,review_status,expires_at,created_at,rejection_reason")) {
       return new Response(JSON.stringify(documents), { status: 200 });
@@ -1672,6 +1685,8 @@ test("admin driver readiness includes every profile state and evaluates latest u
     assert.equal(body.data.readiness_meta.profiles, 3);
     const allDocumentsRead = requested.find(url => url.includes("sjelle_driver_documents?select=id,driver_id,document_type"));
     assert.ok(allDocumentsRead?.includes("order=created_at.desc,id.desc"));
+    assert.ok(requested.some(url => url.includes("sjelle_driver_documents?select=id,driver_id,document_type") && url.includes("&offset=1000")), "readiness must fetch the next page when the first 1,000 rows are full");
+    assert.equal(body.data.readiness_meta.documents, 1000, "readiness metadata must report all rows fetched across pages");
     assert.ok(!allDocumentsRead?.includes("storage_path"), "readiness summaries must never expose private storage paths");
     assert.ok(requested.some(url => url.includes("sjelle_driver_profiles?select=user_id,city_id,selected_mode,review_status,online")));
   } finally {
