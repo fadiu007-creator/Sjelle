@@ -155,3 +155,9 @@ assert.ok(adminJs.includes("function renderDriverReadiness(rows,meta)"), "admin 
 assert.ok(adminJs.includes('driver.evidence_ready?"e plotë":"e paplotë"'), "admin portal must distinguish evidence completeness from profile approval");
 assert.ok(adminHtml.includes('id="driver-readiness"'), "admin portal must expose the all-driver readiness panel");
 console.log("All-driver admin readiness API, Edge Function and portal parity checks passed.");
+
+for (const [file, source] of [[apiPath, api], [edgePath, edge]]) {
+  assert.ok(source.includes("readReadinessPages"), `${file}: admin driver readiness must paginate beyond the first page`);
+  assert.ok(source.includes("const maximumRows = 10000"), `${file}: admin driver readiness must enforce a bounded maximum`);
+  assert.ok(source.includes("ADMIN_READINESS_OVERFLOW_CHECK_FAILED"), `${file}: admin readiness must detect rows beyond its bounded maximum`);
+}
