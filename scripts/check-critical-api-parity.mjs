@@ -152,6 +152,6 @@ for (const [file, source] of [[apiPath, api], [edgePath, edge]]) {
   assert.ok(source.includes("possiblyTruncated"), `${file}: admin readiness must disclose when its bounded evidence reads may be incomplete`);
 }
 assert.ok(adminJs.includes("function renderDriverReadiness(rows,meta)"), "admin portal must render readiness for every driver profile state");
-assert.ok(adminJs.includes("Evidenca: "+(driver.evidence_ready?"e plotë":"e paplotë")"), "admin portal must distinguish evidence completeness from profile approval");
+assert.ok(adminJs.includes('driver.evidence_ready?"e plotë":"e paplotë"'), "admin portal must distinguish evidence completeness from profile approval");
 assert.ok(adminHtml.includes('id="driver-readiness"'), "admin portal must expose the all-driver readiness panel");
 console.log("All-driver admin readiness API, Edge Function and portal parity checks passed.");
