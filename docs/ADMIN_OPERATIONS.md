@@ -29,3 +29,13 @@ Kontrollo emrin, adresën, telefonin dhe lokacionin përpara vendimit. Aprovimi 
 ## Nëse lista është bosh
 
 Lista bosh do të thotë se API-ja nuk ktheu aplikime me status `pending`; nuk krijohen aplikime demonstrative. Verifiko që aplikanti e ka përfunduar dërgimin dhe që regjistrimi ekziston në projektin Supabase të Sjelle. Nëse ka rreshta por paneli nuk i ngarkon, përdor **Rifresko** dhe kontrollo mesazhin e gabimit; mos e anashkalo autorizimin.
+
+## Gjendja e të gjithë shoferëve
+
+Seksioni **Gjendja e të gjithë shoferëve** nuk është vetëm radhë aprovimi: ai përfshin profilet në pritje, të aprovuara dhe të refuzuara. Për secilin profil shfaq statusin e aplikimit, modalitetin, gjendjen online/offline, statusin më të fundit për secilin nga katër dokumentet e detyrueshme dhe statusin e automjeteve të regjistruara.
+
+- Dokumenti më i ri sipas `created_at` dhe, kur koha është e barabartë, sipas ID-së zëvendëson statusin e dokumentit të vjetër.
+- Dokumentet ose regjistrimet e automjeteve të skaduara shfaqen si **Skaduar**; mungesa shfaqet si **Mungon**.
+- **Evidencë e plotë** do të thotë vetëm katër dokumentet e kërkuara të aprovuara dhe të vlefshme plus të paktën një automjet të aprovuar e të vlefshëm. Kjo nuk garanton GPS të freskët, qytet/shërbim aktiv, modalitet të saktë, mungesë udhëtimi aktiv ose gatishmëri për caktim.
+- Pamja administrative përdor lexime të kufizuara në 1,000 rreshta për burim. Nëse shfaqet paralajmërimi për listë të pjesshme, mos e trajto pamjen si inventar të plotë; kërkohet faqëzim për instalime me shumë shoferë.
+- Kjo pamje nuk jep aprovime automatike dhe nuk ndryshon asnjë dokument, automjet ose status shoferi.
