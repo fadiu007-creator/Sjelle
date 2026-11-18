@@ -219,7 +219,7 @@ async function hasRestaurantPermission(env: Env, userId: string, restaurantId: s
 
 type DriverReadinessDocument = {
   id: string;
-  driver_id: string;
+  driver_id?: string;
   document_type: string;
   review_status: string;
   expires_at: string | null;
@@ -286,6 +286,7 @@ function buildDriverReadiness(
   const documentsByDriver = new Map<string, DriverReadinessDocument[]>();
   const vehiclesByDriver = new Map<string, DriverReadinessVehicle[]>();
   for (const document of documents) {
+    if (!document.driver_id) continue;
     const rows = documentsByDriver.get(document.driver_id) ?? [];
     rows.push(document);
     documentsByDriver.set(document.driver_id, rows);
