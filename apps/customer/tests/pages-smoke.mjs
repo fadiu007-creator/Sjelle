@@ -154,6 +154,7 @@ try {
     }
   ];
   await page.locator("#queue-refresh").click();
+  await page.locator("#driver-readiness").getByText("smoke-rejected-driver", { exact: false }).waitFor({ state: "visible", timeout: 15000 });
   const readinessText = await page.locator("#driver-readiness").textContent();
   assert.match(readinessText, /smoke-rejected-driver/, "admin readiness must include rejected driver profiles");
   assert.match(readinessText, /Aplikimi: Refuzuar/, "admin readiness must show rejected profile status");
