@@ -122,7 +122,7 @@ function renderDriverReadiness(rows,meta){
   root.append(c);
  }
  if(meta?.possibly_truncated){
-  const warning=makeCard("Lista mund të jetë e pjesshme","U arrit kufiri prej 1,000 rreshtash në të paktën një burim. Mos e trajto këtë pamje si listë të plotë; kërkohet faqëzim administrativ.");
+  const warning=makeCard("Lista mund të jetë e pjesshme","U arrit kufiri i sigurt prej 10,000 rreshtash në të paktën një burim. Pamja mund të jetë e pjesshme; filtro/ndaje shqyrtimin dhe rifresko para vendimeve të verifikimit.");
   warning.dataset.kind="warning";root.append(warning);
  }
 }
