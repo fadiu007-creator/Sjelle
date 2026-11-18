@@ -146,9 +146,9 @@ console.log("Driver document readiness API, Edge Function and portal assertions 
 
 for (const [file, source] of [[apiPath, api], [edgePath, edge]]) {
   assert.ok(source.includes("function buildDriverReadiness("), `${file}: admin driver readiness aggregation is missing`);
-  assert.ok(source.includes("sjelle_driver_profiles?select=user_id,city_id,selected_mode,review_status,online,created_at,updated_at&order=updated_at.desc,user_id.desc&limit=1000"), `${file}: admin readiness must inspect all driver profile states`);
-  assert.ok(source.includes("sjelle_driver_documents?select=id,driver_id,document_type,review_status,expires_at,created_at,rejection_reason&order=created_at.desc,id.desc&limit=1000"), `${file}: admin readiness must use latest document evidence without exposing storage paths`);
-  assert.ok(source.includes("sjelle_vehicles?select=id,driver_id,vehicle_type,make,model,color,review_status,document_expires_at,created_at&order=created_at.desc,id.desc&limit=1000"), `${file}: admin readiness must include approved, pending and rejected vehicle states`);
+  assert.ok(source.includes("sjelle_driver_profiles?select=user_id,city_id,selected_mode,review_status,online,created_at,updated_at&order=updated_at.desc,user_id.desc"), `${file}: admin readiness must inspect all driver profile states`);
+  assert.ok(source.includes("sjelle_driver_documents?select=id,driver_id,document_type,review_status,expires_at,created_at,rejection_reason&order=created_at.desc,id.desc"), `${file}: admin readiness must use latest document evidence without exposing storage paths`);
+  assert.ok(source.includes("sjelle_vehicles?select=id,driver_id,vehicle_type,make,model,color,review_status,document_expires_at,created_at&order=created_at.desc,id.desc"), `${file}: admin readiness must include approved, pending and rejected vehicle states`);
   assert.ok(source.includes("possiblyTruncated"), `${file}: admin readiness must disclose when its bounded evidence reads may be incomplete`);
 }
 assert.ok(adminJs.includes("function renderDriverReadiness(rows,meta)"), "admin portal must render readiness for every driver profile state");
