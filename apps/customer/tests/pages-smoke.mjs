@@ -102,7 +102,7 @@ try {
   await page.waitForURL(url => url.pathname.endsWith("/admin/"), { timeout: 15000 });
   await page.locator('#driver-queue [data-queue-items="documents"]').getByText("Nuk ka hyrje në pritje në këtë grup.").waitFor({ state: "visible", timeout: 15000 });
   await page.getByText("Nuk ka profile shoferësh për t’u shfaqur.").waitFor({ state: "visible", timeout: 15000 });
-  await page.getByText("Nuk ka aplikime restorantesh në pritje.").waitFor({ state: "visible", timeout: 15000 });
+  await page.getByText("Nuk ka aplikime restorantesh në këtë faqe.").waitFor({ state: "visible", timeout: 15000 });
   assert.equal(await page.locator("#driver-queue-count").textContent(), "0", "admin dashboard must show zero pending driver review items when queue is empty");
   assert.equal(await page.locator("#restaurant-queue-count").textContent(), "0", "admin dashboard must show zero pending restaurant applications when queue is empty");
   assert.ok(adminRequests.includes("/admin/driver-documents"), "admin login must load the protected driver application queue");
@@ -184,7 +184,7 @@ try {
   await page.locator("#queue-refresh").click();
   await page.locator("#restaurants-refresh").click();
   await page.locator('#driver-queue [data-queue-items="documents"]').getByText("Nuk ka hyrje në pritje në këtë grup.").waitFor({ state: "visible" });
-  await page.getByText("Nuk ka aplikime restorantesh në pritje.").waitFor({ state: "visible" });
+  await page.getByText("Nuk ka aplikime restorantesh në këtë faqe.").waitFor({ state: "visible" });
   console.log("PASS a signed-in non-admin receives a clear role error and safe first-admin setup link in both queues");
   await page.unroute(`${apiOrigin}/**`);
 
