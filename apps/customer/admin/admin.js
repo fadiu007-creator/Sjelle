@@ -126,40 +126,101 @@ function renderDriverReadiness(rows,meta){
   warning.dataset.kind="warning";root.append(warning);
  }
 }
-async function loadQueue(){
- const root=$("#driver-queue"),readinessRoot=$("#driver-readiness");
- root.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Po ngarkojmë aplikimet…"}));
- if(readinessRoot)readinessRoot.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Po ngarkojmë gjendjen e të gjithë shoferëve…"}));
- try{
-  const r=await api("/admin/driver-documents");
-  root.replaceChildren();
-  const data=r.data||{};
-  if(!Array.isArray(data.readiness))throw new Error("Gatishmëria e shoferëve nuk u kthye nga API-ja.");
-  renderDriverReadiness(data.readiness,data.readiness_meta);
-  setQueueCount("#driver-queue-count",(data.documents||[]).length+(data.vehicles||[]).length+(data.drivers||[]).length,"Rishikime të shoferëve në pritje");
-  for(const d of data.documents||[]){
+const driverQueueKinds=["documents","vehicles","drivers"];
+const driverQueueLabels={documents:"Dokumentet e shoferëve",vehicles:"Automjetet",drivers:"Aplikimet e shoferëve"};
+const driverQueueState=Object.fromEntries(driverQueueKinds.map(kind=>[kind,{cursors:[null],pageIndex:0,meta:null,loading:false}]));
+function resetDriverQueueState(){
+ for(const kind of driverQueueKinds)Object.assign(driverQueueState[kind],{cursors:[null],pageIndex:0,meta:null,loading:false});
+}
+function createDriverQueueGroups(root){
+ root.replaceChildren();
+ for(const kind of driverQueueKinds){
+  const group=document.createElement("section");group.className="admin-review-group";group.dataset.queueGroup=kind;
+  const heading=document.createElement("h3");heading.textContent=driverQueueLabels[kind];
+  const list=document.createElement("div");list.className="portal-list";list.dataset.queueItems=kind;
+  const pager=document.createElement("div");pager.className="portal-list-actions";pager.dataset.queuePager=kind;
+  group.append(heading,list,pager);root.append(group);
+ }
+}
+function renderDriverQueueGroup(kind,rows,meta){
+ const group=$("#driver-queue [data-queue-group=\""+kind+"\"]");
+ if(!group)return;
+ const list=group.querySelector("[data-queue-items=\""+kind+"\"]");
+ const pager=group.querySelector("[data-queue-pager=\""+kind+"\"]");
+ const state=driverQueueState[kind];
+ list.replaceChildren();pager.replaceChildren();
+ if(kind==="documents"){
+  for(const d of rows){
    const c=makeCard("Dokument · "+d.document_type,"Shoferi: "+d.driver_id+" · 4 shenjat: "+(d.document_number_last4||"—")+" · Skadon: "+(d.expires_at||"—"));
    const actions=document.createElement("div");actions.className="portal-list-actions";
    actions.append(button("Shiko dokumentin","secondary-button",()=>openDriverDocument(d.id)));
    actions.append(button("Aprovo","primary-button",()=>review("/admin/driver-documents/"+d.id+"/review",{review_status:"approved"}).then(()=>alertMsg("Dokumenti u aprovua.","success")).catch(err=>alertMsg(err.message,"error"))));
    actions.append(button("Refuzo","secondary-button",()=>{const reason=prompt("Arsyeja e refuzimit?","Dokumenti duhet të jetë i qartë dhe i vlefshëm.");if(reason!==null)review("/admin/driver-documents/"+d.id+"/review",{review_status:"rejected",rejection_reason:reason}).then(()=>alertMsg("Dokumenti u refuzua.","success")).catch(err=>alertMsg(err.message,"error"));}));
-   c.append(actions);root.append(c);
+   c.append(actions);list.append(c);
   }
-  for(const v of data.vehicles||[]){
+ }else if(kind==="vehicles"){
+  for(const v of rows){
    const c=makeCard("Automjet · "+v.vehicle_type,[v.make,v.model,v.color,v.registration_number].filter(Boolean).join(" · "));
    const actions=document.createElement("div");actions.className="portal-list-actions";
    actions.append(button("Aprovo automjetin","primary-button",()=>review("/admin/vehicles/"+v.id+"/review",{review_status:"approved",document_expires_at:v.document_expires_at||null}).then(()=>alertMsg("Automjeti u aprovua.","success")).catch(err=>alertMsg(err.message,"error"))));
    actions.append(button("Refuzo","secondary-button",()=>review("/admin/vehicles/"+v.id+"/review",{review_status:"rejected"}).then(()=>alertMsg("Automjeti u refuzua.","success")).catch(err=>alertMsg(err.message,"error"))));
-   c.append(actions);root.append(c);
+   c.append(actions);list.append(c);
   }
-  for(const d of data.drivers||[]){
+ }else{
+  for(const d of rows){
    const c=makeCard("Aplikim shoferi",d.user_id+" · "+d.selected_mode+" · qyteti "+d.city_id);
    const actions=document.createElement("div");actions.className="portal-list-actions";
    actions.append(button("Aprovo shoferin","primary-button",()=>review("/admin/drivers/"+d.user_id+"/review",{review_status:"approved"}).then(()=>alertMsg("Shoferi u aprovua.","success")).catch(err=>alertMsg("Shoferi nuk mund të aprovohet ende: "+err.message,"error"))));
    actions.append(button("Refuzo","secondary-button",()=>review("/admin/drivers/"+d.user_id+"/review",{review_status:"rejected"}).then(()=>alertMsg("Aplikimi u refuzua.","success")).catch(err=>alertMsg(err.message,"error"))));
-   c.append(actions);root.append(c);
+   c.append(actions);list.append(c);
   }
-  if(!root.children.length)root.append(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Nuk ka dokumente, automjete ose aplikime në pritje."}));
+ }
+ if(!rows.length)list.append(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Nuk ka hyrje në pritje në këtë grup."}));
+ state.meta=meta||{returned:rows.length,has_more:false,next_cursor:null};
+ const info=document.createElement("p");info.className="portal-muted";
+ info.textContent="Faqja "+(state.pageIndex+1)+" · "+rows.length+" hyrje në këtë faqe";
+ pager.append(info);
+ if(state.pageIndex>0)pager.append(button("Më të rejat","secondary-button",()=>loadDriverQueuePage(kind,state.pageIndex-1)));
+ if(state.meta.has_more&&state.meta.next_cursor)pager.append(button("Më të vjetra","secondary-button",()=>{
+  const nextIndex=state.pageIndex+1;state.cursors[nextIndex]=state.meta.next_cursor;loadDriverQueuePage(kind,nextIndex);
+ }));
+}
+async function loadDriverQueuePage(kind,pageIndex){
+ const state=driverQueueState[kind];if(state.loading)return;
+ const cursor=state.cursors[pageIndex]||null;
+ const params=new URLSearchParams({queue_type:kind,limit:"100"});
+ if(cursor){params.set("cursor_created_at",cursor.created_at);params.set("cursor_id",cursor.id);}
+ state.loading=true;
+ const group=$("#driver-queue [data-queue-group=\""+kind+"\"]");
+ const pager=group?.querySelector("[data-queue-pager=\""+kind+"\"]");
+ if(pager)pager.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Po ngarkohet faqja…"}));
+ try{
+  const result=await api("/admin/driver-documents?"+params.toString());
+  const rows=result.data?.[kind],meta=result.data?.queue_meta?.[kind];
+  if(!Array.isArray(rows)||!meta)throw new Error("Faqja e radhës nuk u kthye në formatin e pritur.");
+  state.pageIndex=pageIndex;renderDriverQueueGroup(kind,rows,meta);
+ }catch(err){
+  if(pager)pager.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Faqja nuk u ngarkua: "+adminErrorMessage(err)}));
+  alertMsg("Rishikimet nuk u ngarkuan: "+adminErrorMessage(err),"error");
+ }finally{state.loading=false;}
+}
+async function loadQueue(){
+ const root=$("#driver-queue"),readinessRoot=$("#driver-readiness");
+ resetDriverQueueState();createDriverQueueGroups(root);
+ if(readinessRoot)readinessRoot.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Po ngarkojmë gjendjen e të gjithë shoferëve…"}));
+ try{
+  const r=await api("/admin/driver-documents");
+  const data=r.data||{};
+  if(!Array.isArray(data.readiness))throw new Error("Gatishmëria e shoferëve nuk u kthye nga API-ja.");
+  renderDriverReadiness(data.readiness,data.readiness_meta);
+  let pendingCount=0,hasMore=false;
+  for(const kind of driverQueueKinds){
+   const rows=Array.isArray(data[kind])?data[kind]:[];
+   const meta=data.queue_meta?.[kind]||{returned:rows.length,has_more:false,next_cursor:null};
+   pendingCount+=rows.length;hasMore=hasMore||Boolean(meta.has_more);
+   renderDriverQueueGroup(kind,rows,meta);
+  }
+  setQueueCount("#driver-queue-count",hasMore?String(pendingCount)+"+":pendingCount,"Rishikime të shoferëve në pritje");
   return true;
  }catch(err){
   setQueueCount("#driver-queue-count",null,"Rishikimet e shoferëve");
@@ -169,23 +230,50 @@ async function loadQueue(){
  }
 }
 $("#queue-refresh").addEventListener("click",loadQueue);
-async function loadRestaurantQueue(){
- const root=$("#admin-restaurants");root.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Po ngarkojmë aplikimet…"}));
- try{
-  const r=await api("/admin/restaurants");root.replaceChildren();const rows=r.data||[];setQueueCount("#restaurant-queue-count",rows.length,"Aplikime restorantesh në pritje");
-  if(!rows.length){root.append(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Nuk ka aplikime restorantesh në pritje."}));return true;}
-  for(const rest of rows){
-   const c=makeCard(rest.name,rest.address_text+" · "+rest.slug+" · pronari: "+rest.owner_id);
-   const desc=document.createElement("p");desc.textContent=(rest.phone||"Pa telefon")+" · koordinatat "+rest.latitude+", "+rest.longitude;c.append(desc);
-   const actions=document.createElement("div");actions.className="portal-list-actions";
-   actions.append(button("Aprovo","primary-button",async()=>{try{await api("/admin/restaurants/"+rest.id+"/review",{method:"PATCH",body:JSON.stringify({approval_status:"approved"})});alertMsg("Restoranti u aprovua, por mbetet i mbyllur derisa pronari të konfigurojë menunë dhe shërbimet.","success");await loadRestaurantQueue();}catch(err){alertMsg("Aplikimi nuk u aprovua: "+err.message,"error");}}));
-   actions.append(button("Refuzo","secondary-button",async()=>{try{await api("/admin/restaurants/"+rest.id+"/review",{method:"PATCH",body:JSON.stringify({approval_status:"rejected"})});alertMsg("Aplikimi u refuzua.","success");await loadRestaurantQueue();}catch(err){alertMsg(err.message,"error");}}));
-   c.append(actions);root.append(c);
-  }
-  return true;
- }catch(err){setQueueCount("#restaurant-queue-count",null,"Aplikimet e restoranteve");renderQueueError(root,"Aplikimet nuk mund të ngarkohen: ",err);return false;}
+const restaurantQueueState={cursors:[null],pageIndex:0,meta:null,loading:false};
+function renderRestaurantQueue(rows,meta){
+ const root=$("#admin-restaurants");root.replaceChildren();
+ for(const rest of rows){
+  const c=makeCard(rest.name,rest.address_text+" · "+rest.slug+" · pronari: "+rest.owner_id);
+  const desc=document.createElement("p");desc.textContent=(rest.phone||"Pa telefon")+" · koordinatat "+rest.latitude+", "+rest.longitude;c.append(desc);
+  const actions=document.createElement("div");actions.className="portal-list-actions";
+  actions.append(button("Aprovo","primary-button",async()=>{try{await api("/admin/restaurants/"+rest.id+"/review",{method:"PATCH",body:JSON.stringify({approval_status:"approved"})});alertMsg("Restoranti u aprovua, por mbetet i mbyllur derisa pronari të konfigurojë menunë dhe shërbimet.","success");await loadRestaurantQueue(true);}catch(err){alertMsg("Aplikimi nuk u aprovua: "+err.message,"error");}}));
+  actions.append(button("Refuzo","secondary-button",async()=>{try{await api("/admin/restaurants/"+rest.id+"/review",{method:"PATCH",body:JSON.stringify({approval_status:"rejected"})});alertMsg("Aplikimi u refuzua.","success");await loadRestaurantQueue(true);}catch(err){alertMsg(err.message,"error");}}));
+  c.append(actions);root.append(c);
+ }
+ if(!rows.length)root.append(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Nuk ka aplikime restorantesh në këtë faqe."}));
+ const pager=document.createElement("div");pager.className="portal-list-actions";
+ const info=document.createElement("p");info.className="portal-muted";info.textContent="Faqja "+(restaurantQueueState.pageIndex+1)+" · "+rows.length+" aplikime në këtë faqe";pager.append(info);
+ if(restaurantQueueState.pageIndex>0)pager.append(button("Më të rejat","secondary-button",()=>loadRestaurantQueuePage(restaurantQueueState.pageIndex-1)));
+ if(meta?.has_more&&meta.next_cursor)pager.append(button("Më të vjetra","secondary-button",()=>{
+  const nextIndex=restaurantQueueState.pageIndex+1;restaurantQueueState.cursors[nextIndex]=meta.next_cursor;loadRestaurantQueuePage(nextIndex);
+ }));
+ root.append(pager);
 }
-$("#restaurants-refresh").addEventListener("click",loadRestaurantQueue);
+async function loadRestaurantQueue(reset=true){
+ if(reset){restaurantQueueState.cursors=[null];restaurantQueueState.pageIndex=0;restaurantQueueState.meta=null;}
+ return loadRestaurantQueuePage(restaurantQueueState.pageIndex);
+}
+async function loadRestaurantQueuePage(pageIndex){
+ if(restaurantQueueState.loading)return false;
+ const cursor=restaurantQueueState.cursors[pageIndex]||null;
+ const params=new URLSearchParams({limit:"100"});
+ if(cursor){params.set("cursor_created_at",cursor.created_at);params.set("cursor_id",cursor.id);}
+ const root=$("#admin-restaurants");root.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Po ngarkojmë aplikimet…"}));
+ restaurantQueueState.loading=true;
+ try{
+  const r=await api("/admin/restaurants?"+params.toString());
+  const rows=Array.isArray(r.data)?r.data:[];
+  const meta=r.meta||{returned:rows.length,has_more:false,next_cursor:null};
+  restaurantQueueState.pageIndex=pageIndex;restaurantQueueState.meta=meta;
+  setQueueCount("#restaurant-queue-count",meta.has_more?String(rows.length)+"+":rows.length,"Aplikime restorantesh në pritje");
+  renderRestaurantQueue(rows,meta);return true;
+ }catch(err){
+  setQueueCount("#restaurant-queue-count",null,"Aplikimet e restoranteve");
+  renderQueueError(root,"Aplikimet nuk mund të ngarkohen: ",err);return false;
+ }finally{restaurantQueueState.loading=false;}
+}
+$("#restaurants-refresh").addEventListener("click",()=>loadRestaurantQueue(true));
 
 function renderServiceAreas(){
  const root=$("#service-area-list");if(!root)return;root.replaceChildren();
