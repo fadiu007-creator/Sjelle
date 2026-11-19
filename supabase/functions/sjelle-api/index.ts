@@ -2477,18 +2477,96 @@ const worker = {
       if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
       try { if (!await hasSjelleRole(env, user.id, "admin")) return response({ error: { code: "FORBIDDEN", request_id: requestId } }, 403, requestId, origin, env); }
       catch { return response({ error: { code: "ROLE_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
+
+      const queueType = url.searchParams.get("queue_type");
+      const queueTypes = ["documents", "vehicles", "drivers"] as const;
+      type DriverQueueType = typeof queueTypes[number];
+      if (queueType !== null && !queueTypes.includes(queueType as DriverQueueType)) {
+        return response({ error: { code: "INVALID_QUEUE_TYPE", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      const limitText = url.searchParams.get("limit") ?? "100";
+      const pageSize = Number(limitText);
+      if (!/^\d+$/.test(limitText) || !Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 100) {
+        return response({ error: { code: "INVALID_PAGE_SIZE", message: "Use a page size from 1 to 100.", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      const cursorCreatedAt = url.searchParams.get("cursor_created_at");
+      const cursorId = url.searchParams.get("cursor_id");
+      const hasCursor = cursorCreatedAt !== null || cursorId !== null;
+      const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const parsedCursorTime = cursorCreatedAt === null ? Number.NaN : Date.parse(cursorCreatedAt);
+      if ((!queueType && hasCursor)
+        || (hasCursor && (cursorCreatedAt === null || cursorId === null
+          || cursorCreatedAt.length > 64 || !Number.isFinite(parsedCursorTime) || !uuidPattern.test(cursorId)))) {
+        return response({ error: { code: "INVALID_QUEUE_CURSOR", request_id: requestId } }, 400, requestId, origin, env);
+      }
+      const normalizedCursorTime = hasCursor ? new Date(parsedCursorTime).toISOString() : null;
+
+      const readPendingQueuePage = async (kind: DriverQueueType): Promise<{
+        rows: unknown[];
+        meta: { limit: number; returned: number; has_more: boolean; next_cursor: { created_at: string; id: string } | null };
+      }> => {
+        const definitions = {
+          documents: {
+            table: "sjelle_driver_documents",
+            idColumn: "id",
+            select: "id,driver_id,document_type,document_number_last4,expires_at,review_status,created_at",
+          },
+          vehicles: {
+            table: "sjelle_vehicles",
+            idColumn: "id",
+            select: "id,driver_id,vehicle_type,make,model,color,registration_number,document_expires_at,created_at",
+          },
+          drivers: {
+            table: "sjelle_driver_profiles",
+            idColumn: "user_id",
+            select: "user_id,city_id,selected_mode,created_at",
+          },
+        } as const;
+        const definition = definitions[kind];
+        const cursorFilter = normalizedCursorTime && cursorId
+          ? "&or=" + encodeURIComponent("(created_at.gt." + normalizedCursorTime
+            + ",and(created_at.eq." + normalizedCursorTime + "," + definition.idColumn + ".gt." + cursorId + "))")
+          : "";
+        const query = definition.table + "?review_status=eq.pending&select=" + definition.select
+          + "&order=created_at.asc," + definition.idColumn + ".asc"
+          + cursorFilter + "&limit=" + (pageSize + 1);
+        const pageResponse = await databaseRequest(env, query);
+        if (!pageResponse.ok) throw new Error("ADMIN_DRIVER_QUEUE_PAGE_FAILED");
+        const payload = await parseJson(pageResponse);
+        if (!Array.isArray(payload)) throw new Error("ADMIN_DRIVER_QUEUE_PAGE_INVALID");
+        const hasMore = payload.length > pageSize;
+        const rows = payload.slice(0, pageSize);
+        let nextCursor: { created_at: string; id: string } | null = null;
+        if (hasMore) {
+          const last = rows[rows.length - 1];
+          if (!isRecord(last) || typeof last.created_at !== "string"
+            || typeof last[definition.idColumn] !== "string" || !uuidPattern.test(String(last[definition.idColumn]))) {
+            throw new Error("ADMIN_DRIVER_QUEUE_CURSOR_INVALID");
+          }
+          nextCursor = { created_at: last.created_at, id: String(last[definition.idColumn]) };
+        }
+        return { rows, meta: { limit: pageSize, returned: rows.length, has_more: hasMore, next_cursor: nextCursor } };
+      };
+
       try {
+        if (queueType !== null) {
+          const page = await readPendingQueuePage(queueType as DriverQueueType);
+          return response({
+            data: { [queueType]: page.rows, queue_meta: { [queueType]: page.meta } },
+          }, 200, requestId, origin, env);
+        }
+
         const readReadinessPages = async (query: string): Promise<{ rows: unknown[]; possibly_truncated: boolean }> => {
           const rows: unknown[] = [];
-          const pageSize = 1000;
+          const readinessPageSize = 1000;
           const maximumRows = 10000;
-          for (let offset = 0; offset < maximumRows; offset += pageSize) {
-            const pageResponse = await databaseRequest(env, query + "&limit=" + pageSize + "&offset=" + offset);
+          for (let offset = 0; offset < maximumRows; offset += readinessPageSize) {
+            const pageResponse = await databaseRequest(env, query + "&limit=" + readinessPageSize + "&offset=" + offset);
             if (!pageResponse.ok) throw new Error("ADMIN_READINESS_PAGE_FAILED");
             const page = await parseJson(pageResponse);
             if (!Array.isArray(page)) throw new Error("ADMIN_READINESS_PAGE_INVALID");
             rows.push(...page);
-            if (page.length < pageSize) return { rows, possibly_truncated: false };
+            if (page.length < readinessPageSize) return { rows, possibly_truncated: false };
           }
           const overflowResponse = await databaseRequest(env, query + "&limit=1&offset=" + maximumRows);
           if (!overflowResponse.ok) throw new Error("ADMIN_READINESS_OVERFLOW_CHECK_FAILED");
@@ -2497,28 +2575,19 @@ const worker = {
           return { rows, possibly_truncated: overflow.length > 0 };
         };
         const [
-          docsResponse, vehiclesResponse, driversResponse,
+          documentsPage, vehiclesPage, driversPage,
           readinessProfilesPage, readinessDocumentsPage, readinessVehiclesPage,
         ] = await Promise.all([
-          databaseRequest(env, "sjelle_driver_documents?review_status=eq.pending&select=id,driver_id,document_type,document_number_last4,expires_at,review_status,created_at&order=created_at.asc&limit=100"),
-          databaseRequest(env, "sjelle_vehicles?review_status=eq.pending&select=id,driver_id,vehicle_type,make,model,color,registration_number,document_expires_at,created_at&order=created_at.asc&limit=100"),
-          databaseRequest(env, "sjelle_driver_profiles?review_status=eq.pending&select=user_id,city_id,selected_mode,created_at&order=created_at.asc&limit=100"),
+          readPendingQueuePage("documents"),
+          readPendingQueuePage("vehicles"),
+          readPendingQueuePage("drivers"),
           readReadinessPages("sjelle_driver_profiles?select=user_id,city_id,selected_mode,review_status,online,created_at,updated_at&order=updated_at.desc,user_id.desc"),
           readReadinessPages("sjelle_driver_documents?select=id,driver_id,document_type,review_status,expires_at,created_at,rejection_reason&order=created_at.desc,id.desc"),
           readReadinessPages("sjelle_vehicles?select=id,driver_id,vehicle_type,make,model,color,review_status,document_expires_at,created_at&order=created_at.desc,id.desc"),
         ]);
-        if ([docsResponse, vehiclesResponse, driversResponse].some(result => !result.ok)) {
-          return response({ error: { code: "ADMIN_DRIVER_QUEUE_FAILED", request_id: requestId } }, 503, requestId, origin, env);
-        }
-        const [documents, vehicles, drivers] = await Promise.all([
-          parseJson(docsResponse), parseJson(vehiclesResponse), parseJson(driversResponse),
-        ]);
         const readinessProfiles = readinessProfilesPage.rows;
         const readinessDocuments = readinessDocumentsPage.rows;
         const readinessVehicles = readinessVehiclesPage.rows;
-        if (![documents, vehicles, drivers].every(Array.isArray)) {
-          return response({ error: { code: "ADMIN_DRIVER_QUEUE_INVALID_RESPONSE", request_id: requestId } }, 503, requestId, origin, env);
-        }
         const readiness = buildDriverReadiness(
           readinessProfiles as DriverReadinessProfile[],
           readinessDocuments as DriverReadinessDocument[],
@@ -2529,12 +2598,20 @@ const worker = {
           || readinessVehiclesPage.possibly_truncated;
         return response({
           data: {
-            documents, vehicles, drivers, readiness,
+            documents: documentsPage.rows,
+            vehicles: vehiclesPage.rows,
+            drivers: driversPage.rows,
+            queue_meta: {
+              documents: documentsPage.meta,
+              vehicles: vehiclesPage.meta,
+              drivers: driversPage.meta,
+            },
+            readiness,
             readiness_meta: {
               possibly_truncated: possiblyTruncated,
-              profiles: (readinessProfiles as unknown[]).length,
-              documents: (readinessDocuments as unknown[]).length,
-              vehicles: (readinessVehicles as unknown[]).length,
+              profiles: readinessProfiles.length,
+              documents: readinessDocuments.length,
+              vehicles: readinessVehicles.length,
             },
           },
         }, 200, requestId, origin, env);
@@ -2746,7 +2823,42 @@ const worker = {
       let user:AuthUser|null;try{user=await requireUser(request,env);}catch{return response({error:{code:"AUTH_PROVIDER_UNAVAILABLE",request_id:requestId}},503,requestId,origin,env);}
       if(!user)return response({error:{code:"UNAUTHENTICATED",request_id:requestId}},401,requestId,origin,env);
       try{if(!await hasSjelleRole(env,user.id,"admin"))return response({error:{code:"FORBIDDEN",request_id:requestId}},403,requestId,origin,env);}catch{return response({error:{code:"ROLE_CHECK_FAILED",request_id:requestId}},503,requestId,origin,env);}
-      try{const result=await databaseRequest(env,"sjelle_restaurants?approval_status=eq.pending&select=id,owner_id,city_id,name,slug,description,phone,address_text,latitude,longitude,created_at&order=created_at.asc&limit=100");if(!result.ok)return response({error:{code:"ADMIN_RESTAURANTS_READ_FAILED",request_id:requestId}},503,requestId,origin,env);const rows=await parseJson(result);return response({data:Array.isArray(rows)?rows:[]},200,requestId,origin,env);}catch{return response({error:{code:"ADMIN_RESTAURANTS_READ_FAILED",request_id:requestId}},503,requestId,origin,env);}
+      const limitText=url.searchParams.get("limit")??"100";
+      const pageSize=Number(limitText);
+      if(!/^\d+$/.test(limitText)||!Number.isSafeInteger(pageSize)||pageSize<1||pageSize>100){
+        return response({error:{code:"INVALID_PAGE_SIZE",message:"Use a page size from 1 to 100.",request_id:requestId}},400,requestId,origin,env);
+      }
+      const cursorCreatedAt=url.searchParams.get("cursor_created_at");
+      const cursorId=url.searchParams.get("cursor_id");
+      const hasCursor=cursorCreatedAt!==null||cursorId!==null;
+      const uuidPattern=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const parsedCursorTime=cursorCreatedAt===null?Number.NaN:Date.parse(cursorCreatedAt);
+      if(hasCursor&&(cursorCreatedAt===null||cursorId===null||cursorCreatedAt.length>64||!Number.isFinite(parsedCursorTime)||!uuidPattern.test(cursorId))){
+        return response({error:{code:"INVALID_QUEUE_CURSOR",request_id:requestId}},400,requestId,origin,env);
+      }
+      try{
+        const normalizedCursorTime=hasCursor?new Date(parsedCursorTime).toISOString():null;
+        const cursorFilter=normalizedCursorTime&&cursorId
+          ? "&or="+encodeURIComponent("(created_at.gt."+normalizedCursorTime+",and(created_at.eq."+normalizedCursorTime+",id.gt."+cursorId+"))")
+          : "";
+        const query="sjelle_restaurants?approval_status=eq.pending&select=id,owner_id,city_id,name,slug,description,phone,address_text,latitude,longitude,created_at"
+          +"&order=created_at.asc,id.asc"+cursorFilter+"&limit="+(pageSize+1);
+        const result=await databaseRequest(env,query);
+        if(!result.ok)return response({error:{code:"ADMIN_RESTAURANTS_READ_FAILED",request_id:requestId}},503,requestId,origin,env);
+        const payload=await parseJson(result);
+        if(!Array.isArray(payload))return response({error:{code:"ADMIN_RESTAURANTS_INVALID_RESPONSE",request_id:requestId}},503,requestId,origin,env);
+        const hasMore=payload.length>pageSize;
+        const rows=payload.slice(0,pageSize) as Array<Record<string,unknown>>;
+        let nextCursor:{created_at:string;id:string}|null=null;
+        if(hasMore){
+          const last=rows[rows.length-1];
+          if(!last||typeof last.created_at!=="string"||typeof last.id!=="string"||!uuidPattern.test(last.id)){
+            return response({error:{code:"ADMIN_RESTAURANTS_CURSOR_INVALID",request_id:requestId}},503,requestId,origin,env);
+          }
+          nextCursor={created_at:last.created_at,id:last.id};
+        }
+        return response({data:rows,meta:{limit:pageSize,returned:rows.length,has_more:hasMore,next_cursor:nextCursor}},200,requestId,origin,env);
+      }catch{return response({error:{code:"ADMIN_RESTAURANTS_READ_FAILED",request_id:requestId}},503,requestId,origin,env);}
     }
 
     const restaurantReviewMatch=url.pathname.match(/^\/api\/v1\/admin\/restaurants\/([0-9a-f-]{36})\/review$/i);
