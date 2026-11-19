@@ -161,3 +161,26 @@ for (const [file, source] of [[apiPath, api], [edgePath, edge]]) {
   assert.ok(source.includes("const maximumRows = 10000"), `${file}: admin driver readiness must enforce a bounded maximum`);
   assert.ok(source.includes("ADMIN_READINESS_OVERFLOW_CHECK_FAILED"), `${file}: admin readiness must detect rows beyond its bounded maximum`);
 }
+
+
+const driverQueueStart = '    if (url.pathname === "/api/v1/admin/driver-documents" && request.method === "GET") {';
+const driverQueueEnd = "    const signedDocumentMatch = url.pathname.match";
+const restaurantQueueStart = '    if(url.pathname==="/api/v1/admin/restaurants"&&request.method==="GET"){';
+const restaurantQueueEnd = "    const restaurantReviewMatch=";
+function routeSection(source, startMarker, endMarker, file) {
+  const start = source.indexOf(startMarker);
+  const end = source.indexOf(endMarker, start + startMarker.length);
+  assert.ok(start >= 0 && end > start, `${file}: admin review queue route is missing or malformed`);
+  return source.slice(start, end);
+}
+for (const [file, source] of [[apiPath, api], [edgePath, edge]]) {
+  assert.ok(source.includes("ADMIN_DRIVER_QUEUE_PAGE_FAILED"), `${file}: driver review queue must use bounded keyset pages`);
+  assert.ok(source.includes("INVALID_QUEUE_CURSOR"), `${file}: driver review queue must validate untrusted cursors`);
+  assert.ok(source.includes("ADMIN_RESTAURANTS_CURSOR_INVALID"), `${file}: restaurant review queue must validate generated cursors`);
+  assert.ok(source.includes("queue_meta"), `${file}: driver review queue must return per-group pagination metadata`);
+}
+assert.equal(routeSection(api, driverQueueStart, driverQueueEnd, apiPath), routeSection(edge, driverQueueStart, driverQueueEnd, edgePath), "API and deployed Edge Function driver review queue routes must remain identical");
+assert.equal(routeSection(api, restaurantQueueStart, restaurantQueueEnd, apiPath), routeSection(edge, restaurantQueueStart, restaurantQueueEnd, edgePath), "API and deployed Edge Function restaurant review queue routes must remain identical");
+assert.ok(adminJs.includes("loadDriverQueuePage") && adminJs.includes("loadRestaurantQueuePage"), "admin portal must expose next/previous controls for every review queue");
+assert.ok(adminJs.includes("queue_type:kind") && adminJs.includes("cursor_created_at"), "driver queue UI must request isolated cursor pages");
+console.log("Admin driver/restaurant verification queue API, Edge Function and portal parity checks passed.");
