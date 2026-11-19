@@ -4,7 +4,7 @@ Sjelle is deployed at https://fadiu007-creator.github.io/Sjelle/ and its API run
 
 ## Current verified state
 
-- Verified on **2026-11-19** against the live repository, GitHub Actions and the existing Supabase project `zikos` (`saavqlbwffrwxingbnri`). The current repository head is `d0c17c10f530d17ab3de03630ec57be24801d9a4`. API CI and the dedicated Sjelle API checks pass; the GitHub Pages build and deploy jobs pass. The latest browser-smoke job is still running at the time of this check.
+- Verified on **2026-11-19** against the live repository, GitHub Actions and the existing Supabase project `zikos` (`saavqlbwffrwxingbnri`). Runtime source commit `d0c17c10f530d17ab3de03630ec57be24801d9a4` passed API CI, dedicated Sjelle API checks, GitHub Pages build, deployment and the real-browser smoke job. All three GitHub Pages jobs completed successfully.
 - The Supabase Edge Function `sjelle-api` is active at **version 39** (updated 2026-11-19 09:11:48 UTC). Its deployed `index.ts` exactly matches the repository source, including the current paginated driver and restaurant review routes. A fresh public health request returned `ok: true`; the city endpoint returned all six configured cities.
 - The live city configuration has **Ferizaj** active for rides and food. Gjilan, Mitrovica, Peja, Prishtina and Prizren remain inactive with both services disabled. There are six service-area records; only the Ferizaj area is active.
 - Ferizaj has active estimated ride pricing version `ferizaj-mvp-v1`: base fare **€1.00**, minimum fare **€1.50**, distance **€0.60/km**, and time **€0.10/minute**. No active fixed-route price is configured, so eligible routes use the server-calculated estimate.
@@ -13,7 +13,7 @@ Sjelle is deployed at https://fadiu007-creator.github.io/Sjelle/ and its API run
 - Cash ledger snapshot: **0 completed cash rides** and **0 delivered cash orders**. The database currently reports **0 missing driver-cash collection entries**, but there have been no eligible completed cash jobs, so this is not an end-to-end cash-lifecycle test.
 - Migration `20261119091250_sjelle_admin_review_queue_keyset_indexes` is applied to the existing project. It adds pending-only composite indexes for driver documents, vehicles, driver profiles and restaurant applications, matching the stable keyset pagination order. The repository contains the matching migration file.
 - Admin review queues use bounded keyset pages; driver documents, vehicles, driver profiles and restaurant applications have independent cursors. The cash reconciliation page also uses keyset pagination with full-period totals.
-- The live GitHub Pages homepage is reachable and serves the current Albanian customer experience. A fresh browser smoke run for the latest commit is still pending; do not treat its result as passed until the workflow completes.
+- The live GitHub Pages homepage, driver, merchant and admin portals are reachable. The successful Playwright browser smoke run covered the customer ride flow and the authenticated admin queue workflows with controlled fixtures.
 - The admin portal's city controls still require explicit readiness confirmation for activation; deactivation remains available without that confirmation.
 - Authenticated end-to-end ride and food-order lifecycle testing is still required. Do not announce public availability until a real driver completes identity/licence/registration/insurance verification, passes GPS readiness, goes online, and a controlled ride/delivery is completed and reconciled.
 

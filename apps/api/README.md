@@ -36,4 +36,4 @@ The Worker scheduled handler calls `sjelle_dispatch_waiting_jobs` once per minut
 - User IDs and roles are derived/validated server-side; the client cannot choose a role or submit a fare.
 - Fare calculation, quote expiry, idempotency, state transitions and dispatch decisions are server-authoritative.
 - Cities remain inactive until explicitly configured and activated by an admin.
-- Payments are cash-only. Online payments, refunds, settlement and cash reconciliation are not implemented.
+- Payments are cash-only. Cash-collection ledger postings and paginated admin reconciliation are implemented; this is not a full double-entry settlement product. Online payments, platform commission, driver/merchant settlement, refunds, disputes and settlement adjustments are not implemented.
