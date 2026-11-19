@@ -87,8 +87,8 @@ try {
     }
     const payloads = {
       "/admin/cities": { data: [] },
-      "/admin/driver-documents": { data: { documents: adminDocumentPending ? [{ id: "33333333-3333-4333-8333-333333333333", document_type: "identity", driver_id: "smoke-driver", document_number_last4: "1234", expires_at: "2027-12-31" }] : [], vehicles: [], drivers: [], readiness: adminReadiness, readiness_meta: { possibly_truncated: false } } },
-      "/admin/restaurants": { data: [] },
+      "/admin/driver-documents": { data: { documents: adminDocumentPending ? [{ id: "33333333-3333-4333-8333-333333333333", document_type: "identity", driver_id: "smoke-driver", document_number_last4: "1234", expires_at: "2027-12-31" }] : [], vehicles: [], drivers: [], queue_meta: { documents: { limit: 100, returned: adminDocumentPending ? 1 : 0, has_more: false, next_cursor: null }, vehicles: { limit: 100, returned: 0, has_more: false, next_cursor: null }, drivers: { limit: 100, returned: 0, has_more: false, next_cursor: null } }, readiness: adminReadiness, readiness_meta: { possibly_truncated: false } } },
+      "/admin/restaurants": { data: [], meta: { limit: 100, returned: 0, has_more: false, next_cursor: null } },
       "/admin/support-tickets": { data: [] },
     };
     return route.fulfill({ status: payloads[pathname] ? 200 : 404, contentType: "application/json", body: JSON.stringify(payloads[pathname] || { error: { code: "NOT_FOUND" } }) });
@@ -100,7 +100,7 @@ try {
   await page.locator('#auth-form input[name="password"]').fill("x".repeat(12));
   await page.locator("#auth-submit").click();
   await page.waitForURL(url => url.pathname.endsWith("/admin/"), { timeout: 15000 });
-  await page.getByText("Nuk ka dokumente, automjete ose aplikime në pritje.").waitFor({ state: "visible", timeout: 15000 });
+  await page.locator('#driver-queue [data-queue-items="documents"]').getByText("Nuk ka hyrje në pritje në këtë grup.").waitFor({ state: "visible", timeout: 15000 });
   await page.getByText("Nuk ka profile shoferësh për t’u shfaqur.").waitFor({ state: "visible", timeout: 15000 });
   await page.getByText("Nuk ka aplikime restorantesh në pritje.").waitFor({ state: "visible", timeout: 15000 });
   assert.equal(await page.locator("#driver-queue-count").textContent(), "0", "admin dashboard must show zero pending driver review items when queue is empty");
@@ -127,7 +127,7 @@ try {
   await page.unroute(`${storageOrigin}/storage/v1/object/sign/**`);
   adminDocumentPending = false;
   await page.locator("#queue-refresh").click();
-  await page.getByText("Nuk ka dokumente, automjete ose aplikime në pritje.").waitFor({ state: "visible" });
+  await page.locator('#driver-queue [data-queue-items="documents"]').getByText("Nuk ka hyrje në pritje në këtë grup.").waitFor({ state: "visible" });
   console.log("PASS admin document review opens the private signed document in a new tab before the asynchronous request and clears opener access");
   adminReadiness = [
     {
@@ -183,7 +183,7 @@ try {
   adminRoleAllowed = true;
   await page.locator("#queue-refresh").click();
   await page.locator("#restaurants-refresh").click();
-  await page.getByText("Nuk ka dokumente, automjete ose aplikime në pritje.").waitFor({ state: "visible" });
+  await page.locator('#driver-queue [data-queue-items="documents"]').getByText("Nuk ka hyrje në pritje në këtë grup.").waitFor({ state: "visible" });
   await page.getByText("Nuk ka aplikime restorantesh në pritje.").waitFor({ state: "visible" });
   console.log("PASS a signed-in non-admin receives a clear role error and safe first-admin setup link in both queues");
   await page.unroute(`${apiOrigin}/**`);
