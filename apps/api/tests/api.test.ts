@@ -871,7 +871,7 @@ test("admin driver queue returns pending documents, vehicles and driver applicat
       SUPABASE_PUBLISHABLE_KEY: "test-publishable",
       SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
     });
-    const body = await response.json() as { data: { documents: Array<{ document_type: string }>; vehicles: Array<{ registration_number: string }>; drivers: Array<{ user_id: string }>; readiness: unknown[]; readiness_meta: { possibly_truncated: boolean } } };
+    const body = await response.json() as { data: { documents: Array<{ document_type: string }>; vehicles: Array<{ registration_number: string }>; drivers: Array<{ user_id: string }>; queue_meta: Record<string, { has_more: boolean }>; readiness: unknown[]; readiness_meta: { possibly_truncated: boolean } } };
     assert.equal(response.status, 200);
     assert.equal(body.data.documents[0]?.document_type, "identity");
     assert.equal(body.data.vehicles[0]?.registration_number, "01-123-AA");
@@ -884,11 +884,97 @@ test("admin driver queue returns pending documents, vehicles and driver applicat
     assert.ok(requestedUrls.some(url => url.includes("sjelle_driver_documents?review_status=eq.pending")));
     assert.ok(requestedUrls.some(url => url.includes("sjelle_vehicles?review_status=eq.pending")));
     assert.ok(requestedUrls.some(url => url.includes("sjelle_driver_profiles?review_status=eq.pending")));
+    assert.equal(body.data.queue_meta.documents.has_more, false);
+    assert.equal(body.data.queue_meta.vehicles.has_more, false);
+    assert.equal(body.data.queue_meta.drivers.has_more, false);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
+
+
+
+test("admin driver review queue uses bounded keyset pages without loading readiness on subsequent pages", async () => {
+  const originalFetch = globalThis.fetch;
+  const adminId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const cursorId = "00000000-0000-4000-8000-000000000050";
+  const queueRows = Array.from({ length: 101 }, (_, index) => ({
+    id: "00000000-0000-4000-8000-" + String(index + 1).padStart(12, "0"),
+    driver_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    document_type: "identity",
+    review_status: "pending",
+    created_at: new Date(Date.UTC(2026, 10, 18, 9, 0, index)).toISOString(),
+  }));
+  let queueUrl = "";
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: adminId }), { status: 200 });
+    if (url.includes("sjelle_user_roles?") && url.includes("role=eq.admin")) return new Response(JSON.stringify([{ role: "admin" }]), { status: 200 });
+    if (url.includes("sjelle_driver_documents?review_status=eq.pending")) {
+      queueUrl = url;
+      return new Response(JSON.stringify(queueRows), { status: 200 });
+    }
+    if (url.includes("sjelle_driver_profiles?select=") || url.includes("sjelle_driver_documents?select=") || url.includes("sjelle_vehicles?select=")) {
+      throw new Error("A subsequent review-queue page must not reload the all-driver readiness inventory.");
+    }
+    throw new Error("Unexpected paginated driver queue request: " + url);
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/admin/driver-documents?queue_type=documents&limit=100&cursor_created_at=2026-11-01T00%3A00%3A00.000Z&cursor_id=" + cursorId, {
+      headers: { authorization: "Bearer test-token" },
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as {
+      data: {
+        documents: Array<{ id: string; created_at: string }>;
+        queue_meta: { documents: { limit: number; returned: number; has_more: boolean; next_cursor: { id: string; created_at: string } | null } };
+      };
+    };
+    assert.equal(response.status, 200);
+    assert.equal(body.data.documents.length, 100);
+    assert.equal(body.data.queue_meta.documents.limit, 100);
+    assert.equal(body.data.queue_meta.documents.returned, 100);
+    assert.equal(body.data.queue_meta.documents.has_more, true);
+    assert.equal(body.data.queue_meta.documents.next_cursor?.id, queueRows[99]?.id);
+    assert.equal(body.data.queue_meta.documents.next_cursor?.created_at, queueRows[99]?.created_at);
+    const parsed = new URL(queueUrl);
+    assert.equal(parsed.searchParams.get("limit"), "101");
+    assert.ok(parsed.searchParams.get("or")?.includes("created_at.gt.2026-11-01T00:00:00.000Z"));
+    assert.ok(parsed.searchParams.get("or")?.includes("id.gt." + cursorId));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("admin driver review queue rejects malformed cursors before reading queue data", async () => {
+  const originalFetch = globalThis.fetch;
+  let queueReads = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }), { status: 200 });
+    if (url.includes("sjelle_user_roles?") && url.includes("role=eq.admin")) return new Response(JSON.stringify([{ role: "admin" }]), { status: 200 });
+    if (url.includes("sjelle_driver_documents?review_status=eq.pending")) queueReads += 1;
+    throw new Error("Malformed cursors must be rejected before database reads: " + url);
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/admin/driver-documents?queue_type=documents&cursor_created_at=not-a-date&cursor_id=not-a-uuid", {
+      headers: { authorization: "Bearer test-token" },
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    assert.equal(response.status, 400);
+    assert.equal((await response.json() as { error: { code: string } }).error.code, "INVALID_QUEUE_CURSOR");
+    assert.equal(queueReads, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test("admin restaurant queue returns only pending applications", async () => {
   const originalFetch = globalThis.fetch;
@@ -920,11 +1006,68 @@ test("admin restaurant queue returns only pending applications", async () => {
       SUPABASE_PUBLISHABLE_KEY: "test-publishable",
       SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
     });
-    const body = await response.json() as { data: Array<{ name: string; slug: string }> };
+    const body = await response.json() as { data: Array<{ name: string; slug: string }>; meta: { has_more: boolean } };
     assert.equal(response.status, 200);
     assert.equal(body.data[0]?.name, "Restoranti Test");
     assert.equal(body.data[0]?.slug, "restoranti-test");
-    assert.ok(requestedUrls.some(url => url.includes("approval_status=eq.pending") && url.includes("limit=100")));
+    assert.ok(requestedUrls.some(url => url.includes("approval_status=eq.pending") && url.includes("limit=101")));
+    assert.equal(body.meta.has_more, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+
+test("admin restaurant queue returns bounded keyset pages and a stable next cursor", async () => {
+  const originalFetch = globalThis.fetch;
+  const adminId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const queueRows = Array.from({ length: 101 }, (_, index) => ({
+    id: "00000000-0000-4000-8000-" + String(index + 1).padStart(12, "0"),
+    owner_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    city_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    name: "Restaurant " + index,
+    slug: "restaurant-" + index,
+    address_text: "Ferizaj",
+    phone: "+38344000000",
+    latitude: 42.37,
+    longitude: 21.15,
+    created_at: new Date(Date.UTC(2026, 10, 18, 9, 0, index)).toISOString(),
+  }));
+  let queueUrl = "";
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: adminId }), { status: 200 });
+    if (url.includes("sjelle_user_roles?") && url.includes("role=eq.admin")) return new Response(JSON.stringify([{ role: "admin" }]), { status: 200 });
+    if (url.includes("sjelle_restaurants?approval_status=eq.pending")) {
+      queueUrl = url;
+      return new Response(JSON.stringify(queueRows), { status: 200 });
+    }
+    throw new Error("Unexpected paginated restaurant queue request: " + url);
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/admin/restaurants?limit=100&cursor_created_at=2026-11-01T00%3A00%3A00.000Z&cursor_id=00000000-0000-4000-8000-000000000050", {
+      headers: { authorization: "Bearer test-token" },
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as {
+      data: Array<{ id: string; created_at: string }>;
+      meta: { limit: number; returned: number; has_more: boolean; next_cursor: { id: string; created_at: string } | null };
+    };
+    assert.equal(response.status, 200);
+    assert.equal(body.data.length, 100);
+    assert.equal(body.meta.limit, 100);
+    assert.equal(body.meta.returned, 100);
+    assert.equal(body.meta.has_more, true);
+    assert.equal(body.meta.next_cursor?.id, queueRows[99]?.id);
+    assert.equal(body.meta.next_cursor?.created_at, queueRows[99]?.created_at);
+    const parsed = new URL(queueUrl);
+    assert.equal(parsed.searchParams.get("limit"), "101");
+    assert.ok(parsed.searchParams.get("or")?.includes("created_at.gt.2026-11-01T00:00:00.000Z"));
+    assert.ok(parsed.searchParams.get("or")?.includes("id.gt.00000000-0000-4000-8000-000000000050"));
   } finally {
     globalThis.fetch = originalFetch;
   }
