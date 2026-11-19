@@ -184,3 +184,16 @@ assert.equal(routeSection(api, restaurantQueueStart, restaurantQueueEnd, apiPath
 assert.ok(adminJs.includes("loadDriverQueuePage") && adminJs.includes("loadRestaurantQueuePage"), "admin portal must expose next/previous controls for every review queue");
 assert.ok(adminJs.includes("queue_type:kind") && adminJs.includes("cursor_created_at"), "driver queue UI must request isolated cursor pages");
 console.log("Admin driver/restaurant verification queue API, Edge Function and portal parity checks passed.");
+
+const reviewQueueIndexMigration = readFileSync("supabase/migrations/20261119091250_sjelle_admin_review_queue_keyset_indexes.sql", "utf8");
+for (const [indexName, tableName, columns, predicate] of [
+  ["sjelle_driver_documents_pending_queue_idx", "sjelle_driver_documents", "created_at asc, id asc", "review_status = 'pending'"],
+  ["sjelle_vehicles_pending_queue_idx", "sjelle_vehicles", "created_at asc, id asc", "review_status = 'pending'"],
+  ["sjelle_driver_profiles_pending_queue_idx", "sjelle_driver_profiles", "created_at asc, user_id asc", "review_status = 'pending'"],
+  ["sjelle_restaurants_pending_queue_idx", "sjelle_restaurants", "created_at asc, id asc", "approval_status = 'pending'"],
+]) {
+  assert.ok(reviewQueueIndexMigration.includes(`create index if not exists ${indexName}`), `migration must create ${indexName}`);
+  assert.ok(reviewQueueIndexMigration.includes(`on public.${tableName} (${columns})`), `migration must index the stable keyset order for ${tableName}`);
+  assert.ok(reviewQueueIndexMigration.includes(`where ${predicate}`), `migration must keep ${indexName} limited to pending rows`);
+}
+console.log("Admin verification queue index migration assertions passed.");
