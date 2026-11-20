@@ -214,7 +214,7 @@ console.log("Admin verification queue index migration assertions passed.");
 
 
 const assignmentGpsReadinessMigration = readFileSync("supabase/migrations/20261120090425_sjelle_assignment_gps_readiness_consistency.sql", "utf8");
-assert.ok(assignmentGpsReadinessMigration.includes("create or replace function public.sjelle_guard_driver_assignment()"), "assignment GPS migration must replace the final ride/delivery eligibility guard");
+assert.ok(assignmentGpsReadinessMigration.toLowerCase().includes("create or replace function public.sjelle_guard_driver_assignment()"), "assignment GPS migration must replace the final ride/delivery eligibility guard");
 assert.ok(assignmentGpsReadinessMigration.includes("and l.recorded_at >= now() - interval '2 minutes'"), "assignment must reject stale driver GPS fixes");
 assert.ok(assignmentGpsReadinessMigration.includes("and l.recorded_at <= now() + interval '15 seconds'"), "assignment must reject future-dated driver GPS fixes");
 assert.ok(assignmentGpsReadinessMigration.includes("and l.latitude between 41.7 and 43.4") && assignmentGpsReadinessMigration.includes("and l.longitude between 19.7 and 22.0"), "assignment must reject GPS coordinates outside Kosovo bounds");
