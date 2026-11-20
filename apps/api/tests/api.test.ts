@@ -408,6 +408,76 @@ test("delivery cash cannot be confirmed before delivery is complete", async () =
 });
 
 
+test("driver availability rejects stored GPS outside assignment freshness and accuracy bounds", async () => {
+  const originalFetch = globalThis.fetch;
+  const driverId = "11111111-1111-4111-8111-111111111111";
+  const calls: string[] = [];
+  let rpcCalls = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    calls.push(url);
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: driverId }), { status: 200 });
+    }
+    if (url.includes("sjelle_driver_profiles?")) {
+      return new Response(JSON.stringify([{
+        user_id: driverId,
+        review_status: "approved",
+        city_id: "22222222-2222-4222-8222-222222222222",
+        selected_mode: "ride",
+      }]), { status: 200 });
+    }
+    if (url.includes("sjelle_driver_documents?")) {
+      const types = ["identity", "driving_licence", "vehicle_registration", "insurance"];
+      return new Response(JSON.stringify(types.map((document_type, index) => ({
+        id: "33333333-3333-4333-8333-33333333333" + index,
+        document_type,
+        review_status: "approved",
+        expires_at: null,
+        created_at: "2026-11-20T08:00:00.000Z",
+      }))), { status: 200 });
+    }
+    if (url.includes("sjelle_vehicles?")) {
+      return new Response(JSON.stringify([{ id: "44444444-4444-4444-8444-444444444444" }]), { status: 200 });
+    }
+    if (url.includes("sjelle_cities?")) {
+      return new Response(JSON.stringify([{ active: true, rides_enabled: true, food_enabled: true }]), { status: 200 });
+    }
+    if (url.includes("sjelle_driver_locations?")) {
+      if (url.includes("accuracy_m.lte.1500") && url.includes("recorded_at.lte.") && url.includes("latitude.gte.41.7")) {
+        return new Response("[]", { status: 200 });
+      }
+      return new Response(JSON.stringify([{ driver_id: driverId }]), { status: 200 });
+    }
+    if (url.includes("/rpc/sjelle_set_driver_availability_with_location")) {
+      rpcCalls += 1;
+      return new Response(JSON.stringify({ online: true, selected_mode: "ride" }), { status: 200 });
+    }
+    throw new Error("Unexpected request: " + url);
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/availability", {
+      method: "PATCH",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ online: true }),
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 409);
+    assert.equal(body.error.code, "DRIVER_LOCATION_REQUIRED");
+    assert.equal(rpcCalls, 0);
+    const locationQuery = calls.find(url => url.includes("sjelle_driver_locations?"));
+    assert.ok(locationQuery?.includes("accuracy_m.lte.1500"));
+    assert.ok(locationQuery?.includes("latitude.gte.41.7"));
+    assert.ok(locationQuery?.includes("longitude.lte.22.0"));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("driver availability uses the atomic database RPC after preflight checks", async () => {
   const originalFetch = globalThis.fetch;
   const calls: Array<{ url: string; method: string; body?: string }> = [];
