@@ -211,3 +211,14 @@ for (const [indexName, tableName, columns, predicate] of [
   assert.ok(reviewQueueIndexMigration.includes(`where ${predicate}`), `migration must keep ${indexName} limited to pending rows`);
 }
 console.log("Admin verification queue index migration assertions passed.");
+
+
+const assignmentGpsReadinessMigration = readFileSync("supabase/migrations/20261120090425_sjelle_assignment_gps_readiness_consistency.sql", "utf8");
+assert.ok(assignmentGpsReadinessMigration.includes("create or replace function public.sjelle_guard_driver_assignment()"), "assignment GPS migration must replace the final ride/delivery eligibility guard");
+assert.ok(assignmentGpsReadinessMigration.includes("and l.recorded_at >= now() - interval '2 minutes'"), "assignment must reject stale driver GPS fixes");
+assert.ok(assignmentGpsReadinessMigration.includes("and l.recorded_at <= now() + interval '15 seconds'"), "assignment must reject future-dated driver GPS fixes");
+assert.ok(assignmentGpsReadinessMigration.includes("and l.latitude between 41.7 and 43.4") && assignmentGpsReadinessMigration.includes("and l.longitude between 19.7 and 22.0"), "assignment must reject GPS coordinates outside Kosovo bounds");
+assert.ok(assignmentGpsReadinessMigration.includes("and l.accuracy_m between 0 and 1500"), "assignment must enforce the same non-negative GPS accuracy limit as online readiness");
+assert.ok(assignmentGpsReadinessMigration.includes("DRIVER_HAS_ACTIVE_JOB"), "assignment GPS hardening must preserve cross-service exclusive driver assignment");
+assert.ok(assignmentGpsReadinessMigration.includes("revoke all on function public.sjelle_guard_driver_assignment() from public, anon, authenticated") && assignmentGpsReadinessMigration.includes("grant execute on function public.sjelle_guard_driver_assignment() to service_role"), "assignment guard must remain service-role only");
+console.log("Driver assignment GPS readiness consistency assertions passed.");
