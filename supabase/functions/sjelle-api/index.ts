@@ -1665,7 +1665,10 @@ const worker = {
             databaseRequest(env, "sjelle_cities?id=eq." + encodeURIComponent(profile.city_id) + "&select=active,rides_enabled,food_enabled&limit=1"),
             hasLocation
               ? Promise.resolve(new Response("[]", { status: 200 }))
-              : databaseRequest(env, "sjelle_driver_locations?driver_id=eq." + encodeURIComponent(user.id) + "&recorded_at=gte." + encodeURIComponent(locationCutoff) + "&select=driver_id&limit=1"),
+              : databaseRequest(env, "sjelle_driver_locations?driver_id=eq." + encodeURIComponent(user.id) + "&recorded_at=gte." + encodeURIComponent(locationCutoff)
+              + "&and=(recorded_at.lte." + encodeURIComponent(new Date(Date.now() + 15000).toISOString())
+              + ",latitude.gte.41.7,latitude.lte.43.4,longitude.gte.19.7,longitude.lte.22.0,accuracy_m.gte.0,accuracy_m.lte.1500)"
+              + "&select=driver_id&limit=1"),
           ]);
           const docs = await parseJson(docsResponse) as Array<{ id: string; document_type: string; review_status: string; expires_at: string | null; created_at: string }>;
           const vehicles = await parseJson(vehicleResponse) as unknown[];
