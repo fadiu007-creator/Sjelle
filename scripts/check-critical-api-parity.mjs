@@ -82,7 +82,7 @@ assert.ok(profileLockPosition >= 0 && locationWritePosition > profileLockPositio
 assert.ok(availabilityWrapper.includes("DRIVER_APPLICATION_REQUIRED"), "availability must reject users without a driver profile before writing GPS");
 assert.ok(availabilityWrapper.includes("return public.sjelle_set_driver_availability(p_driver_id, p_online, p_mode)"), "availability must preserve the authoritative readiness and active-job checks");
 
-const availabilityReadinessMigration = readFileSync("supabase/migrations/20261120084240_sjelle_driver_availability_readiness_consistency.sql", "utf8");
+const availabilityReadinessMigration = readFileSync("supabase/migrations/20261120091134_sjelle_driver_availability_readiness_consistency.sql", "utf8");
 assert.ok(availabilityReadinessMigration.includes("order by document_type, created_at desc, id desc"), "online readiness must select the same deterministic latest document as dispatch");
 assert.ok(availabilityReadinessMigration.includes("and accuracy_m between 0 and 1500"), "online readiness must reject GPS fixes outside the dispatch accuracy limit");
 assert.ok(availabilityReadinessMigration.includes("and recorded_at <= now() + interval '15 seconds'"), "online readiness must reject future-dated GPS fixes");
@@ -213,7 +213,7 @@ for (const [indexName, tableName, columns, predicate] of [
 console.log("Admin verification queue index migration assertions passed.");
 
 
-const assignmentGpsReadinessMigration = readFileSync("supabase/migrations/20261120090425_sjelle_assignment_gps_readiness_consistency.sql", "utf8");
+const assignmentGpsReadinessMigration = readFileSync("supabase/migrations/20261120091145_sjelle_assignment_gps_readiness_consistency.sql", "utf8");
 assert.ok(assignmentGpsReadinessMigration.toLowerCase().includes("create or replace function public.sjelle_guard_driver_assignment()"), "assignment GPS migration must replace the final ride/delivery eligibility guard");
 assert.ok(assignmentGpsReadinessMigration.includes("and l.recorded_at >= now() - interval '2 minutes'"), "assignment must reject stale driver GPS fixes");
 assert.ok(assignmentGpsReadinessMigration.includes("and l.recorded_at <= now() + interval '15 seconds'"), "assignment must reject future-dated driver GPS fixes");
