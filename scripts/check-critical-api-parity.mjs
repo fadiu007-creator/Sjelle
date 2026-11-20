@@ -34,6 +34,7 @@ for (const [file, source] of [[apiPath, api], [edgePath, edge]]) {
   assert.ok(source.includes("rpc/sjelle_set_driver_availability_with_location"), `${file}: online GPS and availability must be committed through the atomic database RPC`);
   assert.ok(source.includes("rpc/sjelle_update_driver_location_if_online"), `${file}: live GPS refresh must lock and recheck online state in the database`);
   assert.ok(source.includes("DRIVER_OFFLINE"), `${file}: offline drivers must not be allowed to update precise GPS location`);
+  assert.ok(source.includes("&and=(recorded_at.lte.") && source.includes("accuracy_m.lte.1500") && source.includes("latitude.gte.41.7"), `${file}: online readiness preflight must reject stale, out-of-area or inaccurate stored GPS fixes`);
   assert.ok(source.includes("&and=(recorded_at.gte."), `${file}: customer tracking must require a fresh recorded GPS fix`);
   assert.ok(source.includes("&accuracy_m=lte.1500"), `${file}: customer tracking must reject inaccurate GPS fixes`);
   assert.ok(source.includes("recordedAt >= now - 120000") && source.includes("recordedAt <= now + 15000"), `${file}: customer tracking must fail closed on stale or future-dated GPS timestamps`);
@@ -80,6 +81,16 @@ const locationWritePosition = availabilityWrapper.indexOf("insert into public.sj
 assert.ok(profileLockPosition >= 0 && locationWritePosition > profileLockPosition, "availability must lock the driver profile before writing precise GPS to avoid lock-order deadlocks");
 assert.ok(availabilityWrapper.includes("DRIVER_APPLICATION_REQUIRED"), "availability must reject users without a driver profile before writing GPS");
 assert.ok(availabilityWrapper.includes("return public.sjelle_set_driver_availability(p_driver_id, p_online, p_mode)"), "availability must preserve the authoritative readiness and active-job checks");
+
+const availabilityReadinessMigration = readFileSync("supabase/migrations/20261120084240_sjelle_driver_availability_readiness_consistency.sql", "utf8");
+assert.ok(availabilityReadinessMigration.includes("order by document_type, created_at desc, id desc"), "online readiness must select the same deterministic latest document as dispatch");
+assert.ok(availabilityReadinessMigration.includes("and accuracy_m between 0 and 1500"), "online readiness must reject GPS fixes outside the dispatch accuracy limit");
+assert.ok(availabilityReadinessMigration.includes("and recorded_at <= now() + interval '15 seconds'"), "online readiness must reject future-dated GPS fixes");
+assert.ok(availabilityReadinessMigration.includes("and latitude between 41.7 and 43.4") && availabilityReadinessMigration.includes("and longitude between 19.7 and 22.0"), "online readiness must enforce Kosovo coordinate bounds");
+assert.ok(availabilityReadinessMigration.includes("sjelle_driver_documents_latest_evidence_idx"), "latest driver evidence lookup must have a matching composite index");
+assert.ok(availabilityReadinessMigration.includes("new.review_status is distinct from 'approved'"), "unapproved driver profiles must be forced offline");
+assert.ok(availabilityReadinessMigration.includes("delete from public.sjelle_driver_locations"), "offline or unapproved profile updates must purge precise GPS");
+assert.ok(availabilityReadinessMigration.includes("create trigger sjelle_enforce_driver_location_privacy"), "driver location privacy must be enforced for direct administrative profile updates");
 
 const onlinePaymentMigration = readFileSync("supabase/migrations/20261108083041_sjelle_block_unconfigured_online_payments.sql", "utf8");
 assert.ok(onlinePaymentMigration.includes("v_ride.payment_method='online'"), "online rides must fail closed until payment is configured");
@@ -173,6 +184,9 @@ function routeSection(source, startMarker, endMarker, file) {
   assert.ok(start >= 0 && end > start, `${file}: admin review queue route is missing or malformed`);
   return source.slice(start, end);
 }
+const availabilityRouteStart = '    if (url.pathname === "/api/v1/driver/availability" && request.method === "PATCH") {';
+const availabilityRouteEnd = '    if (url.pathname === "/api/v1/driver/location" && request.method === "POST") {';
+assert.equal(routeSection(api, availabilityRouteStart, availabilityRouteEnd, apiPath), routeSection(edge, availabilityRouteStart, availabilityRouteEnd, edgePath), "API and deployed Edge Function driver availability readiness checks must remain identical");
 for (const [file, source] of [[apiPath, api], [edgePath, edge]]) {
   assert.ok(source.includes("ADMIN_DRIVER_QUEUE_PAGE_FAILED"), `${file}: driver review queue must use bounded keyset pages`);
   assert.ok(source.includes("INVALID_QUEUE_CURSOR"), `${file}: driver review queue must validate untrusted cursors`);
