@@ -69,11 +69,18 @@ async function changeDriverMode(){
  const previous=state.profile.selected_mode||"ride";
  const next=select.value;
  if(next===previous)return;
- if(!state.profile.online){showAlert("Modaliteti "+driverModeLabel(next)+" është zgjedhur dhe do të zbatohet kur të dalësh online.","success");return;}
  if(availabilityChanging){select.value=previous;return;}
  availabilityChanging=true;setAvailabilityControlsDisabled(true);
  try{
-  const location=state.profile.online?await currentDriverLocation():{};
+  if(!state.profile.online){
+   const result=await api("/driver/availability",{method:"PATCH",body:JSON.stringify({online:false,mode:next})});
+   const savedMode=result.data?.selected_mode||next;
+   state.profile={...state.profile,online:false,selected_mode:savedMode};
+   select.value=savedMode;
+   showAlert("Modaliteti "+driverModeLabel(savedMode)+" u ruajt dhe do të zbatohet kur të dalësh online.","success");
+   return;
+  }
+  const location=await currentDriverLocation();
   const result=await api("/driver/availability",{method:"PATCH",body:JSON.stringify({online:true,mode:next,...location})});
   const savedMode=result.data?.selected_mode||next;
   state.profile={...state.profile,online:true,selected_mode:savedMode};

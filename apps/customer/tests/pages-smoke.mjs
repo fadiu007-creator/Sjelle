@@ -555,6 +555,69 @@ try {
   await page.unroute(`${apiOrigin}/ride-quotes`);
   await page.unroute(`${apiOrigin}/rides`);
 
+
+  // Offline driver mode selection is persisted server-side and rolled back if the
+  // authoritative API rejects a stale client state (for example, an active job).
+  const driverPage = await browser.newPage({ viewport: { width: 1365, height: 900 } });
+  driverPage.on("pageerror", error => pageErrors.push(error.message));
+  driverPage.on("response", response => {
+    if (response.url().startsWith(baseUrl) && response.status() >= 400) {
+      missingAssets.push(`${response.status()} ${response.url()}`);
+    }
+  });
+  await driverPage.addInitScript(() => {
+    sessionStorage.setItem("sjelle.session", JSON.stringify({ access_token: "sjelle-driver-smoke-token" }));
+  });
+  const driverAvailabilityRequests = [];
+  let rejectNextDriverModeChange = false;
+  await driverPage.route(`${apiOrigin}/**`, async route => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname.replace("/functions/v1/sjelle-api/api/v1", "");
+    const respond = (status, payload) => route.fulfill({
+      status, contentType: "application/json", body: JSON.stringify(payload),
+    });
+    if (pathname === "/cities") {
+      return respond(200, { data: [{ slug: "ferizaj", name: "Ferizaj", active: true }] });
+    }
+    if (pathname === "/driver/me") {
+      return respond(200, { data: {
+        profile: {
+          user_id: "smoke-driver", review_status: "pending", city_id: "smoke-city",
+          online: false, selected_mode: "ride",
+        },
+        vehicles: [], documents: [],
+      } });
+    }
+    if (pathname === "/driver/offers") return respond(200, { data: [] });
+    if (pathname === "/driver/jobs") return respond(200, { data: { rides: [], deliveries: [] } });
+    if (pathname === "/driver/availability" && request.method() === "PATCH") {
+      const body = request.postDataJSON();
+      driverAvailabilityRequests.push(body);
+      if (rejectNextDriverModeChange) {
+        rejectNextDriverModeChange = false;
+        return respond(409, { error: {
+          code: "DRIVER_HAS_ACTIVE_JOB",
+          message: "Finish or cancel the active job before changing mode.",
+        } });
+      }
+      return respond(200, { data: { online: false, selected_mode: body.mode } });
+    }
+    return respond(404, { error: { code: "NOT_FOUND" } });
+  });
+  await driverPage.goto(new URL("driver/", baseUrl).toString(), { waitUntil: "domcontentloaded", timeout: 30000 });
+  await driverPage.locator("#availability-section").waitFor({ state: "visible", timeout: 15000 });
+  await driverPage.locator("#driver-mode").selectOption("delivery");
+  await driverPage.waitForFunction(() => document.querySelector("#driver-alert")?.textContent?.includes("u ruajt"));
+  assert.deepEqual(driverAvailabilityRequests[0], { online: false, mode: "delivery" });
+  assert.equal(await driverPage.locator("#driver-mode").inputValue(), "delivery");
+  rejectNextDriverModeChange = true;
+  await driverPage.locator("#driver-mode").selectOption("ride");
+  await driverPage.waitForFunction(() => document.querySelector("#driver-alert")?.textContent?.includes("Përfundo ose anulo punën aktive"));
+  assert.deepEqual(driverAvailabilityRequests[1], { online: false, mode: "ride" });
+  assert.equal(await driverPage.locator("#driver-mode").inputValue(), "delivery", "a rejected offline mode change must restore the last server-confirmed mode");
+  await driverPage.close();
+  console.log("PASS offline driver mode selection persists through the API and restores the server-confirmed value when the API rejects a change");
+
   assert.deepEqual(missingAssets, [], "Pages must not return 4xx/5xx for local portal files");
   assert.deepEqual(pageErrors, [], "portal pages must not raise uncaught JavaScript errors");
   console.log("PASS no broken local assets and no uncaught browser JavaScript errors");

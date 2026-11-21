@@ -1467,6 +1467,55 @@ test("driver mode switch is rejected before readiness checks when an active ride
   }
 });
 
+test("offline driver mode selection persists without GPS or online-readiness checks", async () => {
+  const originalFetch = globalThis.fetch;
+  const driverId = "00000000-0000-4000-8000-000000000099";
+  const cityId = "00000000-0000-4000-8000-000000000088";
+  const requests: Array<{ url: string; method: string }> = [];
+  const rpcBodies: Record<string, unknown>[] = [];
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    requests.push({ url, method: init?.method ?? "GET" });
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: driverId }), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_driver_profiles?")) return new Response(JSON.stringify([{
+      user_id: driverId, review_status: "pending", city_id: cityId, selected_mode: "ride",
+    }]), { status: 200 });
+    if (url.includes("/rest/v1/sjelle_rides?") || url.includes("/rest/v1/sjelle_delivery_jobs?")) {
+      return new Response("[]", { status: 200 });
+    }
+    if (url.includes("/rest/v1/rpc/sjelle_set_driver_availability_with_location")) {
+      rpcBodies.push(JSON.parse(String(init?.body || "{}")) as Record<string, unknown>);
+      return new Response(JSON.stringify({ user_id: driverId, online: false, selected_mode: "delivery" }), { status: 200 });
+    }
+    throw new Error("Offline mode selection must not perform readiness/GPS reads: " + url);
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/driver/availability", {
+      method: "PATCH",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ online: false, mode: "delivery" }),
+    }), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(result.status, 200);
+    const payload = await result.json() as { data?: { online?: boolean; selected_mode?: string } };
+    assert.equal(payload.data?.online, false);
+    assert.equal(payload.data?.selected_mode, "delivery");
+    assert.equal(rpcBodies.length, 1);
+    assert.equal(rpcBodies[0]?.p_online, false);
+    assert.equal(rpcBodies[0]?.p_mode, "delivery");
+    assert.ok(requests.some(request => request.url.includes("sjelle_rides?")));
+    assert.ok(requests.some(request => request.url.includes("sjelle_delivery_jobs?")));
+    assert.equal(requests.some(request => request.url.includes("sjelle_driver_documents?")), false);
+    assert.equal(requests.some(request => request.url.includes("sjelle_vehicles?")), false);
+    assert.equal(requests.some(request => request.url.includes("sjelle_driver_locations?")), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("admin reconciliation rejects oversized pages and partial cursors before database RPC work", async () => {
   const originalFetch = globalThis.fetch;
   const requests: string[] = [];
