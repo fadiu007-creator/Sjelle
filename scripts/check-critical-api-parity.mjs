@@ -10,6 +10,7 @@ const adminHtml = readFileSync("apps/customer/admin/index.html", "utf8");
 const driverJs = readFileSync("apps/customer/driver/driver.js", "utf8");
 const driverHtml = readFileSync("apps/customer/driver/index.html", "utf8");
 const portalCss = readFileSync("apps/customer/portal.css", "utf8");
+const customerApp = readFileSync("apps/customer/app.js", "utf8");
 
 const expectedConflictCodes = [
   "DRIVER_NOT_APPROVED",
@@ -58,6 +59,23 @@ assert.ok(adminJs.includes("currentCity.pricing?.active"), "readiness summary mu
 assert.ok(adminJs.includes("function isUsableServiceAreaGeometry(value)"), "readiness summary must validate service-area geometry");
 assert.ok(adminJs.includes("Math.abs(first[0]-last[0])>1e-6"), "readiness summary must reject unclosed GeoJSON rings");
 assert.ok(adminJs.includes("point[0]<19.7||point[0]>22||point[1]<41.7||point[1]>43.4"), "readiness summary must reject coordinates outside the configured Kosovo bounds");
+
+assert.ok(customerApp.includes("ACTIVE_RIDE_EXISTS") && customerApp.includes("Ke tashmë një udhëtim aktiv"), "customer booking must explain the active-ride conflict and link to the existing ride");
+const activeRideMigration = readFileSync("supabase/migrations/20261122081801_sjelle_one_active_ride_per_customer.sql", "utf8");
+assert.ok(activeRideMigration.includes("create unique index if not exists sjelle_rides_one_active_per_customer_idx"), "active rides must be protected by a customer-scoped unique partial index");
+assert.ok(activeRideMigration.includes("status in ('searching','driver_assigned','driver_arriving','driver_arrived','in_progress')"), "active ride index and booking guard must cover every non-terminal ride state");
+for (const functionName of ["sjelle_book_ride_quote", "sjelle_book_fixed_route_ride"]) {
+  const start = activeRideMigration.indexOf(`create or replace function public.${functionName}(`);
+  const end = activeRideMigration.indexOf("$function$;", start);
+  assert.ok(start >= 0 && end > start, `${functionName}: active-ride migration must replace the booking transaction`);
+  const body = activeRideMigration.slice(start, end);
+  const lockPosition = body.indexOf("pg_advisory_xact_lock(hashtextextended(p_customer_id::text, 0))");
+  const idempotencyPosition = body.indexOf("idempotency_key=p_idempotency_key");
+  const activeGuardPosition = body.indexOf("message='ACTIVE_RIDE_EXISTS'");
+  assert.ok(lockPosition >= 0 && idempotencyPosition > lockPosition && activeGuardPosition > idempotencyPosition, `${functionName}: customer lock, idempotency replay and active-ride guard must run in that order`);
+}
+assert.ok((activeRideMigration.match(/message='ACTIVE_RIDE_EXISTS'/g) || []).length === 2, "quote and fixed-route booking must both reject a second active ride");
+assert.ok(readFileSync("apps/customer/tests/pages-smoke.mjs", "utf8").includes("ACTIVE_RIDE_EXISTS"), "browser smoke must exercise the active-ride conflict path");
 
 console.log("Critical API/Edge Function and admin activation parity checks passed.");
 
