@@ -1215,7 +1215,7 @@ const worker = {
         const payload = await parseJson(result);
         if (!result.ok) {
           const code = isRecord(payload) && typeof payload.message === "string" ? payload.message : "RIDE_BOOKING_FAILED";
-          const status = ["CITY_UNAVAILABLE","ROUTE_NOT_AVAILABLE","CITY_PRICING_NOT_CONFIGURED","RIDE_QUOTE_EXPIRED","RIDE_QUOTE_ALREADY_USED"].includes(code) ? 409
+          const status = ["ACTIVE_RIDE_EXISTS","CITY_UNAVAILABLE","ROUTE_NOT_AVAILABLE","CITY_PRICING_NOT_CONFIGURED","RIDE_QUOTE_EXPIRED","RIDE_QUOTE_ALREADY_USED"].includes(code) ? 409
             : ["INVALID_RIDE_REQUEST"].includes(code) ? 400 : code === "RIDE_QUOTE_NOT_FOUND" ? 404 : 503;
           return response({ error: { code, request_id: requestId } }, status, requestId, origin, env);
         }

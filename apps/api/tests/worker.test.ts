@@ -1592,3 +1592,44 @@ test("admin reconciliation passes a valid keyset cursor to the database and pres
 });
 
 
+
+
+test("ride booking returns a conflict when the customer already has an active ride", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = async input => {
+    const url = String(input);
+    requests.push(url);
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.includes("/rest/v1/rpc/sjelle_book_ride_quote")) {
+      return new Response(JSON.stringify({ code: "P0001", message: "ACTIVE_RIDE_EXISTS" }), {
+        status: 400, headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error("Unexpected backend request during active-ride conflict handling: " + url);
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/rides", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer test-token",
+        "content-type": "application/json",
+        "idempotency-key": "ride-active-conflict-key-123",
+      },
+      body: JSON.stringify({ quote_id: "00000000-0000-4000-8000-000000000001" }),
+    }), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(result.status, 409);
+    assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "ACTIVE_RIDE_EXISTS");
+    assert.equal(requests.filter(url => url.includes("/rest/v1/rpc/sjelle_book_ride_quote")).length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

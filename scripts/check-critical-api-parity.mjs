@@ -38,6 +38,8 @@ for (const [file, source] of [[apiPath, api], [edgePath, edge]]) {
   assert.ok(source.includes("&and=(recorded_at.gte."), `${file}: customer tracking must require a fresh recorded GPS fix`);
   assert.ok(source.includes("&accuracy_m=lte.1500"), `${file}: customer tracking must reject inaccurate GPS fixes`);
   assert.ok(source.includes("recordedAt >= now - 120000") && source.includes("recordedAt <= now + 15000"), `${file}: customer tracking must fail closed on stale or future-dated GPS timestamps`);
+  assert.ok(source.includes('"ACTIVE_RIDE_EXISTS"'), `${file}: active customer rides must map to an HTTP conflict`);
+  assert.ok(source.includes('["ACTIVE_RIDE_EXISTS","CITY_UNAVAILABLE"'), `${file}: active-ride conflict must be returned as HTTP 409`);
   assert.ok(source.includes("rpc/sjelle_apply_for_driver"), `${file}: driver application must use the atomic database RPC`);
   assert.ok(source.includes("rpc/sjelle_driver_update_job"), `${file}: driver job transitions must use the authoritative database RPC`);
   assert.ok(source.includes("CASH_COLLECTION_CONFIRMATION_REQUIRED"), `${file}: cash completion guard is missing`);

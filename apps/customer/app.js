@@ -984,6 +984,21 @@ rideQuoteForm.addEventListener("submit", async event => {
         });
         rideQuoteResult.append(viewRides);
       } catch (error) {
+        if (error.code === "ACTIVE_RIDE_EXISTS") {
+          book.disabled = false;
+          book.textContent = "Provo përsëri pas udhëtimit aktiv";
+          showMessage(rideQuoteMessage, "Ke tashmë një udhëtim aktiv. Përfundoje ose anuloje para se të rezervosh një tjetër.", "error");
+          rideQuoteResult.querySelector("[data-view-active-ride]")?.remove();
+          const viewActiveRide = node("button", "secondary-button", "Shiko udhëtimin aktiv");
+          viewActiveRide.type = "button";
+          viewActiveRide.dataset.viewActiveRide = "true";
+          viewActiveRide.addEventListener("click", () => {
+            openAccount("login");
+            myRidesOpen?.click();
+          });
+          rideQuoteResult.append(viewActiveRide);
+          return;
+        }
         if (error.code === "RIDE_QUOTE_EXPIRED" || quoteExpiresAt <= Date.now()) {
           book.disabled = true;
           book.textContent = "Çmimi skadoi — llogarit përsëri";

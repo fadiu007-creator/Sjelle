@@ -291,7 +291,7 @@ try {
     rideApi.quoteBodies.push(requestBody);
     assert.equal(requestBody.city, "ferizaj", "ride quote must use the selected city");
     assert.equal(requestBody.vehicle_type, "standard", "ride quote must send the selected vehicle type");
-    const quoteId = ["44444444-4444-4444-8444-444444444444", "66666666-6666-4666-8666-666666666666", "77777777-7777-4777-8777-777777777777", "88888888-8888-4888-8888-888888888888", "99999999-9999-4999-8999-999999999999"][quoteNumber - 1];
+    const quoteId = ["44444444-4444-4444-8444-444444444444", "66666666-6666-4666-8666-666666666666", "77777777-7777-4777-8777-777777777777", "88888888-8888-4888-8888-888888888888", "99999999-9999-4999-8999-999999999999", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"][quoteNumber - 1];
     rideApi.latestQuoteId = quoteId;
     if (quoteNumber === 2) {
       secondQuoteStartedResolve();
@@ -336,6 +336,13 @@ try {
           status: 503,
           contentType: "application/json",
           body: JSON.stringify({ error: { code: "RIDE_BOOKING_FAILED", message: "Përgjigjja u ndërpre përkohësisht." } }),
+        });
+      }
+      if (rideApi.bookingKeys.length === 3) {
+        return route.fulfill({
+          status: 409,
+          contentType: "application/json",
+          body: JSON.stringify({ error: { code: "ACTIVE_RIDE_EXISTS" } }),
         });
       }
       const latestQuote = rideApi.quoteBodies.at(-1);
@@ -470,8 +477,25 @@ try {
   await page.waitForFunction(() => document.querySelector("#ride-quote-message")?.textContent?.includes("Serveri nuk ktheu një afat të vlefshëm"));
   assert.equal(await quoteConfirm.count(), 0, "a quote without a valid server expiry must not expose a booking action");
   assert.equal(rideApi.quoteRequests, 5, "the missing-expiry scenario must be exercised against the mocked quote API");
+
+  // A second booking with a different quote/key is rejected while the first ride is active.
+  await pickupQuery.fill("Nisja me udhëtim aktiv, Ferizaj");
+  await page.locator("#find-pickup").click();
+  await page.locator("#pickup-suggestions button").first().click();
+  await quoteSubmit.click();
+  await quoteConfirm.waitFor({ state: "visible" });
+  assert.equal(rideApi.quoteRequests, 6, "active-ride conflict scenario must use a fresh quote");
+  await quoteConfirm.click();
+  await page.getByRole("button", { name: "Provo përsëri pas udhëtimit aktiv" }).waitFor({ state: "visible" });
+  assert.match(await page.locator("#ride-quote-message").textContent(), /Ke tashmë një udhëtim aktiv/i);
+  await page.getByRole("button", { name: "Shiko udhëtimin aktiv" }).click();
+  await page.locator("#account-dialog[open]").waitFor({ state: "visible" });
+  await page.locator("#my-rides").getByText("Po kërkohet shofer").waitFor({ state: "visible" });
+  await page.locator("#account-close").click();
+  assert.equal(rideApi.bookingKeys.length, 3, "the active-ride conflict must reach the booking API exactly once");
+
   await page.locator("#account-open").click();
-  console.log("PASS ride flow validates coordinates, ignores out-of-order geocoding, fails closed on missing/expired quote expiry, invalidates changed addresses/vehicles, retries booking idempotently and opens the saved trip");
+  console.log("PASS ride flow validates coordinates, ignores out-of-order geocoding, fails closed on missing/expired quote expiry, invalidates changed addresses/vehicles, retries booking idempotently, blocks a second active ride and opens the existing trip");
 
   rideApi.ride.status = "driver_assigned";
   let locationRequestCount = 0;
