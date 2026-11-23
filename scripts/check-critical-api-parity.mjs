@@ -77,7 +77,7 @@ for (const functionName of ["sjelle_book_ride_quote", "sjelle_book_fixed_route_r
 assert.ok((activeRideMigration.match(/message='ACTIVE_RIDE_EXISTS'/g) || []).length === 2, "quote and fixed-route booking must both reject a second active ride");
 assert.ok(readFileSync("apps/customer/tests/pages-smoke.mjs", "utf8").includes("ACTIVE_RIDE_EXISTS"), "browser smoke must exercise the active-ride conflict path");
 
-const dispatchGpsMigration = readFileSync("supabase/migrations/20261123090000_sjelle_dispatch_usable_gps.sql", "utf8");
+const dispatchGpsMigration = readFileSync("supabase/migrations/20261123085748_sjelle_dispatch_usable_gps.sql", "utf8");
 const dispatchStart = dispatchGpsMigration.indexOf("create or replace function public.sjelle_offer_next_driver(");
 const dispatchEnd = dispatchGpsMigration.indexOf("$function$;", dispatchStart);
 assert.ok(dispatchStart >= 0 && dispatchEnd > dispatchStart, "dispatch GPS migration must replace the authoritative offer selection function");
@@ -93,7 +93,7 @@ for (const predicate of [
 }
 assert.ok(dispatchBody.includes("order by doc.document_type,doc.created_at desc,doc.id desc"), "dispatch must use deterministic latest-document ordering");
 assert.ok(dispatchBody.includes("pending.status='offered'") && dispatchBody.includes("limit 1 for update of d skip locked"), "dispatch must preserve exclusive offer selection");
-assert.ok(dispatchBody.includes("grant execute on function public.sjelle_offer_next_driver(text,uuid) to service_role"), "dispatch RPC must remain service-role-only");
+assert.ok(dispatchGpsMigration.includes("revoke all on function public.sjelle_offer_next_driver(text,uuid) from public, anon, authenticated") && dispatchGpsMigration.includes("grant execute on function public.sjelle_offer_next_driver(text,uuid) to service_role"), "dispatch RPC must remain service-role-only");
 
 console.log("Critical API/Edge Function and admin activation parity checks passed.");
 
