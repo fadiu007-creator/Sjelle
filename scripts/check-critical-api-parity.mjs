@@ -263,6 +263,8 @@ console.log("Driver assignment GPS readiness consistency assertions passed.");
 
 
 const cashHandoverMigration = readFileSync("supabase/migrations/20261124083441_sjelle_driver_cash_handover_workflow.sql", "utf8");
+const cashHandoverIndexMigration = readFileSync("supabase/migrations/20261124090122_sjelle_cash_handover_received_by_index.sql", "utf8");
+assert.ok(/create index if not exists sjelle_cash_handovers_received_by_idx\s+on public\.sjelle_cash_handovers\s*\(received_by\)/i.test(cashHandoverIndexMigration), "cash handover administrator foreign key must have a covering index");
 assert.ok(cashHandoverMigration.includes("create table if not exists public.sjelle_cash_handovers"), "cash handover migration must add an isolated Sjelle handover table");
 assert.ok(cashHandoverMigration.includes("alter table public.sjelle_cash_handovers enable row level security"), "cash handover records must have RLS enabled");
 assert.ok(cashHandoverMigration.includes("platform_cash_on_hand"), "cash handovers must transfer the signed balance to the platform cash-on-hand account");
