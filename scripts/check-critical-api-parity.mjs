@@ -283,7 +283,7 @@ for (const [file, source] of [[apiPath, api], [edgePath, edge]]) {
   assert.ok(source.includes("row.related_cash_handover_id"), `${file}: reconciliation must validate handover ledger references`);
 }
 assert.ok(adminJs.includes('api("/admin/cash-balances")') && adminJs.includes('api("/admin/cash-handovers")'), "admin portal must load driver cash balances and record physical handovers");
-assert.ok(adminJs.includes("window.crypto.randomUUID") && adminJs.includes("CASH_HANDOVER_EXCEEDS_BALANCE"), "cash handover UI must use secure idempotency keys and handle stale balances");
+assert.ok(adminJs.includes("window.crypto?.randomUUID") && adminJs.includes("CASH_HANDOVER_EXCEEDS_BALANCE"), "cash handover UI must use secure idempotency keys and handle stale balances");
 assert.ok(adminHtml.includes('id="cash-balances"') && adminHtml.includes('id="cash-balances-refresh"'), "admin portal must expose the driver cash handover panel");
 assert.ok(adminHtml.includes("admin.js?v=cash-handover-20261124"), "admin cash handover UI must have a cache-busted asset version");
 assert.ok(reconciliationMigration.includes("related_cash_handover_id"), "reconciliation migration must return handover references");

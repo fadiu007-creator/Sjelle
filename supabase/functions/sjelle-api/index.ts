@@ -2114,7 +2114,7 @@ const worker = {
         const balanceAfter = safeInteger(payload.balance_after_cents);
         if (typeof payload.id !== "string" || !uuidPattern.test(payload.id)
           || typeof payload.driver_id !== "string" || payload.driver_id.toLowerCase() !== body.driver_id.toLowerCase()
-          || amount !== body.amount_cents || balanceBefore === null || balanceAfter === null
+          || amount === null || amount !== body.amount_cents || balanceBefore === null || balanceAfter === null
           || balanceBefore < amount || balanceAfter !== balanceBefore - amount
           || payload.currency !== "EUR" || typeof payload.replayed !== "boolean"
           || (payload.reference !== null && typeof payload.reference !== "string")) {
