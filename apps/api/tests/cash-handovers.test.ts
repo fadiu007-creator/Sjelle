@@ -133,7 +133,7 @@ test("cash handover rejects unsafe amounts and missing idempotency keys before t
 
 test("admin cash handover uses the idempotent service-role RPC and returns the balanced snapshot", async () => {
   const originalFetch = globalThis.fetch;
-  let rpcBody: Record<string, unknown> | null = null;
+  const rpcBodies: Record<string, unknown>[] = [];
   globalThis.fetch = async (input, init) => {
     const url = String(input);
     if (url.endsWith("/auth/v1/user")) return json({ id: adminId });
@@ -142,7 +142,7 @@ test("admin cash handover uses the idempotent service-role RPC and returns the b
       const headers = new Headers(init?.headers);
       assert.equal(headers.get("authorization"), "Bearer service-test-key");
       assert.equal(init?.method, "POST");
-      rpcBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      rpcBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
       return json({
         id: handoverId,
         driver_id: driverId,
@@ -170,11 +170,11 @@ test("admin cash handover uses the idempotent service-role RPC and returns the b
     assert.equal(response.status, 200);
     assert.equal(body.data?.balance_after_cents, 1250);
     assert.equal(body.data?.replayed, false);
-    assert.equal(rpcBody?.p_actor_id, adminId);
-    assert.equal(rpcBody?.p_driver_id, driverId);
-    assert.equal(rpcBody?.p_amount_cents, 1500);
-    assert.equal(rpcBody?.p_idempotency_key, "handover-key-123");
-    assert.equal(rpcBody?.p_reference, "receipt-42");
+    assert.equal(rpcBodies[0]?.p_actor_id, adminId);
+    assert.equal(rpcBodies[0]?.p_driver_id, driverId);
+    assert.equal(rpcBodies[0]?.p_amount_cents, 1500);
+    assert.equal(rpcBodies[0]?.p_idempotency_key, "handover-key-123");
+    assert.equal(rpcBodies[0]?.p_reference, "receipt-42");
   } finally {
     globalThis.fetch = originalFetch;
   }
