@@ -162,7 +162,7 @@ try {
     last_collection_at: "2026-11-24T08:00:00.000Z",
   }];
   await page.locator("#cash-balances-refresh").click();
-  await page.locator("#cash-balances").getByText(/Cash i padorëzuar: 27\\.50/).waitFor({ state: "visible" });
+  await page.locator("#cash-balances").getByText(/Cash i padorëzuar: 27\.50/).waitFor({ state: "visible" });
   const cashHandoverForm = page.locator("#cash-balances form").first();
   await cashHandoverForm.locator('input[name="amount"]').fill("12.50");
   await cashHandoverForm.locator('input[name="reference"]').fill("receipt-smoke-1");
