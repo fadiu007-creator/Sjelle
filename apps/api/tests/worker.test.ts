@@ -856,7 +856,7 @@ test("admin reconciliation returns signed ledger totals grouped by account type"
         data: [{
           id: "11111111-1111-4111-8111-111111111111",
           related_ride_id: "33333333-3333-4333-8333-333333333333",
-          related_order_id: null,
+          related_order_id: null, related_cash_handover_id: null,
           account_type: "customer_cash_due",
           account_user_id: "44444444-4444-4444-8444-444444444444",
           amount_cents: "-850",
@@ -931,8 +931,8 @@ test("admin reconciliation fails closed when account totals overflow safe intege
     if (url.includes("/rest/v1/sjelle_user_roles?")) return new Response(JSON.stringify([{ role: "admin" }]), { status: 200 });
     if (url.includes("/rest/v1/rpc/sjelle_admin_reconciliation_page")) return new Response(JSON.stringify({
       data: [
-        { id: "11111111-1111-4111-8111-111111111111", related_ride_id: "33333333-3333-4333-8333-333333333333", related_order_id: null, account_type: "driver_cash_collected", account_user_id: "44444444-4444-4444-8444-444444444444", amount_cents: "9007199254740991", currency: "EUR", entry_type: "test", idempotency_key: "k1", metadata: {}, created_at: "2026-10-21T10:00:01+00:00" },
-        { id: "22222222-2222-4222-8222-222222222222", related_ride_id: "33333333-3333-4333-8333-333333333333", related_order_id: null, account_type: "driver_cash_collected", account_user_id: "44444444-4444-4444-8444-444444444444", amount_cents: "1", currency: "EUR", entry_type: "test", idempotency_key: "k2", metadata: {}, created_at: "2026-10-21T10:00:00+00:00" }
+        { id: "11111111-1111-4111-8111-111111111111", related_ride_id: "33333333-3333-4333-8333-333333333333", related_order_id: null, related_cash_handover_id: null, account_type: "driver_cash_collected", account_user_id: "44444444-4444-4444-8444-444444444444", amount_cents: "9007199254740991", currency: "EUR", entry_type: "test", idempotency_key: "k1", metadata: {}, created_at: "2026-10-21T10:00:01+00:00" },
+        { id: "22222222-2222-4222-8222-222222222222", related_ride_id: "33333333-3333-4333-8333-333333333333", related_order_id: null, related_cash_handover_id: null, account_type: "driver_cash_collected", account_user_id: "44444444-4444-4444-8444-444444444444", amount_cents: "1", currency: "EUR", entry_type: "test", idempotency_key: "k2", metadata: {}, created_at: "2026-10-21T10:00:00+00:00" }
       ],
       summary: [{ account_type: "driver_cash_collected", entry_count: "2", net_amount_cents: "9007199254740992" }],
       meta: { total_entries: "2", returned: 2, limit: 100, has_more: false, next_cursor: null }
@@ -956,7 +956,7 @@ test("admin reconciliation rejects non-EUR ledger rows instead of mixing currenc
     if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), { status: 200 });
     if (url.includes("/rest/v1/sjelle_user_roles?")) return new Response(JSON.stringify([{ role: "admin" }]), { status: 200 });
     if (url.includes("/rest/v1/rpc/sjelle_admin_reconciliation_page")) return new Response(JSON.stringify({
-      data: [{ id: "11111111-1111-4111-8111-111111111111", related_ride_id: null, related_order_id: "33333333-3333-4333-8333-333333333333", account_type: "driver_cash_collected", account_user_id: "44444444-4444-4444-8444-444444444444", amount_cents: "100", currency: "USD", entry_type: "test", idempotency_key: "k1", metadata: {}, created_at: "2026-10-21T10:00:00+00:00" }],
+      data: [{ id: "11111111-1111-4111-8111-111111111111", related_ride_id: null, related_order_id: "33333333-3333-4333-8333-333333333333", related_cash_handover_id: null, account_type: "driver_cash_collected", account_user_id: "44444444-4444-4444-8444-444444444444", amount_cents: "100", currency: "USD", entry_type: "test", idempotency_key: "k1", metadata: {}, created_at: "2026-10-21T10:00:00+00:00" }],
       summary: [{ account_type: "driver_cash_collected", entry_count: "1", net_amount_cents: "100" }],
       meta: { total_entries: "1", returned: 1, limit: 100, has_more: false, next_cursor: null }
     }), { status: 200 });
@@ -1557,7 +1557,7 @@ test("admin reconciliation passes a valid keyset cursor to the database and pres
     if (url.includes("/rest/v1/rpc/sjelle_admin_reconciliation_page")) {
       rpcBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
       return new Response(JSON.stringify({
-        data: [{ id: "22222222-2222-4222-8222-222222222222", related_ride_id: "33333333-3333-4333-8333-333333333333", related_order_id: null, account_type: "driver_cash_collected", account_user_id: "44444444-4444-4444-8444-444444444444", amount_cents: "850", currency: "EUR", entry_type: "cash_collection_driver_received", idempotency_key: "ride:1:driver", metadata: {}, created_at: "2026-10-21T09:59:00+00:00" }],
+        data: [{ id: "22222222-2222-4222-8222-222222222222", related_ride_id: "33333333-3333-4333-8333-333333333333", related_order_id: null, related_cash_handover_id: null, account_type: "driver_cash_collected", account_user_id: "44444444-4444-4444-8444-444444444444", amount_cents: "850", currency: "EUR", entry_type: "cash_collection_driver_received", idempotency_key: "ride:1:driver", metadata: {}, created_at: "2026-10-21T09:59:00+00:00" }],
         summary: [
           { account_type: "customer_cash_due", entry_count: "1", net_amount_cents: "-850" },
           { account_type: "driver_cash_collected", entry_count: "1", net_amount_cents: "850" }
