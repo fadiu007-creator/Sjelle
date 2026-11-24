@@ -111,7 +111,6 @@ try {
       "/admin/restaurants": { data: [], meta: { limit: 100, returned: 0, has_more: false, next_cursor: null } },
       "/admin/support-tickets": { data: [] },
       "/admin/cash-balances": { data: adminCashBalances },
-      "/admin/cash-balances": { data: [] },
     };
     return route.fulfill({ status: payloads[pathname] ? 200 : 404, contentType: "application/json", body: JSON.stringify(payloads[pathname] || { error: { code: "NOT_FOUND" } }) });
   });
