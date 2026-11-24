@@ -67,6 +67,8 @@ try {
   let adminDocumentPending = false;
   let adminReadiness = [];
   let adminSignedUrlResponseSent = false;
+  let adminCashBalances = [];
+  const cashHandoverRequests = [];
   await page.route(`${apiOrigin}/**`, async route => {
     const request = route.request();
     const pathname = new URL(request.url()).pathname.replace("/functions/v1/sjelle-api/api/v1", "");
@@ -80,6 +82,24 @@ try {
       return route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: { code: "FORBIDDEN" } }) });
     }
     adminRequests.push(pathname);
+    if (pathname === "/admin/cash-handovers" && request.method() === "POST") {
+      const requestBody = request.postDataJSON();
+      cashHandoverRequests.push({
+        body: requestBody,
+        idempotencyKey: request.headers()["idempotency-key"] || "",
+      });
+      adminCashBalances = [];
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: {
+        id: "55555555-5555-4555-8555-555555555555",
+        driver_id: requestBody.driver_id,
+        amount_cents: requestBody.amount_cents,
+        currency: "EUR",
+        balance_before_cents: 2750,
+        balance_after_cents: 2750 - requestBody.amount_cents,
+        reference: requestBody.reference || null,
+        replayed: false,
+      } }) });
+    }
     if (pathname.startsWith("/admin/driver-documents/") && pathname.endsWith("/signed-url")) {
       await new Promise(resolve => setTimeout(resolve, 250));
       adminSignedUrlResponseSent = true;
@@ -90,6 +110,7 @@ try {
       "/admin/driver-documents": { data: { documents: adminDocumentPending ? [{ id: "33333333-3333-4333-8333-333333333333", document_type: "identity", driver_id: "smoke-driver", document_number_last4: "1234", expires_at: "2027-12-31" }] : [], vehicles: [], drivers: [], queue_meta: { documents: { limit: 100, returned: adminDocumentPending ? 1 : 0, has_more: false, next_cursor: null }, vehicles: { limit: 100, returned: 0, has_more: false, next_cursor: null }, drivers: { limit: 100, returned: 0, has_more: false, next_cursor: null } }, readiness: adminReadiness, readiness_meta: { possibly_truncated: false } } },
       "/admin/restaurants": { data: [], meta: { limit: 100, returned: 0, has_more: false, next_cursor: null } },
       "/admin/support-tickets": { data: [] },
+      "/admin/cash-balances": { data: adminCashBalances },
       "/admin/cash-balances": { data: [] },
     };
     return route.fulfill({ status: payloads[pathname] ? 200 : 404, contentType: "application/json", body: JSON.stringify(payloads[pathname] || { error: { code: "NOT_FOUND" } }) });
@@ -131,6 +152,30 @@ try {
   await page.locator("#queue-refresh").click();
   await page.locator('#driver-queue [data-queue-items="documents"]').getByText("Nuk ka hyrje në pritje në këtë grup.").waitFor({ state: "visible" });
   console.log("PASS admin document review opens the private signed document in a new tab before the asynchronous request and clears opener access");
+
+  adminCashBalances = [{
+    driver_id: "44444444-4444-4444-8444-444444444444",
+    review_status: "approved",
+    city_id: null,
+    online: false,
+    balance_cents: "2750",
+    last_collection_at: "2026-11-24T08:00:00.000Z",
+  }];
+  await page.locator("#cash-balances-refresh").click();
+  await page.locator("#cash-balances").getByText(/Cash i padorëzuar: 27\\.50/).waitFor({ state: "visible" });
+  const cashHandoverForm = page.locator("#cash-balances form").first();
+  await cashHandoverForm.locator('input[name="amount"]').fill("12.50");
+  await cashHandoverForm.locator('input[name="reference"]').fill("receipt-smoke-1");
+  page.once("dialog", dialog => dialog.accept());
+  await cashHandoverForm.getByRole("button", { name: "Regjistro dorëzimin" }).click();
+  await page.getByText(/Dorëzimi u regjistrua/).waitFor({ state: "visible" });
+  assert.equal(cashHandoverRequests.length, 1, "admin cash handover should submit exactly once");
+  assert.equal(cashHandoverRequests[0].body.driver_id, "44444444-4444-4444-8444-444444444444");
+  assert.equal(cashHandoverRequests[0].body.amount_cents, 1250, "admin cash handover must submit whole euro cents");
+  assert.equal(cashHandoverRequests[0].body.reference, "receipt-smoke-1");
+  assert.match(cashHandoverRequests[0].idempotencyKey, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i, "admin cash handover must use a secure UUID idempotency key");
+  assert.equal(await page.locator("#cash-balances").getByText("Nuk ka cash të padorëzuar nga shoferët në librin financiar.").count(), 1, "successful handover must refresh the remaining driver balance");
+  console.log("PASS admin cash handover confirms physical receipt, submits cents with a secure idempotency key, and refreshes the driver balance");
   adminReadiness = [
     {
       user_id: "smoke-rejected-driver", city_id: "smoke-city", selected_mode: "ride",
