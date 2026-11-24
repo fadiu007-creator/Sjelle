@@ -90,6 +90,7 @@ try {
       "/admin/driver-documents": { data: { documents: adminDocumentPending ? [{ id: "33333333-3333-4333-8333-333333333333", document_type: "identity", driver_id: "smoke-driver", document_number_last4: "1234", expires_at: "2027-12-31" }] : [], vehicles: [], drivers: [], queue_meta: { documents: { limit: 100, returned: adminDocumentPending ? 1 : 0, has_more: false, next_cursor: null }, vehicles: { limit: 100, returned: 0, has_more: false, next_cursor: null }, drivers: { limit: 100, returned: 0, has_more: false, next_cursor: null } }, readiness: adminReadiness, readiness_meta: { possibly_truncated: false } } },
       "/admin/restaurants": { data: [], meta: { limit: 100, returned: 0, has_more: false, next_cursor: null } },
       "/admin/support-tickets": { data: [] },
+      "/admin/cash-balances": { data: [] },
     };
     return route.fulfill({ status: payloads[pathname] ? 200 : 404, contentType: "application/json", body: JSON.stringify(payloads[pathname] || { error: { code: "NOT_FOUND" } }) });
   });
@@ -107,6 +108,7 @@ try {
   assert.equal(await page.locator("#restaurant-queue-count").textContent(), "0", "admin dashboard must show zero pending restaurant applications when queue is empty");
   assert.ok(adminRequests.includes("/admin/driver-documents"), "admin login must load the protected driver application queue");
   assert.ok(adminRequests.includes("/admin/restaurants"), "admin login must load the protected restaurant application queue");
+  assert.ok(adminRequests.includes("/admin/cash-balances"), "admin login must load protected driver cash balances");
   assert.match(await page.locator("#admin-alert").textContent(), /Paneli administrativ u ngarkua/i, "admin dashboard should report a successful protected load");
   console.log("PASS admin login returns to the admin dashboard and loads protected driver/restaurant queues with the session token");
 
