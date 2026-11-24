@@ -332,7 +332,7 @@ function renderReconciliationEntries(rows){
  const entries=Array.isArray(rows)?rows:[];
  if(!entries.length){root.append(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Nuk ka hyrje financiare në këtë faqe."}));return;}
  for(const row of entries){
-  const related=row.related_ride_id?"Udhëtimi "+row.related_ride_id:row.related_order_id?"Porosia "+row.related_order_id:"Pa lidhje";
+  const related=row.related_ride_id?"Udhëtimi "+row.related_ride_id:row.related_order_id?"Porosia "+row.related_order_id:row.related_cash_handover_id?"Dorëzimi cash "+row.related_cash_handover_id:"Pa lidhje";
   const signed=(Number(row.amount_cents)/100).toFixed(2)+" "+(Number(row.amount_cents)<0?"€ (dalje)":"€ (hyrje)");
   const c=makeCard(row.entry_type||row.account_type,related+" · "+signed+" · "+new Date(row.created_at).toLocaleString());
   const detail=document.createElement("p");detail.className="portal-muted";detail.textContent=row.account_type+" · "+row.currency+" · idempotency: "+row.idempotency_key;c.append(detail);
@@ -411,6 +411,78 @@ if(reconciliationForm){
 }
 
 
+
+async function loadCashBalances(){
+ const root=$("#cash-balances");if(!root)return true;
+ root.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Po ngarkojmë cash-in e padorëzuar…"}));
+ try{
+  const result=await api("/admin/cash-balances");
+  const rows=Array.isArray(result.data)?result.data:[];
+  root.replaceChildren();
+  if(!rows.length){
+   root.append(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Nuk ka cash të padorëzuar nga shoferët në librin financiar."}));
+   return true;
+  }
+  for(const driver of rows){
+   const balanceCents=Number(driver.balance_cents);
+   if(!Number.isSafeInteger(balanceCents)){
+    root.append(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Bilanci i një shoferi tejkalon kufirin e sigurt numerik; dorëzimi u bllokua."}));
+    return false;
+   }
+   const city=cities.find(item=>item.id===driver.city_id)?.name||driver.city_id||"Qyteti mungon";
+   const last=driver.last_collection_at&&Number.isFinite(Date.parse(driver.last_collection_at))?" · Arkëtimi i fundit: "+new Date(driver.last_collection_at).toLocaleString("sq-XK"):"";
+   const c=makeCard("Shofer · "+driver.driver_id,"Cash i padorëzuar: "+euros(balanceCents)+" € · "+city+" · Aplikimi: "+readinessStatusLabel(driver.review_status)+" · "+(driver.online?"Online":"Offline")+last);
+   c.dataset.kind=balanceCents>0?"warning":"error";
+   if(balanceCents<=0){
+    c.append(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Bilanc jo pozitiv. Kontrollo librin financiar; nuk lejohet dorëzim i ri."}));
+    root.append(c);continue;
+   }
+   const form=document.createElement("form");form.className="portal-form portal-form-grid";
+   const amountLabel=document.createElement("label");amountLabel.textContent="Shuma e pranuar fizikisht (€)";
+   const amountInput=document.createElement("input");amountInput.type="number";amountInput.name="amount";amountInput.required=true;amountInput.min="0.01";amountInput.max=(balanceCents/100).toFixed(2);amountInput.step="0.01";amountLabel.append(amountInput);
+   const referenceLabel=document.createElement("label");referenceLabel.textContent="Referenca e dëftesës (opsionale)";
+   const referenceInput=document.createElement("input");referenceInput.name="reference";referenceInput.maxLength=120;referenceInput.placeholder="Numri i dëftesës / shënimi";referenceLabel.append(referenceInput);
+   const submit=document.createElement("button");submit.type="submit";submit.className="primary-button portal-full";submit.textContent="Regjistro dorëzimin";
+   form.append(amountLabel,referenceLabel,submit);
+   let pendingRequest=null;
+   form.addEventListener("submit",async event=>{
+    event.preventDefault();
+    const amountCents=cents(amountInput.value);
+    const reference=referenceInput.value.trim();
+    if(!Number.isSafeInteger(amountCents)||amountCents<=0||amountCents>balanceCents||reference.length>120){
+     alertMsg("Shuma duhet të jetë pozitive dhe jo më e madhe se cash-i i padorëzuar.","error");return;
+    }
+    if(!pendingRequest||pendingRequest.amountCents!==amountCents||pendingRequest.reference!==reference){
+     if(!window.crypto?.randomUUID){alertMsg("Shfletuesi nuk mbështet çelësa të sigurt për dorëzimin. Rifresko në HTTPS dhe provo përsëri.","error");return;}
+     pendingRequest={key:window.crypto.randomUUID(),amountCents,reference};
+    }
+    if(!window.confirm("Konfirmon se e ke pranuar fizikisht "+euros(amountCents)+" € nga ky shofer? Ky veprim regjistrohet në mënyrë të pandryshueshme."))return;
+    submit.disabled=true;
+    try{
+     const saved=await api("/admin/cash-handovers",{method:"POST",headers:{"idempotency-key":pendingRequest.key},body:JSON.stringify({driver_id:driver.driver_id,amount_cents:amountCents,reference})});
+     pendingRequest=null;form.reset();
+     alertMsg("Dorëzimi u regjistrua. Bilanci i shoferit tani është "+euros(saved.data.balance_after_cents)+" €.","success");
+     await loadCashBalances();
+     if(reconciliationRange)await loadReconciliation(true);
+    }catch(err){
+     if(err?.code==="CASH_HANDOVER_EXCEEDS_BALANCE")await loadCashBalances();
+     alertMsg("Dorëzimi nuk u regjistrua: "+adminErrorMessage(err),"error");
+     if(submit.isConnected)submit.disabled=false;
+    }
+   });
+   c.append(form);root.append(c);
+  }
+  return true;
+ }catch(err){
+  root.replaceChildren(Object.assign(document.createElement("p"),{className:"portal-muted",textContent:"Bilancet cash nuk mund të ngarkohen: "+adminErrorMessage(err)}));
+  return false;
+ }
+}
+$("#cash-balances-refresh")?.addEventListener("click",async()=>{
+ const ok=await loadCashBalances();
+ alertMsg(ok?"Bilancet e cash-it u rifreskuan.":"Bilancet e cash-it nuk u rifreskuan.",""+(ok?"success":"error"));
+});
+
 const supportStatusLabel = {open:"E hapur",in_progress:"Në verifikim",resolved:"E zgjidhur",closed:"E mbyllur"};
 const supportCategoryLabel = {ride:"Udhëtim",food_order:"Porosi ushqimi",payment:"Pagesa",safety:"Siguria",driver:"Shoferi",restaurant:"Restoranti",account:"Llogaria",other:"Tjetër"};
 async function loadSupportTickets(){
@@ -444,7 +516,7 @@ async function bootAdmin(){
  adminBootToken=accessToken;adminBooting=true;
  alertMsg("Po verifikojmë qasjen dhe po ngarkojmë aplikimet…");
  try{
-  const results=await Promise.all([loadCities(),loadQueue(),loadRestaurantQueue(),loadSupportTickets()]);
+  const results=await Promise.all([loadCities(),loadQueue(),loadRestaurantQueue(),loadSupportTickets(),loadCashBalances()]);
   if(!token()){adminBootToken="";showLoginRequired();return;}
   adminBootToken=token();
   if(results.some(result=>result===false))alertMsg("Disa seksione nuk u ngarkuan. Kontrollo mesazhin te secila listë dhe përdor Rifresko.","error");

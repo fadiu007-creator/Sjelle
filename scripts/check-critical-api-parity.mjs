@@ -260,3 +260,33 @@ assert.ok(assignmentGpsReadinessMigration.includes("and l.accuracy_m between 0 a
 assert.ok(assignmentGpsReadinessMigration.includes("DRIVER_HAS_ACTIVE_JOB"), "assignment GPS hardening must preserve cross-service exclusive driver assignment");
 assert.ok(assignmentGpsReadinessMigration.includes("revoke all on function public.sjelle_guard_driver_assignment() from public, anon, authenticated") && assignmentGpsReadinessMigration.includes("grant execute on function public.sjelle_guard_driver_assignment() to service_role"), "assignment guard must remain service-role only");
 console.log("Driver assignment GPS readiness consistency assertions passed.");
+
+
+const cashHandoverMigration = readFileSync("supabase/migrations/20261124083441_sjelle_driver_cash_handover_workflow.sql", "utf8");
+assert.ok(cashHandoverMigration.includes("create table if not exists public.sjelle_cash_handovers"), "cash handover migration must add an isolated Sjelle handover table");
+assert.ok(cashHandoverMigration.includes("alter table public.sjelle_cash_handovers enable row level security"), "cash handover records must have RLS enabled");
+assert.ok(cashHandoverMigration.includes("platform_cash_on_hand"), "cash handovers must transfer the signed balance to the platform cash-on-hand account");
+assert.ok(cashHandoverMigration.includes("CASH_HANDOVER_EXCEEDS_BALANCE"), "cash handovers must reject amounts above the current driver-held balance");
+assert.ok(cashHandoverMigration.includes("sjelle_cash_driver:") && (cashHandoverMigration.match(/pg_advisory_xact_lock\(hashtextextended\('sjelle_cash_driver:'/g) || []).length >= 2, "cash collection and handover must serialize on the same driver lock");
+assert.ok(cashHandoverMigration.includes("related_cash_handover_id") && cashHandoverMigration.includes("sjelle_admin_reconciliation_page"), "admin reconciliation must identify handover ledger rows");
+assert.ok(cashHandoverMigration.includes("grant execute on function public.sjelle_record_driver_cash_handover(uuid, uuid, bigint, text, text) to service_role"), "cash handover writes must remain service-role-only");
+assert.ok(cashHandoverMigration.includes("grant execute on function public.sjelle_admin_driver_cash_balances(uuid) to service_role"), "cash balance reads must remain service-role-only");
+
+const cashBalancesStart = '    if (url.pathname === "/api/v1/admin/cash-balances" && request.method === "GET") {';
+const cashHandoversStart = '    if (url.pathname === "/api/v1/admin/cash-handovers" && request.method === "POST") {';
+const reconciliationStart = '    if (url.pathname === "/api/v1/admin/reconciliation" && request.method === "GET") {';
+assert.equal(routeSection(api, cashBalancesStart, cashHandoversStart, apiPath), routeSection(edge, cashBalancesStart, cashHandoversStart, edgePath), "API and Edge Function cash-balance routes must remain identical");
+assert.equal(routeSection(api, cashHandoversStart, reconciliationStart, apiPath), routeSection(edge, cashHandoversStart, reconciliationStart, edgePath), "API and Edge Function cash-handover routes must remain identical");
+for (const [file, source] of [[apiPath, api], [edgePath, edge]]) {
+  assert.ok(source.includes("rpc/sjelle_admin_driver_cash_balances"), `${file}: cash balances must use the restricted database RPC`);
+  assert.ok(source.includes("rpc/sjelle_record_driver_cash_handover"), `${file}: handovers must use the restricted database RPC`);
+  assert.ok(source.includes("row.related_cash_handover_id"), `${file}: reconciliation must validate handover ledger references`);
+}
+assert.ok(adminJs.includes('api("/admin/cash-balances")') && adminJs.includes('api("/admin/cash-handovers")'), "admin portal must load driver cash balances and record physical handovers");
+assert.ok(adminJs.includes("window.crypto.randomUUID") && adminJs.includes("CASH_HANDOVER_EXCEEDS_BALANCE"), "cash handover UI must use secure idempotency keys and handle stale balances");
+assert.ok(adminHtml.includes('id="cash-balances"') && adminHtml.includes('id="cash-balances-refresh"'), "admin portal must expose the driver cash handover panel");
+assert.ok(adminHtml.includes("admin.js?v=cash-handover-20261124"), "admin cash handover UI must have a cache-busted asset version");
+assert.ok(reconciliationMigration.includes("related_cash_handover_id"), "reconciliation migration must return handover references");
+const cashHandoverTests = readFileSync("apps/api/tests/cash-handovers.test.ts", "utf8");
+assert.ok(cashHandoverTests.includes("cash balances require an authenticated admin") && cashHandoverTests.includes("cash handover rejects an amount above the driver's ledger balance"), "cash handover API regression tests must cover admin access and over-balance rejection");
+console.log("Sjelle cash handover API, ledger, admin UI and reconciliation parity assertions passed.");

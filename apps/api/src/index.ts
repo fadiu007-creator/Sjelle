@@ -1887,6 +1887,134 @@ export default {
     }
 
 
+
+    if (url.pathname === "/api/v1/admin/cash-balances" && request.method === "GET") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); }
+      catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try {
+        if (!await hasSjelleRole(env, user.id, "admin")) {
+          return response({ error: { code: "FORBIDDEN", request_id: requestId } }, 403, requestId, origin, env);
+        }
+      } catch {
+        return response({ error: { code: "ROLE_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+      }
+
+      try {
+        const result = await databaseRequest(env, "rpc/sjelle_admin_driver_cash_balances", {
+          method: "POST",
+          body: JSON.stringify({ p_actor_id: user.id }),
+        });
+        if (!result.ok) return response({ error: { code: "CASH_BALANCES_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+        const payload = await parseJson(result);
+        if (!Array.isArray(payload)) return response({ error: { code: "CASH_BALANCES_DATA_INVALID", request_id: requestId } }, 503, requestId, origin, env);
+        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const safeInteger = (value: unknown): number | null => {
+          if (typeof value !== "string" && typeof value !== "number") return null;
+          const parsed = Number(value);
+          return Number.isSafeInteger(parsed) ? parsed : null;
+        };
+        const data: Array<Record<string, unknown>> = [];
+        for (const row of payload) {
+          if (!isRecord(row)) return response({ error: { code: "CASH_BALANCES_DATA_INVALID", request_id: requestId } }, 503, requestId, origin, env);
+          const balance = safeInteger(row.balance_cents);
+          if (!uuidPattern.test(String(row.driver_id))
+            || typeof row.review_status !== "string"
+            || (row.city_id !== null && !uuidPattern.test(String(row.city_id)))
+            || typeof row.online !== "boolean"
+            || balance === null || balance === 0
+            || (row.last_collection_at !== null && (typeof row.last_collection_at !== "string" || !Number.isFinite(Date.parse(row.last_collection_at))))) {
+            return response({ error: { code: "CASH_BALANCES_DATA_INVALID", request_id: requestId } }, 503, requestId, origin, env);
+          }
+          data.push({ ...row, balance_cents: balance });
+        }
+        return response({ data }, 200, requestId, origin, env);
+      } catch {
+        return response({ error: { code: "CASH_BALANCES_READ_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+      }
+    }
+
+    if (url.pathname === "/api/v1/admin/cash-handovers" && request.method === "POST") {
+      let user: AuthUser | null;
+      try { user = await requireUser(request, env); }
+      catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
+      if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      try {
+        if (!await hasSjelleRole(env, user.id, "admin")) {
+          return response({ error: { code: "FORBIDDEN", request_id: requestId } }, 403, requestId, origin, env);
+        }
+      } catch {
+        return response({ error: { code: "ROLE_CHECK_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+      }
+
+      let body: unknown;
+      try { body = await request.json(); }
+      catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
+      const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const idempotencyKey = (request.headers.get("idempotency-key") || "").trim();
+      const referenceValue = isRecord(body) ? body.reference : undefined;
+      const reference = typeof referenceValue === "string" ? referenceValue.trim() : "";
+      if (!isRecord(body)
+        || typeof body.driver_id !== "string" || !uuidPattern.test(body.driver_id)
+        || typeof body.amount_cents !== "number" || !Number.isSafeInteger(body.amount_cents) || body.amount_cents <= 0
+        || idempotencyKey.length < 12 || idempotencyKey.length > 128
+        || (referenceValue !== undefined && referenceValue !== null && typeof referenceValue !== "string")
+        || reference.length > 120) {
+        return response({ error: { code: "INVALID_CASH_HANDOVER", message: "Provide a driver, a positive whole amount in euro cents, an idempotency key and an optional reference of at most 120 characters.", request_id: requestId } }, 400, requestId, origin, env);
+      }
+
+      try {
+        const result = await databaseRequest(env, "rpc/sjelle_record_driver_cash_handover", {
+          method: "POST",
+          body: JSON.stringify({
+            p_actor_id: user.id,
+            p_driver_id: body.driver_id,
+            p_amount_cents: body.amount_cents,
+            p_idempotency_key: idempotencyKey,
+            p_reference: reference || null,
+          }),
+        });
+        const payload = await parseJson(result);
+        if (!result.ok) {
+          const code = isRecord(payload) && typeof payload.message === "string" ? payload.message : "CASH_HANDOVER_FAILED";
+          const status = code === "FORBIDDEN" ? 403
+            : code === "DRIVER_NOT_FOUND" ? 404
+            : code === "INVALID_CASH_HANDOVER" ? 400
+            : ["CASH_HANDOVER_EXCEEDS_BALANCE", "IDEMPOTENCY_KEY_REUSED", "CASH_BALANCE_OVERFLOW"].includes(code) ? 409
+            : 503;
+          return response({ error: { code, request_id: requestId } }, status, requestId, origin, env);
+        }
+        if (!isRecord(payload)) return response({ error: { code: "CASH_HANDOVER_DATA_INVALID", request_id: requestId } }, 503, requestId, origin, env);
+        const safeInteger = (value: unknown): number | null => {
+          if (typeof value !== "string" && typeof value !== "number") return null;
+          const parsed = Number(value);
+          return Number.isSafeInteger(parsed) ? parsed : null;
+        };
+        const amount = safeInteger(payload.amount_cents);
+        const balanceBefore = safeInteger(payload.balance_before_cents);
+        const balanceAfter = safeInteger(payload.balance_after_cents);
+        if (typeof payload.id !== "string" || !uuidPattern.test(payload.id)
+          || typeof payload.driver_id !== "string" || payload.driver_id.toLowerCase() !== body.driver_id.toLowerCase()
+          || amount !== body.amount_cents || balanceBefore === null || balanceAfter === null
+          || balanceBefore < amount || balanceAfter !== balanceBefore - amount
+          || payload.currency !== "EUR" || typeof payload.replayed !== "boolean"
+          || (payload.reference !== null && typeof payload.reference !== "string")) {
+          return response({ error: { code: "CASH_HANDOVER_DATA_INVALID", request_id: requestId } }, 503, requestId, origin, env);
+        }
+        return response({
+          data: {
+            ...payload,
+            amount_cents: amount,
+            balance_before_cents: balanceBefore,
+            balance_after_cents: balanceAfter,
+          },
+        }, 200, requestId, origin, env);
+      } catch {
+        return response({ error: { code: "CASH_HANDOVER_FAILED", request_id: requestId } }, 503, requestId, origin, env);
+      }
+    }
+
     if (url.pathname === "/api/v1/admin/reconciliation" && request.method === "GET") {
       let user: AuthUser | null;
       try { user = await requireUser(request, env); }
@@ -1964,6 +2092,7 @@ export default {
             || typeof row.created_at !== "string" || !Number.isFinite(Date.parse(row.created_at))
             || (row.related_ride_id !== null && typeof row.related_ride_id !== "string")
             || (row.related_order_id !== null && typeof row.related_order_id !== "string")
+            || (row.related_cash_handover_id !== null && typeof row.related_cash_handover_id !== "string")
             || (row.account_user_id !== null && typeof row.account_user_id !== "string")
             ) {
             return response({ error: { code: "RECONCILIATION_DATA_INVALID", request_id: requestId } }, 503, requestId, origin, env);
