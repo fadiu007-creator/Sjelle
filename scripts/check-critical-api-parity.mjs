@@ -374,3 +374,9 @@ assert.ok(customerApp.includes('headers:{"idempotency-key":cancellationIdempoten
 assert.ok(customerHtml.includes("customer-cancel-idempotency-20261125"), "customer cancellation changes must invalidate cached app JavaScript");
 assert.ok(driverBrowserSmoke.includes("customerCancelRequests") && driverBrowserSmoke.includes("customer cancellation retry must reuse the same key"), "browser smoke must prove ambiguous customer cancellation retries reuse the same key");
 console.log("Sjelle customer ride cancellation idempotency API, Edge Function, customer app and migration parity checks passed.");
+
+
+const idempotencyIndexesMigration = readFileSync("supabase/migrations/20261125093608_sjelle_idempotency_foreign_key_indexes.sql", "utf8");
+assert.ok(idempotencyIndexesMigration.includes("sjelle_offer_action_idempotency_offer_id_idx"), "driver offer idempotency offer foreign key must be indexed");
+assert.ok(idempotencyIndexesMigration.includes("sjelle_ride_cancellation_idempotency_ride_id_idx"), "customer ride cancellation ride foreign key must be indexed");
+console.log("Sjelle idempotency foreign-key indexes are present.");
