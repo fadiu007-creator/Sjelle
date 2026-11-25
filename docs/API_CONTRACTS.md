@@ -23,7 +23,7 @@ Base path: `/api/v1`. JSON request/response. Authenticated requests use Supabase
   Request: `{ "quote_id":"uuid", "payment_method":"cash", "idempotency_key":"..." }`
   Response 201: `{ "ride_id":"uuid", "status":"searching", "amount_cents":650 }`
 - `GET /rides/{id}` — customer or assigned driver; location fields scoped to active trip.
-- `POST /rides/{id}/cancel` — body includes reason code; server calculates any disclosed cancellation fee.
+- `POST /rides/{id}/cancel` — no body; requires `Idempotency-Key`; customers may cancel only while a ride is `searching`. Matching retries replay the original result; reusing the key for another ride returns 409 `IDEMPOTENCY_KEY_REUSED`. This route does not apply a cancellation fee.
 - `POST /rides/{id}/driver-arrived`, `/start`, `/complete` — assigned driver only, valid-state transitions only.
 - `GET /rides/{id}/events` — authorized trip history.
 

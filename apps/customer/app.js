@@ -1122,7 +1122,7 @@ async function loadMyRides(){
       }
       if(ride.status==="searching"){
         const cancel=node("button","secondary-button","Anulo kërkesën");cancel.type="button";
-        cancel.addEventListener("click",async()=>{cancel.disabled=true;try{await apiRequest("/rides/"+ride.id+"/cancel",{method:"POST"});await loadMyRides();}catch(error){cancel.disabled=false;window.alert(error.code==="RIDE_NOT_CANCELLABLE"?"Shoferi mund ta ketë pranuar tashmë udhëtimin.":"Nuk u anulua udhëtimi: "+error.message);}});
+        const cancellationIdempotencyKey=crypto.randomUUID();cancel.addEventListener("click",async()=>{cancel.disabled=true;try{await apiRequest("/rides/"+ride.id+"/cancel",{method:"POST",headers:{"idempotency-key":cancellationIdempotencyKey}});await loadMyRides();}catch(error){cancel.disabled=false;window.alert(error.code==="RIDE_NOT_CANCELLABLE"?"Shoferi mund ta ketë pranuar tashmë udhëtimin.":"Nuk u anulua udhëtimi: "+error.message);}});
         c.append(cancel);
       }
     }

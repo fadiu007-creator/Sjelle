@@ -11,6 +11,7 @@ const driverJs = readFileSync("apps/customer/driver/driver.js", "utf8");
 const driverHtml = readFileSync("apps/customer/driver/index.html", "utf8");
 const portalCss = readFileSync("apps/customer/portal.css", "utf8");
 const customerApp = readFileSync("apps/customer/app.js", "utf8");
+const customerHtml = readFileSync("apps/customer/index.html", "utf8");
 
 const expectedConflictCodes = [
   "DRIVER_NOT_APPROVED",
@@ -347,3 +348,29 @@ assert.ok(driverJs.includes('headers:{"idempotency-key":offerActionIdempotencyKe
 assert.ok(driverHtml.includes("driver-offer-idempotency-20261125"), "driver offer idempotency changes must invalidate cached portal JavaScript");
 assert.ok(driverBrowserSmoke.includes("driverOfferRequests") && driverBrowserSmoke.includes("offer retry must reuse the exact same key"), "browser smoke must prove ambiguous offer retries reuse the exact same key");
 console.log("Sjelle driver offer acceptance/rejection idempotency API, Edge Function, portal and migration parity checks passed.");
+
+
+const customerCancelMigration = readFileSync("supabase/migrations/20261125093219_sjelle_idempotent_customer_ride_cancellation.sql", "utf8");
+assert.ok(customerCancelMigration.includes("create table if not exists public.sjelle_ride_cancellation_idempotency"), "customer cancellation idempotency must use a Sjelle-scoped receipt table");
+assert.ok(customerCancelMigration.includes("unique (customer_id, idempotency_key)"), "customer cancellation keys must be unique per customer");
+assert.ok(customerCancelMigration.includes("alter table public.sjelle_ride_cancellation_idempotency enable row level security"), "customer cancellation receipts must have RLS enabled");
+assert.ok(customerCancelMigration.includes("pg_advisory_xact_lock("), "concurrent customer cancellation retries must serialize");
+assert.ok(customerCancelMigration.includes("v_existing.response || jsonb_build_object('replayed', true)"), "matching customer cancellation retries must replay the original response");
+assert.ok(customerCancelMigration.includes("IDEMPOTENCY_KEY_REUSED"), "reusing a customer cancellation key for another ride must fail");
+assert.ok(customerCancelMigration.includes("public.sjelle_cancel_ride("), "the wrapper must preserve the authoritative customer-scoped cancellation RPC");
+assert.ok(customerCancelMigration.replace(/\s+/g, " ").includes("grant execute on function public.sjelle_cancel_ride_idempotent(uuid, uuid, text) to service_role"), "customer cancellation RPC must remain service-role-only");
+
+const customerCancelStart = '    const cancelRideMatch = url.pathname.match(/^\\/api\\/v1\\/rides\\/([0-9a-f-]{36})\\/cancel$/i);';
+const customerCancelEnd = '    const rideDriverLocationMatch = url.pathname.match(/^\\/api\\/v1\\/rides\\/([0-9a-f-]{36})\\/driver-location$/i);';
+assert.equal(routeSection(api, customerCancelStart, customerCancelEnd, apiPath), routeSection(edge, customerCancelStart, customerCancelEnd, edgePath), "API and Edge Function customer cancellation routes must remain identical");
+for (const [file, source] of [[apiPath, api], [edgePath, edge]]) {
+  assert.ok(source.includes("rpc/sjelle_cancel_ride_idempotent"), file + ": customer cancellation must use the idempotent database wrapper");
+  assert.ok(source.includes('request.headers.get("idempotency-key")'), file + ": customer cancellation must require the stable idempotency header");
+  assert.ok(source.includes("p_idempotency_key: idempotencyKey"), file + ": customer cancellation must forward the key to PostgreSQL");
+  assert.ok(source.includes("IDEMPOTENCY_KEY_REUSED"), file + ": mismatched customer cancellation key reuse must return a conflict");
+}
+assert.ok(customerApp.includes("const cancellationIdempotencyKey=crypto.randomUUID()"), "customer cancellation must create one secure key per rendered action");
+assert.ok(customerApp.includes('headers:{"idempotency-key":cancellationIdempotencyKey}'), "customer cancellation retries must reuse their action key");
+assert.ok(customerHtml.includes("customer-cancel-idempotency-20261125"), "customer cancellation changes must invalidate cached app JavaScript");
+assert.ok(customerBrowserSmoke.includes("customerCancelRequests") && customerBrowserSmoke.includes("customer cancellation retry must reuse the same key"), "browser smoke must prove ambiguous customer cancellation retries reuse the same key");
+console.log("Sjelle customer ride cancellation idempotency API, Edge Function, customer app and migration parity checks passed.");

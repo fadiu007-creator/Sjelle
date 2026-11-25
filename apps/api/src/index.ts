@@ -1243,16 +1243,23 @@ export default {
       let user: AuthUser | null;
       try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
       if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      const idempotencyKey = request.headers.get("idempotency-key")?.trim() ?? "";
+      if (idempotencyKey.length < 12 || idempotencyKey.length > 128 || !/^[A-Za-z0-9._:-]+$/.test(idempotencyKey)) {
+        return response({ error: { code: "INVALID_IDEMPOTENCY_KEY", message: "A stable idempotency-key header is required.", request_id: requestId } }, 400, requestId, origin, env);
+      }
       try {
-        const result = await databaseRequest(env,"rpc/sjelle_cancel_ride",{method:"POST",body:JSON.stringify({p_customer_id:user.id,p_ride_id:cancelRideMatch[1]})});
+        const result = await databaseRequest(env, "rpc/sjelle_cancel_ride_idempotent", {
+          method: "POST",
+          body: JSON.stringify({ p_customer_id: user.id, p_ride_id: cancelRideMatch[1], p_idempotency_key: idempotencyKey }),
+        });
         const payload = await parseJson(result);
         if (!result.ok) {
           const code = isRecord(payload) && typeof payload.message === "string" ? payload.message : "RIDE_CANCEL_FAILED";
-          const status = code === "RIDE_NOT_FOUND" ? 404 : code === "RIDE_NOT_CANCELLABLE" ? 409 : 503;
-          return response({error:{code,request_id:requestId}},status,requestId,origin,env);
+          const status = code === "RIDE_NOT_FOUND" ? 404 : ["RIDE_NOT_CANCELLABLE","IDEMPOTENCY_KEY_REUSED"].includes(code) ? 409 : 503;
+          return response({ error: { code, request_id: requestId } }, status, requestId, origin, env);
         }
-        return response({data:payload},200,requestId,origin,env);
-      } catch { return response({error:{code:"RIDE_CANCEL_FAILED",request_id:requestId}},503,requestId,origin,env); }
+        return response({ data: payload }, 200, requestId, origin, env);
+      } catch { return response({ error: { code: "RIDE_CANCEL_FAILED", request_id: requestId } }, 503, requestId, origin, env); }
     }
 
     const rideDriverLocationMatch = url.pathname.match(/^\/api\/v1\/rides\/([0-9a-f-]{36})\/driver-location$/i);

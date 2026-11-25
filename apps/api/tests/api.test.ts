@@ -1609,10 +1609,10 @@ test("customer ride cancellation succeeds only through the customer-scoped datab
     if (url.endsWith("/auth/v1/user")) {
       return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
     }
-    if (url.includes("/rpc/sjelle_cancel_ride")) {
+    if (url.includes("/rpc/sjelle_cancel_ride_idempotent")) {
       assert.equal(init?.method, "POST");
       rpcBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
-      return new Response(JSON.stringify({ id: "33333333-3333-4333-8333-333333333333", status: "cancelled_by_customer" }), {
+      return new Response(JSON.stringify({ id: "33333333-3333-4333-8333-333333333333", status: "cancelled_by_customer", replayed: false }), {
         status: 200, headers: { "content-type": "application/json" },
       });
     }
@@ -1621,18 +1621,20 @@ test("customer ride cancellation succeeds only through the customer-scoped datab
   try {
     const response = await callWorker(new Request("https://sjelle.test/api/v1/rides/33333333-3333-4333-8333-333333333333/cancel", {
       method: "POST",
-      headers: { authorization: "Bearer test-token" },
+      headers: { authorization: "Bearer test-token", "idempotency-key": "customer-cancel-action-key-0001" },
     }), {
       SUPABASE_URL: "https://example.supabase.co",
       SUPABASE_PUBLISHABLE_KEY: "test-publishable",
       SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
     });
-    const body = await response.json() as { data: { status: string } };
+    const body = await response.json() as { data: { status: string; replayed: boolean } };
     assert.equal(response.status, 200);
     assert.equal(body.data.status, "cancelled_by_customer");
+    assert.equal(body.data.replayed, false);
     assert.deepEqual(rpcBody, {
       p_customer_id: "11111111-1111-4111-8111-111111111111",
       p_ride_id: "33333333-3333-4333-8333-333333333333",
+      p_idempotency_key: "customer-cancel-action-key-0001",
     });
   } finally {
     globalThis.fetch = originalFetch;
@@ -1646,7 +1648,7 @@ test("customer cancellation returns conflict after the ride is no longer cancell
     if (url.endsWith("/auth/v1/user")) {
       return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
     }
-    if (url.includes("/rpc/sjelle_cancel_ride")) {
+    if (url.includes("/rpc/sjelle_cancel_ride_idempotent")) {
       return new Response(JSON.stringify({ message: "RIDE_NOT_CANCELLABLE" }), {
         status: 400, headers: { "content-type": "application/json" },
       });
@@ -1656,7 +1658,7 @@ test("customer cancellation returns conflict after the ride is no longer cancell
   try {
     const response = await callWorker(new Request("https://sjelle.test/api/v1/rides/33333333-3333-4333-8333-333333333333/cancel", {
       method: "POST",
-      headers: { authorization: "Bearer test-token" },
+      headers: { authorization: "Bearer test-token", "idempotency-key": "customer-cancel-action-key-0002" },
     }), {
       SUPABASE_URL: "https://example.supabase.co",
       SUPABASE_PUBLISHABLE_KEY: "test-publishable",
@@ -1904,6 +1906,61 @@ test("admin driver readiness includes every profile state and evaluates latest u
     assert.equal(body.data.readiness_meta.documents, 1000, "readiness metadata must report all rows fetched across pages");
     assert.ok(!allDocumentsRead?.includes("storage_path"), "readiness summaries must never expose private storage paths");
     assert.ok(requested.some(url => url.includes("sjelle_driver_profiles?select=user_id,city_id,selected_mode,review_status,online")));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("customer ride cancellation requires an idempotency key before database access", async () => {
+  const originalFetch = globalThis.fetch;
+  let databaseCalls = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    databaseCalls += 1;
+    throw new Error("Missing cancellation idempotency key must stop before database access");
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/rides/33333333-3333-4333-8333-333333333333/cancel", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token" },
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 400);
+    assert.equal(body.error.code, "INVALID_IDEMPOTENCY_KEY");
+    assert.equal(databaseCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("reusing a customer cancellation key for another ride returns a conflict", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    if (url.endsWith("/rpc/sjelle_cancel_ride_idempotent")) {
+      return new Response(JSON.stringify({ message: "IDEMPOTENCY_KEY_REUSED" }), { status: 400, headers: { "content-type": "application/json" } });
+    }
+    throw new Error("Unexpected database request: " + url);
+  }) as typeof fetch;
+  try {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/rides/33333333-3333-4333-8333-333333333334/cancel", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "idempotency-key": "customer-cancel-action-key-0003" },
+    }), {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    });
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 409);
+    assert.equal(body.error.code, "IDEMPOTENCY_KEY_REUSED");
   } finally {
     globalThis.fetch = originalFetch;
   }

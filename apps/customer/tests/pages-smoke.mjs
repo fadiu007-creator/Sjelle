@@ -810,6 +810,63 @@ try {
   await driverOfferPage.close();
   console.log("PASS driver offer acceptance retries reuse the same idempotency key and exact response after an ambiguous failure");
 
+  const customerCancelPage = await browser.newPage({ viewport: { width: 1365, height: 900 } });
+  customerCancelPage.on("pageerror", error => pageErrors.push(error.message));
+  customerCancelPage.on("dialog", dialog => dialog.accept());
+  await customerCancelPage.addInitScript(() => {
+    sessionStorage.setItem("sjelle.session", JSON.stringify({ access_token: "sjelle-customer-cancel-smoke-token" }));
+  });
+  const customerCancelRideId = "88888888-8888-4888-8888-888888888888";
+  let customerCancelStatus = "searching";
+  let customerCancelCalls = 0;
+  const customerCancelRequests = [];
+  await customerCancelPage.route(`${apiOrigin}/**`, async route => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname.replace("/functions/v1/sjelle-api/api/v1", "");
+    const respond = (status, payload) => route.fulfill({
+      status, contentType: "application/json", body: JSON.stringify(payload),
+    });
+    if (pathname === "/cities") return respond(200, { data: [{ slug: "ferizaj", name: "Ferizaj", active: true }] });
+    if (pathname === "/support-tickets") return respond(200, { data: [] });
+    if (pathname === "/rides" && request.method() === "GET") return respond(200, { data: [{
+      id: customerCancelRideId, status: customerCancelStatus,
+      pickup_label: "Qendra", destination_label: "Stacioni",
+      quoted_amount_cents: 500, payment_method: "cash",
+    }] });
+    if (pathname === `/rides/${customerCancelRideId}/cancel` && request.method() === "POST") {
+      customerCancelRequests.push({
+        idempotencyKey: request.headers()["idempotency-key"],
+        body: request.postData() || "",
+      });
+      if (customerCancelCalls === 0) {
+        customerCancelCalls += 1;
+        customerCancelStatus = "cancelled_by_customer";
+        return respond(503, { error: { code: "RIDE_CANCEL_FAILED" } });
+      }
+      customerCancelCalls += 1;
+      return respond(200, { data: { id: customerCancelRideId, status: "cancelled_by_customer", replayed: true } });
+    }
+    return respond(200, { data: [] });
+  });
+  await customerCancelPage.goto(new URL("", baseUrl).toString(), { waitUntil: "domcontentloaded", timeout: 30000 });
+  await customerCancelPage.locator("#account-open").click();
+  await customerCancelPage.locator("#account-dialog[open]").waitFor({ state: "visible" });
+  await customerCancelPage.locator("#my-rides-open").click();
+  const cancelRideButton = customerCancelPage.locator("#my-rides").getByRole("button", { name: "Anulo kërkesën" });
+  await cancelRideButton.waitFor({ state: "visible", timeout: 15000 });
+  await cancelRideButton.click();
+  await cancelRideButton.waitFor({ state: "visible" });
+  await cancelRideButton.click();
+  await customerCancelPage.locator("#my-rides").getByText("Anuluar nga klienti").waitFor({ state: "visible", timeout: 15000 });
+  assert.equal(customerCancelRequests.length, 2, "the ambiguous customer cancellation should be retried exactly once");
+  assert.match(customerCancelRequests[0].idempotencyKey || "", /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i, "customer cancellation must use a secure UUID idempotency key");
+  assert.equal(customerCancelRequests[1].idempotencyKey, customerCancelRequests[0].idempotencyKey, "customer cancellation retry must reuse the same key");
+  assert.equal(customerCancelRequests[0].body, "", "customer cancellation does not send client-authored state or fee fields");
+  assert.equal(customerCancelRequests[1].body, customerCancelRequests[0].body, "customer cancellation retry must preserve the exact request body");
+  await customerCancelPage.close();
+  console.log("PASS customer ride cancellation retries reuse the same idempotency key and exact request after an ambiguous failure");
+
+
 
 
   assert.deepEqual(missingAssets, [], "Pages must not return 4xx/5xx for local portal files");
