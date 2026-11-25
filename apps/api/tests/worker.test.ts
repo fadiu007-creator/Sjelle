@@ -589,7 +589,7 @@ test("driver cannot complete a cash ride without confirming collection", async (
   try {
     const result = await worker.fetch(new Request("https://api.example/api/v1/driver/jobs/ride/00000000-0000-4000-8000-000000000001/status", {
       method: "POST",
-      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      headers: { "idempotency-key": "test-driver-action-key-0001", authorization: "Bearer test-token", "content-type": "application/json" },
       body: JSON.stringify({ status: "completed", cash_collected: false }),
     }), {
       APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
@@ -616,7 +616,7 @@ test("online ride completion is blocked until online payments are configured", a
   };
   try {
     const result = await worker.fetch(new Request("https://api.example/api/v1/driver/jobs/ride/00000000-0000-4000-8000-000000000001/status", {
-      method: "POST", headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      method: "POST", headers: { "idempotency-key": "test-driver-action-key-0002", authorization: "Bearer test-token", "content-type": "application/json" },
       body: JSON.stringify({ status: "completed" }),
     }), {
       APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
@@ -647,7 +647,7 @@ test("cash ride completion records the driver's confirmation through the atomic 
   try {
     const result = await worker.fetch(new Request("https://api.example/api/v1/driver/jobs/ride/00000000-0000-4000-8000-000000000001/status", {
       method: "POST",
-      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      headers: { "idempotency-key": "test-driver-action-key-0003", authorization: "Bearer test-token", "content-type": "application/json" },
       body: JSON.stringify({ status: "completed", cash_collected: true }),
     }), {
       APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
@@ -677,7 +677,7 @@ test("delivery cannot be marked delivered when cash confirmation is missing", as
   try {
     const result = await worker.fetch(new Request("https://api.example/api/v1/driver/jobs/delivery/00000000-0000-4000-8000-000000000002/status", {
       method: "POST",
-      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      headers: { "idempotency-key": "test-driver-action-key-0004", authorization: "Bearer test-token", "content-type": "application/json" },
       body: JSON.stringify({ status: "delivered" }),
     }), {
       APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
@@ -705,7 +705,7 @@ test("online delivery completion is blocked until online payments are configured
   };
   try {
     const result = await worker.fetch(new Request("https://api.example/api/v1/driver/jobs/delivery/00000000-0000-4000-8000-000000000002/status", {
-      method: "POST", headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      method: "POST", headers: { "idempotency-key": "test-driver-action-key-0005", authorization: "Bearer test-token", "content-type": "application/json" },
       body: JSON.stringify({ status: "delivered" }),
     }), {
       APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
@@ -732,7 +732,7 @@ test("online jobs cannot bypass the disabled payment provider by setting cash co
   };
   try {
     const result = await worker.fetch(new Request("https://api.example/api/v1/driver/jobs/ride/00000000-0000-4000-8000-000000000001/status", {
-      method: "POST", headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      method: "POST", headers: { "idempotency-key": "test-driver-action-key-0006", authorization: "Bearer test-token", "content-type": "application/json" },
       body: JSON.stringify({ status: "completed", cash_collected: true }),
     }), {
       APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
@@ -759,7 +759,7 @@ test("driver job status rejects a non-boolean cash confirmation before backend m
   try {
     const result = await worker.fetch(new Request("https://api.example/api/v1/driver/jobs/ride/00000000-0000-4000-8000-000000000001/status", {
       method: "POST",
-      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      headers: { "idempotency-key": "test-driver-action-key-0007", authorization: "Bearer test-token", "content-type": "application/json" },
       body: JSON.stringify({ status: "in_progress", cash_collected: "yes" }),
     }), {
       APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
@@ -787,7 +787,7 @@ test("driver cannot record cash collection before the terminal job state", async
   try {
     const result = await worker.fetch(new Request("https://api.example/api/v1/driver/jobs/ride/00000000-0000-4000-8000-000000000001/status", {
       method: "POST",
-      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      headers: { "idempotency-key": "test-driver-action-key-0008", authorization: "Bearer test-token", "content-type": "application/json" },
       body: JSON.stringify({ status: "in_progress", cash_collected: true }),
     }), {
       APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
@@ -1649,7 +1649,7 @@ test("driver job status updates require an idempotency key before any job databa
   try {
     const result = await worker.fetch(new Request("https://api.example/api/v1/driver/jobs/ride/00000000-0000-4000-8000-000000000001/status", {
       method: "POST",
-      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      headers: { "idempotency-key": "test-driver-action-key-0009", authorization: "Bearer test-token", "content-type": "application/json" },
       body: JSON.stringify({ status: "driver_arriving" }),
     }), {
       APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",

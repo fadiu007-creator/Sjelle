@@ -300,7 +300,7 @@ test("ride completion requires explicit cash collection confirmation", async () 
   try {
     const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/jobs/ride/33333333-3333-4333-8333-333333333333/status", {
       method: "POST",
-      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      headers: { "idempotency-key": "test-driver-action-key-0001", authorization: "Bearer test-token", "content-type": "application/json" },
       body: JSON.stringify({ status: "completed" }),
     }), {
       SUPABASE_URL: "https://example.supabase.co",
@@ -330,7 +330,7 @@ test("cash collection cannot be confirmed before a ride reaches completion", asy
   try {
     const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/jobs/ride/33333333-3333-4333-8333-333333333333/status", {
       method: "POST",
-      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      headers: { "idempotency-key": "test-driver-action-key-0002", authorization: "Bearer test-token", "content-type": "application/json" },
       body: JSON.stringify({ status: "driver_arriving", cash_collected: true }),
     }), {
       SUPABASE_URL: "https://example.supabase.co",
@@ -361,7 +361,7 @@ test("delivery completion requires explicit cash collection confirmation", async
   try {
     const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/jobs/delivery/33333333-3333-4333-8333-333333333333/status", {
       method: "POST",
-      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      headers: { "idempotency-key": "test-driver-action-key-0003", authorization: "Bearer test-token", "content-type": "application/json" },
       body: JSON.stringify({ status: "delivered" }),
     }), {
       SUPABASE_URL: "https://example.supabase.co",
@@ -391,7 +391,7 @@ test("delivery cash cannot be confirmed before delivery is complete", async () =
   try {
     const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/jobs/delivery/33333333-3333-4333-8333-333333333333/status", {
       method: "POST",
-      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      headers: { "idempotency-key": "test-driver-action-key-0004", authorization: "Bearer test-token", "content-type": "application/json" },
       body: JSON.stringify({ status: "picked_up", cash_collected: true }),
     }), {
       SUPABASE_URL: "https://example.supabase.co",
@@ -580,7 +580,7 @@ test("driver job status rejects non-boolean cash collection flags before databas
   try {
     const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/jobs/ride/33333333-3333-4333-8333-333333333333/status", {
       method: "POST",
-      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      headers: { "idempotency-key": "test-driver-action-key-0005", authorization: "Bearer test-token", "content-type": "application/json" },
       body: JSON.stringify({ status: "completed", cash_collected: "true" }),
     }), {
       SUPABASE_URL: "https://example.supabase.co",
@@ -610,7 +610,7 @@ test("driver job status rejects explicit false cash confirmation for terminal tr
   try {
     const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/jobs/delivery/33333333-3333-4333-8333-333333333333/status", {
       method: "POST",
-      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      headers: { "idempotency-key": "test-driver-action-key-0006", authorization: "Bearer test-token", "content-type": "application/json" },
       body: JSON.stringify({ status: "delivered", cash_collected: false }),
     }), {
       SUPABASE_URL: "https://example.supabase.co",
@@ -646,7 +646,7 @@ test("successful ride completion sends cash confirmation to the atomic database 
   try {
     const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/jobs/ride/33333333-3333-4333-8333-333333333333/status", {
       method: "POST",
-      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      headers: { "idempotency-key": "test-driver-action-key-0007", authorization: "Bearer test-token", "content-type": "application/json" },
       body: JSON.stringify({ status: "completed", cash_collected: true }),
     }), {
       SUPABASE_URL: "https://example.supabase.co",
@@ -684,7 +684,7 @@ test("driver job RPC conflicts are returned as conflicts instead of backend outa
   try {
     const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/jobs/ride/33333333-3333-4333-8333-333333333333/status", {
       method: "POST",
-      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      headers: { "idempotency-key": "test-driver-action-key-0008", authorization: "Bearer test-token", "content-type": "application/json" },
       body: JSON.stringify({ status: "driver_arriving" }),
     }), {
       SUPABASE_URL: "https://example.supabase.co",
@@ -801,7 +801,7 @@ test("driver readiness rejection from the job RPC is reported as a conflict", as
     throw new Error("Unexpected database request: " + url);
   }) as typeof fetch;
   try {
-    const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/jobs/ride/33333333-3333-4333-8333-333333333333/status", { method: "POST", headers: { authorization: "Bearer test-token", "content-type": "application/json" }, body: JSON.stringify({ status: "driver_arriving" }) }), {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/jobs/ride/33333333-3333-4333-8333-333333333333/status", { method: "POST", headers: { "idempotency-key": "test-driver-action-key-0009", authorization: "Bearer test-token", "content-type": "application/json" }, body: JSON.stringify({ status: "driver_arriving" }) }), {
       SUPABASE_URL: "https://example.supabase.co", SUPABASE_PUBLISHABLE_KEY: "test-publishable", SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
     });
     const body = await response.json() as { error: { code: string } };
@@ -819,7 +819,7 @@ test("cash collection rule violations from the job RPC return a conflict", async
     throw new Error("Unexpected database request: " + url);
   }) as typeof fetch;
   try {
-    const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/jobs/ride/33333333-3333-4333-8333-333333333333/status", { method: "POST", headers: { authorization: "Bearer test-token", "content-type": "application/json" }, body: JSON.stringify({ status: "driver_arriving" }) }), {
+    const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/jobs/ride/33333333-3333-4333-8333-333333333333/status", { method: "POST", headers: { "idempotency-key": "test-driver-action-key-0010", authorization: "Bearer test-token", "content-type": "application/json" }, body: JSON.stringify({ status: "driver_arriving" }) }), {
       SUPABASE_URL: "https://example.supabase.co", SUPABASE_PUBLISHABLE_KEY: "test-publishable", SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
     });
     const body = await response.json() as { error: { code: string } };
@@ -1361,7 +1361,7 @@ test("approved driver can request cancellation of an unstarted ride through the 
   try {
     const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/jobs/ride/33333333-3333-4333-8333-333333333333/status", {
       method: "POST",
-      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      headers: { "idempotency-key": "test-driver-action-key-0011", authorization: "Bearer test-token", "content-type": "application/json" },
       body: JSON.stringify({ status: "cancelled_by_driver" }),
     }), {
       SUPABASE_URL: "https://example.supabase.co",
@@ -1497,7 +1497,7 @@ test("driver cancellation is not accepted for delivery jobs", async () => {
   try {
     const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/jobs/delivery/33333333-3333-4333-8333-333333333333/status", {
       method: "POST",
-      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      headers: { "idempotency-key": "test-driver-action-key-0012", authorization: "Bearer test-token", "content-type": "application/json" },
       body: JSON.stringify({ status: "cancelled_by_driver" }),
     }), {
       SUPABASE_URL: "https://example.supabase.co",
@@ -1583,7 +1583,7 @@ test("driver cancellation after ride start is returned as a conflict from the da
   try {
     const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/jobs/ride/33333333-3333-4333-8333-333333333333/status", {
       method: "POST",
-      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      headers: { "idempotency-key": "test-driver-action-key-0013", authorization: "Bearer test-token", "content-type": "application/json" },
       body: JSON.stringify({ status: "cancelled_by_driver" }),
     }), {
       SUPABASE_URL: "https://example.supabase.co",
