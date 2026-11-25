@@ -372,5 +372,5 @@ for (const [file, source] of [[apiPath, api], [edgePath, edge]]) {
 assert.ok(customerApp.includes("const cancellationIdempotencyKey=crypto.randomUUID()"), "customer cancellation must create one secure key per rendered action");
 assert.ok(customerApp.includes('headers:{"idempotency-key":cancellationIdempotencyKey}'), "customer cancellation retries must reuse their action key");
 assert.ok(customerHtml.includes("customer-cancel-idempotency-20261125"), "customer cancellation changes must invalidate cached app JavaScript");
-assert.ok(customerBrowserSmoke.includes("customerCancelRequests") && customerBrowserSmoke.includes("customer cancellation retry must reuse the same key"), "browser smoke must prove ambiguous customer cancellation retries reuse the same key");
+assert.ok(driverBrowserSmoke.includes("customerCancelRequests") && driverBrowserSmoke.includes("customer cancellation retry must reuse the same key"), "browser smoke must prove ambiguous customer cancellation retries reuse the same key");
 console.log("Sjelle customer ride cancellation idempotency API, Edge Function, customer app and migration parity checks passed.");
