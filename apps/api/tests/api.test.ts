@@ -1395,17 +1395,17 @@ test("driver offer acceptance uses the authenticated driver identity and atomic 
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: driverId }), { status: 200 });
-    if (url.endsWith("/rpc/sjelle_respond_driver_offer")) {
+    if (url.endsWith("/rpc/sjelle_respond_driver_offer_idempotent")) {
       assert.equal(init?.method, "POST");
       rpcBody = JSON.parse(String(init?.body));
-      return new Response(JSON.stringify({ status: "accepted", job_kind: "ride", job_id: rideId }), { status: 200 });
+      return new Response(JSON.stringify({ status: "accepted", job_kind: "ride", job_id: rideId, replayed: false }), { status: 200 });
     }
     throw new Error("Unexpected database request: " + url);
   }) as typeof fetch;
   try {
     const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/offers/" + offerId + "/respond", {
       method: "POST",
-      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      headers: { authorization: "Bearer test-token", "content-type": "application/json", "idempotency-key": "test-offer-action-key-0011" },
       body: JSON.stringify({ response: "accept", driver_id: "99999999-9999-4999-8999-999999999999" }),
     }), {
       SUPABASE_URL: "https://example.supabase.co",
@@ -1414,8 +1414,8 @@ test("driver offer acceptance uses the authenticated driver identity and atomic 
     });
     const body = await response.json() as { data: { status: string; job_kind: string; job_id: string } };
     assert.equal(response.status, 200);
-    assert.deepEqual(rpcBody, { p_driver_id: driverId, p_offer_id: offerId, p_response: "accept" });
-    assert.deepEqual(body.data, { status: "accepted", job_kind: "ride", job_id: rideId });
+    assert.deepEqual(rpcBody, { p_driver_id: driverId, p_offer_id: offerId, p_response: "accept", p_idempotency_key: "test-offer-action-key-0011" });
+    assert.deepEqual(body.data, { status: "accepted", job_kind: "ride", job_id: rideId, replayed: false });
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1429,7 +1429,7 @@ test("driver offer acceptance reports atomic assignment conflicts without retryi
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: driverId }), { status: 200 });
-    if (url.endsWith("/rpc/sjelle_respond_driver_offer")) {
+    if (url.endsWith("/rpc/sjelle_respond_driver_offer_idempotent")) {
       rpcCalls += 1;
       return new Response(JSON.stringify({ message: "DRIVER_NOT_AVAILABLE" }), {
         status: 400,
@@ -1441,7 +1441,7 @@ test("driver offer acceptance reports atomic assignment conflicts without retryi
   try {
     const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/offers/" + offerId + "/respond", {
       method: "POST",
-      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      headers: { authorization: "Bearer test-token", "content-type": "application/json", "idempotency-key": "test-offer-action-key-0012" },
       body: JSON.stringify({ response: "accept" }),
     }), {
       SUPABASE_URL: "https://example.supabase.co",
@@ -1469,7 +1469,7 @@ test("driver offer response rejects unsupported actions before database access",
   try {
     const response = await callWorker(new Request("https://sjelle.test/api/v1/driver/offers/33333333-3333-4333-8333-333333333333/respond", {
       method: "POST",
-      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      headers: { authorization: "Bearer test-token", "content-type": "application/json", "idempotency-key": "test-offer-action-key-0013" },
       body: JSON.stringify({ response: "cancel" }),
     }), {
       SUPABASE_URL: "https://example.supabase.co",
