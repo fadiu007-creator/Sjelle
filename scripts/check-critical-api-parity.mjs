@@ -303,7 +303,7 @@ assert.ok(jobActionMigration.includes("pg_advisory_xact_lock("), "concurrent ret
 assert.ok(jobActionMigration.includes("v_existing.response || jsonb_build_object('replayed', true)"), "an identical retry must replay the original committed response");
 assert.ok(jobActionMigration.includes("IDEMPOTENCY_KEY_REUSED"), "reusing a driver key for a different job or action must fail");
 assert.ok(jobActionMigration.includes("public.sjelle_driver_update_job("), "the idempotent wrapper must preserve the existing authoritative transition function");
-assert.ok(jobActionMigration.includes("grant execute on function public.sjelle_driver_update_job_idempotent(uuid, text, uuid, text, boolean, text) to service_role"), "the idempotent transition RPC must remain service-role-only");
+assert.ok(jobActionMigration.replace(/\\s+/g, " ").includes("grant execute on function public.sjelle_driver_update_job_idempotent(uuid, text, uuid, text, boolean, text) to service_role"), "the idempotent transition RPC must remain service-role-only");
 
 const jobStatusStart = '    const driverJobMatch = url.pathname.match(/^\\/api\\/v1\\/driver\\/jobs\\/(ride|delivery)\\/([0-9a-f-]{36})\\/status$/i);';
 const jobStatusEnd = '    const adminDispatchMatch = url.pathname.match(/^\\/api\\/v1\\/admin\\/dispatch\\/(ride|delivery)\\/([0-9a-f-]{36})$/i);';
