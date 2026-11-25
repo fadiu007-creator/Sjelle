@@ -1924,6 +1924,10 @@ const worker = {
       let user: AuthUser | null;
       try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
       if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      const idempotencyKey = request.headers.get("idempotency-key")?.trim() ?? "";
+      if (idempotencyKey.length < 12 || idempotencyKey.length > 128 || !/^[A-Za-z0-9._:-]+$/.test(idempotencyKey)) {
+        return response({ error: { code: "INVALID_IDEMPOTENCY_KEY", message: "A stable idempotency-key header is required.", request_id: requestId } }, 400, requestId, origin, env);
+      }
       let body: unknown;
       try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
       const allowed = driverJobMatch[1] === "ride"
@@ -1974,13 +1978,13 @@ const worker = {
         }
       }
       try {
-        const result = await databaseRequest(env, "rpc/sjelle_driver_update_job", {
-          method: "POST", body: JSON.stringify({ p_driver_id: user.id, p_job_kind: driverJobMatch[1], p_job_id: driverJobMatch[2], p_next_status: body.status, p_cash_collected: body.cash_collected === true }),
+        const result = await databaseRequest(env, "rpc/sjelle_driver_update_job_idempotent", {
+          method: "POST", body: JSON.stringify({ p_driver_id: user.id, p_job_kind: driverJobMatch[1], p_job_id: driverJobMatch[2], p_next_status: body.status, p_cash_collected: body.cash_collected === true, p_idempotency_key: idempotencyKey }),
         });
         const payload = await parseJson(result);
         if (!result.ok) {
           const code = isRecord(payload) && typeof payload.message === "string" ? payload.message : "JOB_UPDATE_FAILED";
-          const status = code === "JOB_NOT_FOUND" ? 404 : ["DRIVER_NOT_APPROVED","DRIVER_HAS_ACTIVE_JOB","ORDER_NOT_READY_FOR_PICKUP","INVALID_JOB_TRANSITION","DRIVER_CANCELLATION_NOT_ALLOWED","CASH_COLLECTION_CONFIRMATION_REQUIRED","CASH_CONFIRMATION_ONLY_ON_COMPLETION","CASH_CONFIRMATION_NOT_APPLICABLE","ONLINE_PAYMENT_NOT_CONFIGURED","INVALID_JOB_KIND"].includes(code) ? 409 : 503;
+          const status = code === "JOB_NOT_FOUND" ? 404 : ["DRIVER_NOT_APPROVED","DRIVER_HAS_ACTIVE_JOB","ORDER_NOT_READY_FOR_PICKUP","INVALID_JOB_TRANSITION","DRIVER_CANCELLATION_NOT_ALLOWED","CASH_COLLECTION_CONFIRMATION_REQUIRED","CASH_CONFIRMATION_ONLY_ON_COMPLETION","CASH_CONFIRMATION_NOT_APPLICABLE","ONLINE_PAYMENT_NOT_CONFIGURED","INVALID_JOB_KIND","IDEMPOTENCY_KEY_REUSED"].includes(code) ? 409 : 503;
           return response({ error: { code, request_id: requestId } }, status, requestId, origin, env);
         }
         return response({ data: payload }, 200, requestId, origin, env);

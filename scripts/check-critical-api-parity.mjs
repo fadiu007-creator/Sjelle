@@ -23,6 +23,7 @@ const expectedConflictCodes = [
   "CASH_CONFIRMATION_NOT_APPLICABLE",
   "ONLINE_PAYMENT_NOT_CONFIGURED",
   "INVALID_JOB_KIND",
+  "IDEMPOTENCY_KEY_REUSED",
 ];
 
 function readConflictCodes(source, file) {
@@ -292,3 +293,32 @@ assert.ok(cashHandoverMigration.includes("related_cash_handover_id"), "cash hand
 const cashHandoverTests = readFileSync("apps/api/tests/cash-handovers.test.ts", "utf8");
 assert.ok(cashHandoverTests.includes("cash balances require an authenticated admin") && cashHandoverTests.includes("cash handover rejects an amount above the driver's ledger balance"), "cash handover API regression tests must cover admin access and over-balance rejection");
 console.log("Sjelle cash handover API, ledger, admin UI and reconciliation parity assertions passed.");
+
+
+const jobActionMigration = readFileSync("supabase/migrations/20261125090159_sjelle_idempotent_driver_job_transitions.sql", "utf8");
+assert.ok(jobActionMigration.includes("create table if not exists public.sjelle_job_action_idempotency"), "driver transition idempotency must use a Sjelle-scoped receipt table");
+assert.ok(jobActionMigration.includes("unique (driver_id, idempotency_key)"), "driver action keys must be unique per driver across rides and deliveries");
+assert.ok(jobActionMigration.includes("alter table public.sjelle_job_action_idempotency enable row level security"), "driver action receipts must have RLS enabled");
+assert.ok(jobActionMigration.includes("pg_advisory_xact_lock("), "concurrent retries with the same driver key must serialize");
+assert.ok(jobActionMigration.includes("v_existing.response || jsonb_build_object('replayed', true)"), "an identical retry must replay the original committed response");
+assert.ok(jobActionMigration.includes("IDEMPOTENCY_KEY_REUSED"), "reusing a driver key for a different job or action must fail");
+assert.ok(jobActionMigration.includes("public.sjelle_driver_update_job("), "the idempotent wrapper must preserve the existing authoritative transition function");
+assert.ok(jobActionMigration.includes("grant execute on function public.sjelle_driver_update_job_idempotent(uuid, text, uuid, text, boolean, text) to service_role"), "the idempotent transition RPC must remain service-role-only");
+
+const jobStatusStart = '    const driverJobMatch = url.pathname.match(/^\\/api\\/v1\\/driver\\/jobs\\/(ride|delivery)\\/([0-9a-f-]{36})\\/status$/i);';
+const jobStatusEnd = '    const adminDispatchMatch = url.pathname.match(/^\\/api\\/v1\\/admin\\/dispatch\\/(ride|delivery)\\/([0-9a-f-]{36})$/i);';
+assert.equal(routeSection(api, jobStatusStart, jobStatusEnd, apiPath), routeSection(edge, jobStatusStart, jobStatusEnd, edgePath), "API and Edge Function driver status routes must remain identical");
+for (const [file, source] of [[apiPath, api], [edgePath, edge]]) {
+  assert.ok(source.includes("rpc/sjelle_driver_update_job_idempotent"), `${file}: driver status changes must use the idempotent database wrapper`);
+  assert.ok(source.includes('request.headers.get("idempotency-key")'), `${file}: driver status changes must require the stable idempotency header`);
+  assert.ok(source.includes("p_idempotency_key: idempotencyKey"), `${file}: the server must forward the key to PostgreSQL`);
+  assert.ok(source.includes("IDEMPOTENCY_KEY_REUSED"), `${file}: mismatched key reuse must return a conflict`);
+}
+assert.ok(driverJs.includes("const statusIdempotencyKey=crypto.randomUUID()"), "driver status actions must create one secure key per rendered action");
+assert.ok(driverJs.includes('headers:{"idempotency-key":statusIdempotencyKey}'), "driver status retries must reuse their action key");
+assert.ok(driverJs.includes("const cancellationIdempotencyKey=crypto.randomUUID()"), "driver cancellation must create a stable action key");
+assert.ok(driverJs.includes('headers:{"idempotency-key":cancellationIdempotencyKey}'), "driver cancellation must send its stable action key");
+assert.ok(driverHtml.includes("driver-job-idempotency-20261125"), "driver action idempotency changes must invalidate cached portal JavaScript");
+const driverBrowserSmoke = readFileSync("apps/customer/tests/pages-smoke.mjs", "utf8");
+assert.ok(driverBrowserSmoke.includes("driverJobRequests") && driverBrowserSmoke.includes("retry must reuse the exact same key"), "browser smoke must prove ambiguous driver transition retries reuse the same key");
+console.log("Sjelle driver ride/delivery transition idempotency parity assertions passed.");

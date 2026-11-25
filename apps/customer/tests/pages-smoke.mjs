@@ -686,7 +686,67 @@ try {
   assert.deepEqual(driverAvailabilityRequests[1], { online: false, mode: "ride" });
   assert.equal(await driverPage.locator("#driver-mode").inputValue(), "delivery", "a rejected offline mode change must restore the last server-confirmed mode");
   await driverPage.close();
+
   console.log("PASS offline driver mode selection persists through the API and restores the server-confirmed value when the API rejects a change");
+
+  // A failed response after a possible server commit must be retried with the
+  // same key and exact action, so the database can replay the original result.
+  const driverTripPage = await browser.newPage({ viewport: { width: 1365, height: 900 } });
+  driverTripPage.on("pageerror", error => pageErrors.push(error.message));
+  driverTripPage.on("response", response => {
+    if (response.url().startsWith(baseUrl) && response.status() >= 400) {
+      missingAssets.push(`${response.status()} ${response.url()}`);
+    }
+  });
+  await driverTripPage.addInitScript(() => {
+    sessionStorage.setItem("sjelle.session", JSON.stringify({ access_token: "sjelle-driver-trip-smoke-token" }));
+  });
+  let driverTripStatus = "driver_assigned";
+  let failNextDriverTransition = true;
+  const driverJobRequests = [];
+  const driverTripId = "55555555-5555-4555-8555-555555555555";
+  await driverTripPage.route(`${apiOrigin}/**`, async route => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname.replace("/functions/v1/sjelle-api/api/v1", "");
+    const respond = (status, payload) => route.fulfill({
+      status, contentType: "application/json", body: JSON.stringify(payload),
+    });
+    if (pathname === "/cities") return respond(200, { data: [{ slug: "ferizaj", name: "Ferizaj", active: true }] });
+    if (pathname === "/driver/me") return respond(200, { data: {
+      profile: { user_id: "smoke-driver", review_status: "approved", city_id: "smoke-city", online: false, selected_mode: "ride" },
+      vehicles: [], documents: [],
+    } });
+    if (pathname === "/driver/offers") return respond(200, { data: [] });
+    if (pathname === "/driver/jobs") return respond(200, { data: { rides: [{
+      id: driverTripId, pickup_label: "Qendra", pickup_lat: 42.37, pickup_lon: 21.15,
+      destination_label: "Stacioni", destination_lat: 42.38, destination_lon: 21.16,
+      status: driverTripStatus, quoted_amount_cents: 500, payment_method: "cash",
+    }], deliveries: [] } });
+    if (pathname === `/driver/jobs/ride/${driverTripId}/status` && request.method() === "POST") {
+      const body = request.postDataJSON();
+      driverJobRequests.push({ idempotencyKey: request.headers()["idempotency-key"], body });
+      if (failNextDriverTransition) {
+        failNextDriverTransition = false;
+        return respond(503, { error: { code: "JOB_UPDATE_FAILED" } });
+      }
+      driverTripStatus = body.status;
+      return respond(200, { data: { job_id: driverTripId, status: driverTripStatus, replayed: false } });
+    }
+    return respond(404, { error: { code: "NOT_FOUND" } });
+  });
+  await driverTripPage.goto(new URL("driver/", baseUrl).toString(), { waitUntil: "domcontentloaded", timeout: 30000 });
+  await driverTripPage.getByRole("button", { name: "Po shkoj te klienti" }).waitFor({ state: "visible", timeout: 15000 });
+  await driverTripPage.getByRole("button", { name: "Po shkoj te klienti" }).click();
+  await driverTripPage.waitForFunction(() => document.querySelector("#driver-alert")?.textContent?.includes("Puna s’u përditësua"));
+  await driverTripPage.getByRole("button", { name: "Po shkoj te klienti" }).click();
+  await driverTripPage.getByRole("button", { name: "Kam arritur" }).waitFor({ state: "visible", timeout: 15000 });
+  assert.equal(driverJobRequests.length, 2, "the failed transition should be retried exactly once");
+  assert.match(driverJobRequests[0].idempotencyKey || "", /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i, "driver job status must use a secure UUID idempotency key");
+  assert.equal(driverJobRequests[1].idempotencyKey, driverJobRequests[0].idempotencyKey, "retry must reuse the exact same key");
+  assert.deepEqual(driverJobRequests[1].body, driverJobRequests[0].body, "retry must preserve the exact action payload");
+  await driverTripPage.close();
+  console.log("PASS driver trip transition retries reuse the same idempotency key and exact payload after an ambiguous failure");
+
 
   assert.deepEqual(missingAssets, [], "Pages must not return 4xx/5xx for local portal files");
   assert.deepEqual(pageErrors, [], "portal pages must not raise uncaught JavaScript errors");

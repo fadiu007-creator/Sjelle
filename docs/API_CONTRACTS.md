@@ -50,6 +50,7 @@ Base path: `/api/v1`. JSON request/response. Authenticated requests use Supabase
 - `GET /driver/offers` — current offers for selected mode.
 - `POST /driver/offers/{id}/accept`, `/reject` — accept is transactional and may return 409 if expired or already claimed.
 - `GET /driver/jobs/active`, `GET /driver/earnings?from=&to=`.
+- `POST /driver/jobs/{ride|delivery}/{id}/status` — requires an `Idempotency-Key` header. Retries must reuse the same key and exact `{ status, cash_collected }` payload; a matching retry replays the committed result, while reusing the key for another action returns 409 `IDEMPOTENCY_KEY_REUSED`. Cash completion still requires explicit `cash_collected: true`.
 
 ## Finance and reconciliation
 - GET /admin/reconciliation?from=YYYY-MM-DD&to=YYYY-MM-DD — admin-only read of up to 1,000 ledger entries in the inclusive UTC date range, with signed net totals grouped by account type. Defaults to the latest 30 calendar days; rejects invalid dates, reversed ranges, and inclusive ranges longer than 366 days. Totals fail closed for malformed amounts, non-EUR entries, or integer overflow. Response marks possibly_truncated when the 1,000-row limit is reached, so this endpoint must not be treated as a complete export when truncated.
