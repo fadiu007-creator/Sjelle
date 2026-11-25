@@ -1784,17 +1784,21 @@ export default {
       let user: AuthUser | null;
       try { user = await requireUser(request, env); } catch { return response({ error: { code: "AUTH_PROVIDER_UNAVAILABLE", request_id: requestId } }, 503, requestId, origin, env); }
       if (!user) return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId, origin, env);
+      const idempotencyKey = request.headers.get("idempotency-key")?.trim() ?? "";
+      if (idempotencyKey.length < 12 || idempotencyKey.length > 128 || !/^[A-Za-z0-9._:-]+$/.test(idempotencyKey)) {
+        return response({ error: { code: "INVALID_IDEMPOTENCY_KEY", message: "A stable idempotency-key header is required.", request_id: requestId } }, 400, requestId, origin, env);
+      }
       let body: unknown;
       try { body = await request.json(); } catch { return response({ error: { code: "INVALID_JSON", request_id: requestId } }, 400, requestId, origin, env); }
       if (!isRecord(body) || !["accept","reject"].includes(String(body.response))) return response({ error: { code: "INVALID_OFFER_RESPONSE", request_id: requestId } }, 400, requestId, origin, env);
       try {
-        const result = await databaseRequest(env, "rpc/sjelle_respond_driver_offer", {
-          method: "POST", body: JSON.stringify({ p_driver_id: user.id, p_offer_id: driverOfferResponseMatch[1], p_response: body.response }),
+        const result = await databaseRequest(env, "rpc/sjelle_respond_driver_offer_idempotent", {
+          method: "POST", body: JSON.stringify({ p_driver_id: user.id, p_offer_id: driverOfferResponseMatch[1], p_response: body.response, p_idempotency_key: idempotencyKey }),
         });
         const payload = await parseJson(result);
         if (!result.ok) {
           const code = isRecord(payload) && typeof payload.message === "string" ? payload.message : "OFFER_RESPONSE_FAILED";
-          const status = code === "OFFER_NOT_FOUND" ? 404 : ["OFFER_EXPIRED","DRIVER_NOT_AVAILABLE","JOB_NOT_AVAILABLE"].includes(code) ? 409 : 503;
+          const status = code === "OFFER_NOT_FOUND" ? 404 : ["OFFER_EXPIRED","DRIVER_NOT_AVAILABLE","JOB_NOT_AVAILABLE","IDEMPOTENCY_KEY_REUSED"].includes(code) ? 409 : 503;
           return response({ error: { code, request_id: requestId } }, status, requestId, origin, env);
         }
         return response({ data: payload }, 200, requestId, origin, env);

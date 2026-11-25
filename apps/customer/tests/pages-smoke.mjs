@@ -747,6 +747,70 @@ try {
   await driverTripPage.close();
   console.log("PASS driver trip transition retries reuse the same idempotency key and exact payload after an ambiguous failure");
 
+  const driverOfferPage = await browser.newPage({ viewport: { width: 1365, height: 900 } });
+  driverOfferPage.on("pageerror", error => pageErrors.push(error.message));
+  await driverOfferPage.addInitScript(() => {
+    sessionStorage.setItem("sjelle.session", JSON.stringify({ access_token: "sjelle-driver-offer-smoke-token" }));
+  });
+  const driverOfferId = "66666666-6666-4666-8666-666666666666";
+  const driverOfferRideId = "77777777-7777-4777-8777-777777777777";
+  let driverOfferState = "offered";
+  let driverOfferResponseCalls = 0;
+  const driverOfferRequests = [];
+  await driverOfferPage.route(`${apiOrigin}/**`, async route => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname.replace("/functions/v1/sjelle-api/api/v1", "");
+    const respond = (status, payload) => route.fulfill({
+      status, contentType: "application/json", body: JSON.stringify(payload),
+    });
+    if (pathname === "/cities") return respond(200, { data: [{ slug: "ferizaj", name: "Ferizaj", active: true }] });
+    if (pathname === "/driver/me") return respond(200, { data: {
+      profile: { user_id: "smoke-driver", review_status: "approved", city_id: "smoke-city", online: true, selected_mode: "ride" },
+      vehicles: [], documents: [],
+    } });
+    if (pathname === "/driver/offers") return respond(200, { data: driverOfferState === "offered" ? [{
+      id: driverOfferId, job_kind: "ride",
+      job: { pickup_label: "Qendra", destination_label: "Stacioni", quoted_amount_cents: 500 },
+    }] : [] });
+    if (pathname === "/driver/jobs") return respond(200, { data: {
+      rides: driverOfferState === "accepted" ? [{
+        id: driverOfferRideId, pickup_label: "Qendra", pickup_lat: 42.37, pickup_lon: 21.15,
+        destination_label: "Stacioni", destination_lat: 42.38, destination_lon: 21.16,
+        status: "driver_assigned", quoted_amount_cents: 500, payment_method: "cash",
+      }] : [],
+      deliveries: [],
+    } });
+    if (pathname === `/driver/offers/${driverOfferId}/respond` && request.method() === "POST") {
+      driverOfferRequests.push({
+        idempotencyKey: request.headers()["idempotency-key"],
+        body: request.postDataJSON(),
+      });
+      if (driverOfferResponseCalls === 0) {
+        driverOfferResponseCalls += 1;
+        driverOfferState = "accepted";
+        return respond(503, { error: { code: "OFFER_RESPONSE_FAILED" } });
+      }
+      driverOfferResponseCalls += 1;
+      return respond(200, { data: {
+        status: "accepted", job_kind: "ride", job_id: driverOfferRideId, replayed: true,
+      } });
+    }
+    return respond(404, { error: { code: "NOT_FOUND" } });
+  });
+  await driverOfferPage.goto(new URL("driver/", baseUrl).toString(), { waitUntil: "domcontentloaded", timeout: 30000 });
+  await driverOfferPage.getByRole("button", { name: "Prano" }).waitFor({ state: "visible", timeout: 15000 });
+  await driverOfferPage.getByRole("button", { name: "Prano" }).click();
+  await driverOfferPage.waitForFunction(() => document.querySelector("#driver-alert")?.textContent?.includes("Nuk u përditësua oferta"));
+  await driverOfferPage.getByRole("button", { name: "Prano" }).click();
+  await driverOfferPage.getByRole("button", { name: "Po shkoj te klienti" }).waitFor({ state: "visible", timeout: 15000 });
+  assert.equal(driverOfferRequests.length, 2, "the ambiguous offer response should be retried exactly once");
+  assert.match(driverOfferRequests[0].idempotencyKey || "", /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i, "offer responses must use a secure UUID idempotency key");
+  assert.equal(driverOfferRequests[1].idempotencyKey, driverOfferRequests[0].idempotencyKey, "offer retry must reuse the exact same key");
+  assert.deepEqual(driverOfferRequests[1].body, driverOfferRequests[0].body, "offer retry must preserve the exact response payload");
+  await driverOfferPage.close();
+  console.log("PASS driver offer acceptance retries reuse the same idempotency key and exact response after an ambiguous failure");
+
+
 
   assert.deepEqual(missingAssets, [], "Pages must not return 4xx/5xx for local portal files");
   assert.deepEqual(pageErrors, [], "portal pages must not raise uncaught JavaScript errors");

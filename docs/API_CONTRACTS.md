@@ -48,7 +48,7 @@ Base path: `/api/v1`. JSON request/response. Authenticated requests use Supabase
 - `POST /driver/availability` — `{ "online":true, "mode":"ride|delivery", "city_id":"uuid" }`; rejected if not approved or job active.
 - `POST /driver/location` — `{ "lat":42.66,"lon":21.16,"accuracy_m":12,"heading":180,"recorded_at":"..." }`; rate-limited, freshness/accuracy checked.
 - `GET /driver/offers` — current offers for selected mode.
-- `POST /driver/offers/{id}/accept`, `/reject` — accept is transactional and may return 409 if expired or already claimed.
+- `POST /driver/offers/{id}/respond` — body `{ "response":"accept|reject" }`; requires an `Idempotency-Key` header. A matching retry for the same offer and response replays the original result; reusing the key for another offer or response returns 409 `IDEMPOTENCY_KEY_REUSED`. Acceptance remains transactional and revalidates driver eligibility at assignment.
 - `GET /driver/jobs/active`, `GET /driver/earnings?from=&to=`.
 - `POST /driver/jobs/{ride|delivery}/{id}/status` — requires an `Idempotency-Key` header. Retries must reuse the same key and exact `{ status, cash_collected }` payload; a matching retry replays the committed result, while reusing the key for another action returns 409 `IDEMPOTENCY_KEY_REUSED`. Cash completion still requires explicit `cash_collected: true`.
 

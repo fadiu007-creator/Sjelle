@@ -322,3 +322,28 @@ assert.ok(driverHtml.includes("driver-job-idempotency-20261125"), "driver action
 const driverBrowserSmoke = readFileSync("apps/customer/tests/pages-smoke.mjs", "utf8");
 assert.ok(driverBrowserSmoke.includes("driverJobRequests") && driverBrowserSmoke.includes("retry must reuse the exact same key"), "browser smoke must prove ambiguous driver transition retries reuse the same key");
 console.log("Sjelle driver ride/delivery transition idempotency parity assertions passed.");
+
+
+const offerActionMigration = readFileSync("supabase/migrations/20261125092436_sjelle_idempotent_driver_offer_responses.sql", "utf8");
+assert.ok(offerActionMigration.includes("create table if not exists public.sjelle_offer_action_idempotency"), "driver offer response idempotency must use a Sjelle-scoped receipt table");
+assert.ok(offerActionMigration.includes("unique (driver_id, idempotency_key)"), "offer action keys must be unique per driver across offers");
+assert.ok(offerActionMigration.includes("alter table public.sjelle_offer_action_idempotency enable row level security"), "offer action receipts must have RLS enabled");
+assert.ok(offerActionMigration.includes("pg_advisory_xact_lock("), "concurrent offer retries with the same key must serialize");
+assert.ok(offerActionMigration.includes("v_existing.response || jsonb_build_object('replayed', true)"), "an identical offer retry must replay the original response");
+assert.ok(offerActionMigration.includes("IDEMPOTENCY_KEY_REUSED"), "reusing an offer key for another offer or response must fail");
+assert.ok(offerActionMigration.includes("public.sjelle_respond_driver_offer("), "the idempotent wrapper must preserve the authoritative offer acceptance function");
+assert.ok(offerActionMigration.replace(/\s+/g, " ").includes("grant execute on function public.sjelle_respond_driver_offer_idempotent(uuid, uuid, text, text) to service_role"), "the offer idempotency RPC must remain service-role-only");
+
+const offerResponseStart = '    const driverOfferResponseMatch = url.pathname.match(/^\\/api\\/v1\\/driver\\/offers\\/([0-9a-f-]{36})\\/respond$/i);';
+const offerResponseEnd = '    const driverJobMatch = url.pathname.match(/^\\/api\\/v1\\/driver\\/jobs\\/(ride|delivery)\\/([0-9a-f-]{36})\\/status$/i);';
+assert.equal(routeSection(api, offerResponseStart, offerResponseEnd, apiPath), routeSection(edge, offerResponseStart, offerResponseEnd, edgePath), "API and Edge Function offer-response routes must remain identical");
+for (const [file, source] of [[apiPath, api], [edgePath, edge]]) {
+  assert.ok(source.includes("rpc/sjelle_respond_driver_offer_idempotent"), file + ": driver offer responses must use the idempotent database wrapper");
+  assert.ok(source.includes('request.headers.get("idempotency-key")'), file + ": driver offer responses must require the stable idempotency header");
+  assert.ok(source.includes("p_idempotency_key: idempotencyKey"), file + ": the server must forward the offer idempotency key to PostgreSQL");
+  assert.ok(source.includes("IDEMPOTENCY_KEY_REUSED"), file + ": mismatched offer key reuse must return a conflict");
+}
+assert.ok(driverJs.includes('headers:{"idempotency-key":offerActionIdempotencyKey}'), "driver offer actions must send a stable per-action idempotency key");
+assert.ok(driverHtml.includes("driver-offer-idempotency-20261125"), "driver offer idempotency changes must invalidate cached portal JavaScript");
+assert.ok(driverBrowserSmoke.includes("driverOfferRequests") && driverBrowserSmoke.includes("offer retry must reuse the exact same key"), "browser smoke must prove ambiguous offer retries reuse the exact same key");
+console.log("Sjelle driver offer acceptance/rejection idempotency API, Edge Function, portal and migration parity checks passed.");

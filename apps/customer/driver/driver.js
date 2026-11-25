@@ -122,7 +122,48 @@ async function setAvailability(online){
 $("#driver-online").addEventListener("click",()=>setAvailability(true));$("#driver-offline").addEventListener("click",()=>setAvailability(false));
 $("#driver-location").addEventListener("click",()=>{if(!state.profile?.online){showAlert("Dil online për të dërguar vendndodhjen. Vendndodhja nuk dërgohet kur je offline.","error");return;}if(!navigator.geolocation){showAlert("Shfletuesi nuk mbështet vendndodhjen.","error");return;}showAlert("Po marrim vendndodhjen…");navigator.geolocation.getCurrentPosition(async p=>{try{if(!Number.isFinite(p.coords.accuracy)||p.coords.accuracy>1500)throw new Error("GPS-i është i pasaktë. Provo në ambient të hapur (1,500 m ose më mirë).");await api("/driver/location",{method:"POST",body:JSON.stringify({latitude:p.coords.latitude,longitude:p.coords.longitude,accuracy_m:p.coords.accuracy})});showAlert("Vendndodhja u dërgua.","success");if(driverMap){const ll=[p.coords.latitude,p.coords.longitude];if(!driverMarker)driverMarker=L.circleMarker(ll,{radius:9,color:"#244c40",fillColor:"#d6f27a",fillOpacity:1}).addTo(driverMap).bindPopup("Vendndodhja jote");else driverMarker.setLatLng(ll);driverMap.setView(ll,14);$("#driver-map-live-status").textContent="GPS u përditësua";}await loadOffers();}catch(e){showAlert("Vendndodhja nuk u dërgua: "+e.message,"error");}},()=>showAlert("Nuk u lejua ose nuk u mor vendndodhja.","error"),{enableHighAccuracy:true,timeout:10000,maximumAge:30000});});
 async function loadOffers(){if(offersLoading||document.visibilityState!=="visible")return;offersLoading=true;try{const r=await api("/driver/offers");state.offers=r.data||[];renderOffers();}catch(e){if(document.visibilityState==="visible")$("#driver-offers").textContent=e.message;}finally{offersLoading=false;}}
-function renderOffers(){const root=$("#driver-offers");root.replaceChildren();if(!state.offers.length){root.textContent="Nuk ka oferta aktive. Mbaje vendndodhjen të përditësuar.";return;}for(const offer of state.offers){const job=offer.job||{};const c=card(offer.job_kind==="ride"?"Udhëtim":"Dërgesë",offer.job_kind==="ride"?(job.pickup_label||"Nisja")+" → "+(job.destination_label||"Destinacioni")+" · "+money(job.quoted_amount_cents):((job.restaurant?.name||"Restorant")+" · Porosia "+(job.order_status||"") +" · "+money(job.total_cents)),null);const actions=document.createElement("div");actions.className="portal-list-actions";for(const answer of ["accept","reject"]){const b=document.createElement("button");b.type="button";b.className=answer==="accept"?"primary-button":"secondary-button";b.textContent=answer==="accept"?"Prano":"Refuzo";b.addEventListener("click",async()=>{b.disabled=true;try{const result=await api("/driver/offers/"+offer.id+"/respond",{method:"POST",body:JSON.stringify({response:answer})});await Promise.all([loadOffers(),loadJobs()]);if(result.data?.status==="city_unavailable"){showAlert("Shërbimi në këtë qytet është çaktivizuar. Oferta nuk mund të pranohet.","error");return;}showAlert(answer==="accept"?"Oferta u pranua.":"Oferta u refuzua.","success");}catch(err){b.disabled=false;showAlert("Nuk u përditësua oferta: "+err.message,"error");}});actions.append(b);}c.append(actions);root.append(c);}}
+function renderOffers(){
+ const root=$("#driver-offers");
+ root.replaceChildren();
+ if(!state.offers.length){root.textContent="Nuk ka oferta aktive. Mbaje vendndodhjen të përditësuar.";return;}
+ for(const offer of state.offers){
+  const job=offer.job||{};
+  const c=card(offer.job_kind==="ride"?"Udhëtim":"Dërgesë",offer.job_kind==="ride"?(job.pickup_label||"Nisja")+" → "+(job.destination_label||"Destinacioni")+" · "+money(job.quoted_amount_cents):((job.restaurant?.name||"Restorant")+" · Porosia "+(job.order_status||"") +" · "+money(job.total_cents)),null);
+  const actions=document.createElement("div");
+  actions.className="portal-list-actions";
+  const actionButtons=[];
+  for(const answer of ["accept","reject"]){
+   const b=document.createElement("button");
+   b.type="button";
+   b.className=answer==="accept"?"primary-button":"secondary-button";
+   b.textContent=answer==="accept"?"Prano":"Refuzo";
+   const offerActionIdempotencyKey=crypto.randomUUID();
+   b.addEventListener("click",async()=>{
+    if(actionButtons.some(button=>button.disabled))return;
+    actionButtons.forEach(button=>button.disabled=true);
+    try{
+     const result=await api("/driver/offers/"+offer.id+"/respond",{method:"POST",headers:{"idempotency-key":offerActionIdempotencyKey},body:JSON.stringify({response:answer})});
+     await Promise.all([loadOffers(),loadJobs()]);
+     if(result.data?.status==="city_unavailable"){
+      showAlert("Shërbimi në këtë qytet është çaktivizuar. Oferta nuk mund të pranohet.","error");
+      return;
+     }
+     showAlert(answer==="accept"?"Oferta u pranua.":"Oferta u refuzua.","success");
+    }catch(err){
+     actionButtons.forEach(button=>button.disabled=false);
+     if(["OFFER_EXPIRED","DRIVER_NOT_AVAILABLE","JOB_NOT_AVAILABLE"].includes(err.code)){
+      await Promise.allSettled([loadOffers(),loadJobs()]);
+     }
+     showAlert("Nuk u përditësua oferta: "+err.message,"error");
+    }
+   });
+   actionButtons.push(b);
+   actions.append(b);
+  }
+  c.append(actions);
+  root.append(c);
+ }
+}
 function money(cents){return new Intl.NumberFormat("sq-XK",{style:"currency",currency:"EUR"}).format((Number(cents)||0)/100);}
 function addNavigationLink(container,label,lat,lon){if(typeof lat!=="number"||typeof lon!=="number"||!Number.isFinite(lat)||!Number.isFinite(lon)||lat < 41.7||lat > 43.4||lon < 19.7||lon > 22.0)return;const a=document.createElement("a");a.className="secondary-button";a.href="https://www.google.com/maps/dir/?api=1&destination="+encodeURIComponent(lat+","+lon);a.target="_blank";a.rel="noopener noreferrer";a.textContent=label;a.setAttribute("aria-label",label);container.append(a);}
 async function loadJobs(){if(jobsLoading||document.visibilityState!=="visible")return;jobsLoading=true;try{const r=await api("/driver/jobs");state.jobs=r.data||{rides:[],deliveries:[]};renderJobs();}catch(e){if(document.visibilityState==="visible")$("#driver-jobs").textContent=e.message;}finally{jobsLoading=false;}}

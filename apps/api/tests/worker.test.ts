@@ -1739,3 +1739,106 @@ test("reusing a driver job idempotency key for a different action returns a conf
     globalThis.fetch = originalFetch;
   }
 });
+
+test("driver offer responses require an idempotency key before any offer database request", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async input => {
+    calls += 1;
+    const url = input instanceof Request ? input.url : String(input);
+    if (new URL(url).pathname.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), { status: 200 });
+    }
+    throw new Error("A missing idempotency key must stop before database access: " + url);
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/driver/offers/00000000-0000-4000-8000-000000000001/respond", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ response: "accept" }),
+    }), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(result.status, 400);
+    assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "INVALID_IDEMPOTENCY_KEY");
+    assert.equal(calls, 1, "only the authentication lookup may run before rejecting a missing key");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("driver offer responses forward the stable key to the idempotent service-role RPC", async () => {
+  const originalFetch = globalThis.fetch;
+  const rpcBodies: Record<string, unknown>[] = [];
+  const idempotencyKey = "driver-offer-action-key-0001";
+  globalThis.fetch = async (input, init) => {
+    const url = input instanceof Request ? input.url : String(input);
+    if (new URL(url).pathname.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), { status: 200 });
+    }
+    if (url.includes("/rest/v1/rpc/sjelle_respond_driver_offer_idempotent")) {
+      rpcBodies.push(JSON.parse(String(init?.body || "{}")) as Record<string, unknown>);
+      return new Response(JSON.stringify({ status: "accepted", job_kind: "ride", job_id: "00000000-0000-4000-8000-000000000001", replayed: false }), { status: 200 });
+    }
+    throw new Error("Unexpected backend request: " + url);
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/driver/offers/00000000-0000-4000-8000-000000000002/respond", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer test-token",
+        "content-type": "application/json",
+        "idempotency-key": idempotencyKey,
+      },
+      body: JSON.stringify({ response: "accept" }),
+    }), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(result.status, 200);
+    assert.deepEqual(rpcBodies, [{
+      p_driver_id: "00000000-0000-4000-8000-000000000099",
+      p_offer_id: "00000000-0000-4000-8000-000000000002",
+      p_response: "accept",
+      p_idempotency_key: idempotencyKey,
+    }]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("reusing a driver offer idempotency key for another offer action returns a conflict", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async input => {
+    const url = input instanceof Request ? input.url : String(input);
+    if (new URL(url).pathname.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), { status: 200 });
+    }
+    if (url.includes("/rest/v1/rpc/sjelle_respond_driver_offer_idempotent")) {
+      return new Response(JSON.stringify({ message: "IDEMPOTENCY_KEY_REUSED" }), { status: 400 });
+    }
+    throw new Error("Unexpected backend request: " + url);
+  };
+  try {
+    const result = await worker.fetch(new Request("https://api.example/api/v1/driver/offers/00000000-0000-4000-8000-000000000002/respond", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer test-token",
+        "content-type": "application/json",
+        "idempotency-key": "driver-offer-action-key-0001",
+      },
+      body: JSON.stringify({ response: "reject" }),
+    }), {
+      APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",
+      SUPABASE_URL: "https://project.supabase.co", SUPABASE_PUBLISHABLE_KEY: "public-test-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-test-key",
+    } as never);
+    assert.equal(result.status, 409);
+    assert.equal((await result.json() as { error?: { code?: string } }).error?.code, "IDEMPOTENCY_KEY_REUSED");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
