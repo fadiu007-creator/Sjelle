@@ -318,7 +318,7 @@ assert.ok(driverJs.includes("const statusIdempotencyKey=crypto.randomUUID()"), "
 assert.ok(driverJs.includes('headers:{"idempotency-key":statusIdempotencyKey}'), "driver status retries must reuse their action key");
 assert.ok(driverJs.includes("const cancellationIdempotencyKey=crypto.randomUUID()"), "driver cancellation must create a stable action key");
 assert.ok(driverJs.includes('headers:{"idempotency-key":cancellationIdempotencyKey}'), "driver cancellation must send its stable action key");
-assert.ok(driverHtml.includes("driver-job-idempotency-20261125"), "driver action idempotency changes must invalidate cached portal JavaScript");
+assert.ok(driverHtml.includes("driver-offer-idempotency-20261125"), "driver action idempotency changes must invalidate cached portal JavaScript");
 const driverBrowserSmoke = readFileSync("apps/customer/tests/pages-smoke.mjs", "utf8");
 assert.ok(driverBrowserSmoke.includes("driverJobRequests") && driverBrowserSmoke.includes("retry must reuse the exact same key"), "browser smoke must prove ambiguous driver transition retries reuse the same key");
 console.log("Sjelle driver ride/delivery transition idempotency parity assertions passed.");
