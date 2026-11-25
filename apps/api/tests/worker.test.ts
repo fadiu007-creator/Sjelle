@@ -1640,8 +1640,8 @@ test("driver job status updates require an idempotency key before any job databa
   let calls = 0;
   globalThis.fetch = async input => {
     calls += 1;
-    const url = String(input);
-    if (url.endsWith("/auth/v1/user")) {
+    const url = input instanceof Request ? input.url : String(input);
+    if (new URL(url).pathname.endsWith("/auth/v1/user")) {
       return new Response(JSON.stringify({ id: "00000000-0000-4000-8000-000000000099" }), { status: 200 });
     }
     throw new Error("A missing idempotency key must stop before database access: " + url);
@@ -1649,7 +1649,7 @@ test("driver job status updates require an idempotency key before any job databa
   try {
     const result = await worker.fetch(new Request("https://api.example/api/v1/driver/jobs/ride/00000000-0000-4000-8000-000000000001/status", {
       method: "POST",
-      headers: { "idempotency-key": "test-driver-action-key-0009", authorization: "Bearer test-token", "content-type": "application/json" },
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
       body: JSON.stringify({ status: "driver_arriving" }),
     }), {
       APP_ENV: "test", ALLOWED_ORIGIN: "https://sjelle.example",

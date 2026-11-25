@@ -660,6 +660,7 @@ test("successful ride completion sends cash confirmation to the atomic database 
       p_job_id: "33333333-3333-4333-8333-333333333333",
       p_next_status: "completed",
       p_cash_collected: true,
+      p_idempotency_key: "test-driver-action-key-0007",
     });
   } finally {
     globalThis.fetch = originalFetch;
@@ -1377,6 +1378,7 @@ test("approved driver can request cancellation of an unstarted ride through the 
       p_job_id: "33333333-3333-4333-8333-333333333333",
       p_next_status: "cancelled_by_driver",
       p_cash_collected: false,
+      p_idempotency_key: "test-driver-action-key-0011",
     });
   } finally {
     globalThis.fetch = originalFetch;
