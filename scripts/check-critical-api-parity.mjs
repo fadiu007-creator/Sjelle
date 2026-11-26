@@ -346,7 +346,7 @@ for (const [file, source] of [[apiPath, api], [edgePath, edge]]) {
   assert.ok(source.includes("IDEMPOTENCY_KEY_REUSED"), file + ": mismatched offer key reuse must return a conflict");
 }
 assert.ok(driverJs.includes('headers:{"idempotency-key":offerActionIdempotencyKey}'), "driver offer actions must send a stable per-action idempotency key");
-assert.ok(driverHtml.includes("driver-offer-idempotency-20261125"), "driver offer idempotency changes must invalidate cached portal JavaScript");
+assert.ok(driverHtml.includes("driver-trip-readiness-20261126"), "driver offer idempotency changes must invalidate cached portal JavaScript");
 assert.ok(driverBrowserSmoke.includes("driverOfferRequests") && driverBrowserSmoke.includes("offer retry must reuse the exact same key"), "browser smoke must prove ambiguous offer retries reuse the exact same key");
 console.log("Sjelle driver offer acceptance/rejection idempotency API, Edge Function, portal and migration parity checks passed.");
 
