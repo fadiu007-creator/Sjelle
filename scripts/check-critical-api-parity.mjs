@@ -15,6 +15,7 @@ const customerHtml = readFileSync("apps/customer/index.html", "utf8");
 
 const expectedConflictCodes = [
   "DRIVER_NOT_APPROVED",
+  "DRIVER_VERIFICATION_REQUIRED",
   "DRIVER_HAS_ACTIVE_JOB",
   "ORDER_NOT_READY_FOR_PICKUP",
   "INVALID_JOB_TRANSITION",
@@ -382,7 +383,7 @@ assert.ok(idempotencyIndexesMigration.includes("sjelle_ride_cancellation_idempot
 console.log("Sjelle idempotency foreign-key indexes are present.");
 
 
-const tripStartReadinessMigration = readFileSync("supabase/migrations/20261126091500_sjelle_revalidate_driver_evidence_before_trip_start.sql", "utf8");
+const tripStartReadinessMigration = readFileSync("supabase/migrations/20261126082402_sjelle_revalidate_driver_evidence_before_trip_start.sql", "utf8");
 assert.ok(tripStartReadinessMigration.includes("create or replace function public.sjelle_assert_driver_job_readiness"), "trip start must use a database-owned driver evidence guard");
 assert.ok(tripStartReadinessMigration.includes("from public.sjelle_driver_profiles") && tripStartReadinessMigration.includes("for update"), "trip start evidence checks must serialize with profile and evidence review changes");
 assert.ok(tripStartReadinessMigration.includes("order by document_type, created_at desc, id desc"), "trip start must inspect the deterministic latest document for each required category");
