@@ -729,6 +729,7 @@ try {
         failNextDriverTransition = false;
         return respond(503, { error: { code: "JOB_UPDATE_FAILED" } });
       }
+      if (body.status === "in_progress") return respond(409, { error: { code: "DRIVER_VERIFICATION_REQUIRED" } });
       driverTripStatus = body.status;
       return respond(200, { data: { job_id: driverTripId, status: driverTripStatus, replayed: false } });
     }
@@ -744,8 +745,16 @@ try {
   assert.match(driverJobRequests[0].idempotencyKey || "", /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i, "driver job status must use a secure UUID idempotency key");
   assert.equal(driverJobRequests[1].idempotencyKey, driverJobRequests[0].idempotencyKey, "retry must reuse the exact same key");
   assert.deepEqual(driverJobRequests[1].body, driverJobRequests[0].body, "retry must preserve the exact action payload");
+  await driverTripPage.getByRole("button", { name: "Kam arritur" }).click();
+  await driverTripPage.getByRole("button", { name: "Nis udhëtimin" }).waitFor({ state: "visible", timeout: 15000 });
+  await driverTripPage.getByRole("button", { name: "Nis udhëtimin" }).click();
+  await driverTripPage.waitForFunction(() => document.querySelector("#driver-alert")?.textContent?.includes("Dokumentet ose automjeti nuk janë më të verifikuara"));
+  assert.equal(driverJobRequests.length, 4, "the driver must be able to reach the trip-start guard after the earlier transitions");
+  assert.equal(driverJobRequests[2].body.status, "driver_arrived");
+  assert.equal(driverJobRequests[3].body.status, "in_progress");
   await driverTripPage.close();
   console.log("PASS driver trip transition retries reuse the same idempotency key and exact payload after an ambiguous failure");
+  console.log("PASS driver trip start fails closed with a clear verification message when the database rejects stale evidence");
 
   const driverOfferPage = await browser.newPage({ viewport: { width: 1365, height: 900 } });
   driverOfferPage.on("pageerror", error => pageErrors.push(error.message));

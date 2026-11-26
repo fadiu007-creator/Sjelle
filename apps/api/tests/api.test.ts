@@ -1965,3 +1965,49 @@ test("reusing a customer cancellation key for another ride returns a conflict", 
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("trip commencement revalidates driver evidence for rides and deliveries", async () => {
+  const originalFetch = globalThis.fetch;
+  const rpcCalls: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 });
+    }
+    if (url.includes("/rpc/sjelle_driver_update_job_idempotent")) {
+      rpcCalls.push(url);
+      return new Response(JSON.stringify({ message: "DRIVER_VERIFICATION_REQUIRED" }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error("Unexpected database request: " + url);
+  }) as typeof fetch;
+  try {
+    for (const [kind, status] of [["ride", "in_progress"], ["delivery", "picked_up"]] as const) {
+      const response = await callWorker(new Request(
+        "https://sjelle.test/api/v1/driver/jobs/" + kind + "/33333333-3333-4333-8333-333333333333/status",
+        {
+          method: "POST",
+          headers: {
+            authorization: "Bearer test-token",
+            "content-type": "application/json",
+            "idempotency-key": "trip-readiness-" + kind + "-test-0001",
+          },
+          body: JSON.stringify({ status }),
+        },
+      ), {
+        SUPABASE_URL: "https://example.supabase.co",
+        SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+        SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+      });
+      const body = await response.json() as { error: { code: string } };
+      assert.equal(response.status, 409, kind + " trip commencement must return a conflict when evidence is no longer valid");
+      assert.equal(body.error.code, "DRIVER_VERIFICATION_REQUIRED");
+    }
+    assert.equal(rpcCalls.length, 2, "both ride and delivery commencement must reach the authoritative database guard");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

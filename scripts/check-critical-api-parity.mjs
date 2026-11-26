@@ -380,3 +380,21 @@ const idempotencyIndexesMigration = readFileSync("supabase/migrations/2026112509
 assert.ok(idempotencyIndexesMigration.includes("sjelle_offer_action_idempotency_offer_id_idx"), "driver offer idempotency offer foreign key must be indexed");
 assert.ok(idempotencyIndexesMigration.includes("sjelle_ride_cancellation_idempotency_ride_id_idx"), "customer ride cancellation ride foreign key must be indexed");
 console.log("Sjelle idempotency foreign-key indexes are present.");
+
+
+const tripStartReadinessMigration = readFileSync("supabase/migrations/20261126091500_sjelle_revalidate_driver_evidence_before_trip_start.sql", "utf8");
+assert.ok(tripStartReadinessMigration.includes("create or replace function public.sjelle_assert_driver_job_readiness"), "trip start must use a database-owned driver evidence guard");
+assert.ok(tripStartReadinessMigration.includes("from public.sjelle_driver_profiles") && tripStartReadinessMigration.includes("for update"), "trip start evidence checks must serialize with profile and evidence review changes");
+assert.ok(tripStartReadinessMigration.includes("order by document_type, created_at desc, id desc"), "trip start must inspect the deterministic latest document for each required category");
+assert.ok(tripStartReadinessMigration.includes("v_valid_document_count <> 4"), "trip start must require all four latest mandatory documents to be approved and unexpired");
+assert.ok(tripStartReadinessMigration.includes("v.review_status = 'approved'") && tripStartReadinessMigration.includes("v.document_expires_at >= current_date"), "trip start must require a currently approved, non-expired vehicle");
+assert.ok(tripStartReadinessMigration.includes("v.vehicle_type = p_vehicle_type"), "ride commencement must require the verified vehicle type quoted for the ride");
+assert.ok(tripStartReadinessMigration.includes("sjelle_guard_verified_driver_before_ride_start") && tripStartReadinessMigration.includes("sjelle_guard_verified_driver_before_delivery_pickup"), "both ride start and delivery pickup must be guarded at the database boundary");
+assert.ok(tripStartReadinessMigration.includes("new.status::text is distinct from 'in_progress'"), "verification must only gate commencement, not interrupt an already-started trip");
+for (const [file, source] of [[apiPath, api], [edgePath, edge]]) {
+  assert.ok(source.includes("DRIVER_VERIFICATION_REQUIRED"), file + ": trip-start verification failures must map to a client conflict");
+}
+assert.ok(driverJs.includes("Dokumentet ose automjeti nuk janë më të verifikuara"), "driver portal must explain why trip commencement was blocked");
+assert.ok(driverHtml.includes("driver-trip-readiness-20261126"), "driver portal must invalidate cached JavaScript for the verification guard");
+assert.ok(driverBrowserSmoke.includes("DRIVER_VERIFICATION_REQUIRED") && driverBrowserSmoke.includes("Dokumentet ose automjeti nuk janë më të verifikuara"), "browser smoke must exercise the driver trip-start verification rejection");
+console.log("Sjelle ride and delivery commencement evidence guards are covered by API, portal and migration parity checks.");

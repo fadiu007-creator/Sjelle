@@ -1995,7 +1995,7 @@ const worker = {
         const payload = await parseJson(result);
         if (!result.ok) {
           const code = isRecord(payload) && typeof payload.message === "string" ? payload.message : "JOB_UPDATE_FAILED";
-          const status = code === "JOB_NOT_FOUND" ? 404 : ["DRIVER_NOT_APPROVED","DRIVER_HAS_ACTIVE_JOB","ORDER_NOT_READY_FOR_PICKUP","INVALID_JOB_TRANSITION","DRIVER_CANCELLATION_NOT_ALLOWED","CASH_COLLECTION_CONFIRMATION_REQUIRED","CASH_CONFIRMATION_ONLY_ON_COMPLETION","CASH_CONFIRMATION_NOT_APPLICABLE","ONLINE_PAYMENT_NOT_CONFIGURED","INVALID_JOB_KIND","IDEMPOTENCY_KEY_REUSED"].includes(code) ? 409 : 503;
+          const status = code === "JOB_NOT_FOUND" ? 404 : ["DRIVER_NOT_APPROVED","DRIVER_VERIFICATION_REQUIRED","DRIVER_HAS_ACTIVE_JOB","ORDER_NOT_READY_FOR_PICKUP","INVALID_JOB_TRANSITION","DRIVER_CANCELLATION_NOT_ALLOWED","CASH_COLLECTION_CONFIRMATION_REQUIRED","CASH_CONFIRMATION_ONLY_ON_COMPLETION","CASH_CONFIRMATION_NOT_APPLICABLE","ONLINE_PAYMENT_NOT_CONFIGURED","INVALID_JOB_KIND","IDEMPOTENCY_KEY_REUSED"].includes(code) ? 409 : 503;
           return response({ error: { code, request_id: requestId } }, status, requestId, origin, env);
         }
         return response({ data: payload }, 200, requestId, origin, env);
