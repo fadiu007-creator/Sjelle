@@ -292,7 +292,7 @@ const cashHandoverTests = readFileSync("apps/api/tests/cash-handovers.test.ts", 
 assert.ok(cashHandoverTests.includes("cash balances require an authenticated admin") && cashHandoverTests.includes("cash handover rejects an amount above the driver's ledger balance"), "cash handover API regression tests must cover admin access and over-balance rejection");
 console.log("Sjelle cash handover API, ledger, admin UI and reconciliation parity assertions passed.");
 
-const atomicAdminReviewMigration = readFileSync("supabase/migrations/20261127090500_sjelle_atomic_admin_driver_reviews.sql", "utf8");
+const atomicAdminReviewMigration = readFileSync("supabase/migrations/20261127090735_sjelle_atomic_admin_driver_reviews.sql", "utf8");
 for (const [name, signature] of [
   ["sjelle_admin_review_driver", "uuid, uuid, text"],
   ["sjelle_admin_review_driver_document", "uuid, uuid, text, text"],
