@@ -37,9 +37,9 @@ function adminFetch(rpcName: string, rpcHandler: (body: Record<string, unknown>,
 test("admin driver review uses the atomic service-role RPC and returns the audited offline state", async () => {
   const originalFetch = globalThis.fetch;
   const requests: string[] = [];
-  let rpcBody: Record<string, unknown> | null = null;
+  const rpcBodies: Record<string, unknown>[] = [];
   globalThis.fetch = adminFetch("sjelle_admin_review_driver", body => {
-    rpcBody = body;
+    rpcBodies.push(body);
     return json({ user_id: driverId, review_status: "approved", online: false });
   }, requests);
   try {
@@ -50,9 +50,9 @@ test("admin driver review uses the atomic service-role RPC and returns the audit
     const body = await response.json() as { data?: { user_id: string; review_status: string; online: boolean } };
     assert.equal(response.status, 200);
     assert.deepEqual(body.data, { user_id: driverId, review_status: "approved", online: false });
-    assert.equal(rpcBody?.p_actor_id, adminId);
-    assert.equal(rpcBody?.p_driver_id, driverId);
-    assert.equal(rpcBody?.p_review_status, "approved");
+    assert.equal(rpcBodies[0]?.p_actor_id, adminId);
+    assert.equal(rpcBodies[0]?.p_driver_id, driverId);
+    assert.equal(rpcBodies[0]?.p_review_status, "approved");
     assert.equal(requests.some(item => item.includes("/sjelle_driver_profiles?") && item.includes("PATCH")), false);
     assert.equal(requests.some(item => item.includes("/sjelle_audit_logs")), false);
   } finally { globalThis.fetch = originalFetch; }
@@ -77,9 +77,9 @@ test("admin driver approval maps missing latest mandatory evidence to a conflict
 test("admin document review sends a bounded rejection reason to the atomic RPC", async () => {
   const originalFetch = globalThis.fetch;
   const requests: string[] = [];
-  let rpcBody: Record<string, unknown> | null = null;
+  const rpcBodies: Record<string, unknown>[] = [];
   globalThis.fetch = adminFetch("sjelle_admin_review_driver_document", body => {
-    rpcBody = body;
+    rpcBodies.push(body);
     return json({ id: documentId, document_type: "identity", review_status: "rejected" });
   }, requests);
   try {
@@ -90,10 +90,10 @@ test("admin document review sends a bounded rejection reason to the atomic RPC",
     const body = await response.json() as { data?: { id: string; document_type: string; review_status: string } };
     assert.equal(response.status, 200);
     assert.deepEqual(body.data, { id: documentId, document_type: "identity", review_status: "rejected" });
-    assert.equal(rpcBody?.p_actor_id, adminId);
-    assert.equal(rpcBody?.p_document_id, documentId);
-    assert.equal(rpcBody?.p_review_status, "rejected");
-    assert.equal(String(rpcBody?.p_rejection_reason).length, 300);
+    assert.equal(rpcBodies[0]?.p_actor_id, adminId);
+    assert.equal(rpcBodies[0]?.p_document_id, documentId);
+    assert.equal(rpcBodies[0]?.p_review_status, "rejected");
+    assert.equal(String(rpcBodies[0]?.p_rejection_reason).length, 300);
     assert.equal(requests.some(item => item.includes("/sjelle_driver_documents?") && item.includes("PATCH")), false);
   } finally { globalThis.fetch = originalFetch; }
 });
@@ -116,9 +116,9 @@ test("admin document review maps expired evidence to a conflict", async () => {
 test("admin vehicle review validates calendar expiry and uses the atomic RPC", async () => {
   const originalFetch = globalThis.fetch;
   const requests: string[] = [];
-  let rpcBody: Record<string, unknown> | null = null;
+  const rpcBodies: Record<string, unknown>[] = [];
   globalThis.fetch = adminFetch("sjelle_admin_review_vehicle", body => {
-    rpcBody = body;
+    rpcBodies.push(body);
     return json({ id: vehicleId, review_status: "approved" });
   }, requests);
   try {
@@ -136,10 +136,10 @@ test("admin vehicle review validates calendar expiry and uses the atomic RPC", a
     const body = await response.json() as { data?: { id: string; review_status: string } };
     assert.equal(response.status, 200);
     assert.deepEqual(body.data, { id: vehicleId, review_status: "approved" });
-    assert.equal(rpcBody?.p_actor_id, adminId);
-    assert.equal(rpcBody?.p_vehicle_id, vehicleId);
-    assert.equal(rpcBody?.p_review_status, "approved");
-    assert.equal(rpcBody?.p_document_expires_at, "2027-12-31");
+    assert.equal(rpcBodies[0]?.p_actor_id, adminId);
+    assert.equal(rpcBodies[0]?.p_vehicle_id, vehicleId);
+    assert.equal(rpcBodies[0]?.p_review_status, "approved");
+    assert.equal(rpcBodies[0]?.p_document_expires_at, "2027-12-31");
   } finally { globalThis.fetch = originalFetch; }
 });
 
