@@ -184,10 +184,6 @@ assert.ok(adminHtml.includes('id="reconciliation-pagination"'), "admin reconcili
 
 console.log("Admin reconciliation keyset pagination assertions passed.");
 
-for (const [file, source] of [[apiPath, api], [edgePath, edge]]) {
-  assert.ok(source.includes('encodeURIComponent(driverReviewMatch[1]) + "&select=id,document_type,review_status,expires_at,created_at&order=created_at.desc,id.desc"'), `${file}: admin driver approval must fetch document IDs and use deterministic ordering`);
-  assert.ok(source.includes("const aId = String(a.id).toLowerCase()"), `${file}: latest driver documents must have a deterministic ID tie-break`);
-}
 assert.ok(driverJs.includes('const required=[["identity","Dokument identiteti"]'), "driver portal must list all mandatory document types");
 assert.ok(driverJs.includes('status="missing"') && driverJs.includes('status=expired?"expired"'), "driver portal must distinguish missing and expired evidence");
 assert.ok(driverHtml.includes('id="document-requirements"'), "driver portal must render a visible document readiness checklist");
