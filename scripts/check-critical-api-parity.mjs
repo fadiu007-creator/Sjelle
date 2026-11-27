@@ -296,6 +296,29 @@ const cashHandoverTests = readFileSync("apps/api/tests/cash-handovers.test.ts", 
 assert.ok(cashHandoverTests.includes("cash balances require an authenticated admin") && cashHandoverTests.includes("cash handover rejects an amount above the driver's ledger balance"), "cash handover API regression tests must cover admin access and over-balance rejection");
 console.log("Sjelle cash handover API, ledger, admin UI and reconciliation parity assertions passed.");
 
+const atomicAdminReviewMigration = readFileSync("supabase/migrations/20261127090500_sjelle_atomic_admin_driver_reviews.sql", "utf8");
+for (const [name, signature] of [
+  ["sjelle_admin_review_driver", "uuid, uuid, text"],
+  ["sjelle_admin_review_driver_document", "uuid, uuid, text, text"],
+  ["sjelle_admin_review_vehicle", "uuid, uuid, text, date"],
+]) {
+  assert.ok(atomicAdminReviewMigration.includes("create or replace function public." + name), name + " must be defined in the additive Sjelle admin-review migration");
+  assert.ok(atomicAdminReviewMigration.includes("grant execute on function public." + name + "(" + signature + ") to service_role"), name + " must remain service-role-only");
+  assert.ok(atomicAdminReviewMigration.includes("revoke all on function public." + name + "(" + signature + ")"), name + " must revoke public/client execution");
+}
+assert.ok(atomicAdminReviewMigration.includes("insert into public.sjelle_audit_logs"), "admin review changes and audit records must commit in the same database transaction");
+assert.ok(atomicAdminReviewMigration.includes("for update"), "admin review must serialize against concurrent driver evidence changes");
+assert.ok(atomicAdminReviewMigration.includes("DRIVER_DOCUMENTS_NOT_APPROVED") && atomicAdminReviewMigration.includes("DRIVER_VEHICLE_NOT_APPROVED"), "driver approval must revalidate current mandatory evidence and an approved vehicle in the database");
+const reviewStart = "    const driverReviewMatch = url.pathname.match(";
+const reviewEnd = '    if (url.pathname === "/api/v1/driver/offers"';
+assert.equal(routeSection(api, reviewStart, reviewEnd, apiPath), routeSection(edge, reviewStart, reviewEnd, edgePath), "API and Edge Function admin review routes must remain identical");
+for (const [file, source] of [[apiPath, api], [edgePath, edge]]) {
+  for (const rpc of ["sjelle_admin_review_driver", "sjelle_admin_review_driver_document", "sjelle_admin_review_vehicle"]) {
+    assert.ok(source.includes("rpc/" + rpc), file + ": admin review must use the atomic audit-writing database RPC " + rpc);
+  }
+}
+console.log("Sjelle atomic administrator driver/document/vehicle review and audit parity assertions passed.");
+
 
 const jobActionMigration = readFileSync("supabase/migrations/20261125090159_sjelle_idempotent_driver_job_transitions.sql", "utf8");
 assert.ok(jobActionMigration.includes("create table if not exists public.sjelle_job_action_idempotency"), "driver transition idempotency must use a Sjelle-scoped receipt table");

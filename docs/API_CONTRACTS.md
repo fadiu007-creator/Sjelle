@@ -76,3 +76,9 @@ Base path: `/api/v1`. JSON request/response. Authenticated requests use Supabase
 Ride statuses: `searching, driver_assigned, driver_arriving, driver_arrived, in_progress, completed, cancelled_by_customer, cancelled_by_driver, cancelled_by_platform, no_driver_found`.
 Food statuses: `submitted, accepted, preparing, ready_for_pickup, courier_assigned, picked_up, delivered, rejected, cancelled, delivery_failed`.
 Payment/reconciliation status is independent from operational status. Status transitions are validated on the server and appended to event history. A repeated request with the same idempotency key and same payload returns the original result; same key with a different payload returns 409. All monetary side effects must be idempotent.
+
+
+## Atomic administrator verification
+- \`PATCH /admin/drivers/{id}/review\`, \`PATCH /admin/driver-documents/{id}/review\`, and \`PATCH /admin/vehicles/{id}/review\` use service-role-only database RPCs. Each review mutation and its audit-log record commit or roll back together.
+- Driver approval rechecks the latest identity, driving licence, vehicle registration, insurance, and at least one current approved vehicle while holding the driver profile lock. Approval always leaves the driver offline; a separate readiness-checked availability transition is required.
+- Document and vehicle reviews use the same driver-profile lock as trip-readiness checks. Expired documents and vehicle evidence cannot be approved.
