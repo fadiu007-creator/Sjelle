@@ -418,3 +418,19 @@ assert.ok(driverJs.includes("Dokumentet ose automjeti nuk janë më të verifiku
 assert.ok(driverHtml.includes("driver-trip-readiness-20261126"), "driver portal must invalidate cached JavaScript for the verification guard");
 assert.ok(driverBrowserSmoke.includes("DRIVER_VERIFICATION_REQUIRED") && driverBrowserSmoke.includes("Dokumentet ose automjeti nuk janë më të verifikuara"), "browser smoke must exercise the driver trip-start verification rejection");
 console.log("Sjelle ride and delivery commencement evidence guards are covered by API, portal and migration parity checks.");
+
+
+const readinessDispatchReconciliation = readFileSync("supabase/migrations/20261128090000_sjelle_reconcile_dispatch_after_evidence_change.sql", "utf8");
+assert.ok(readinessDispatchReconciliation.includes("create or replace function public.sjelle_reconcile_driver_dispatch_after_readiness_change"), "driver evidence changes must reconcile dispatch eligibility in the database");
+assert.ok(readinessDispatchReconciliation.includes("for update"), "dispatch readiness reconciliation must serialize against profile and evidence changes");
+assert.ok(readinessDispatchReconciliation.includes("order by document_type, created_at desc, id desc"), "dispatch reconciliation must evaluate the deterministic latest mandatory documents");
+assert.ok(readinessDispatchReconciliation.includes("v_valid_document_count = 4") && readinessDispatchReconciliation.includes("v_has_approved_vehicle"), "dispatch reconciliation must require all four current documents and an approved non-expired vehicle");
+assert.ok(readinessDispatchReconciliation.includes("set status = 'withdrawn'") && readinessDispatchReconciliation.includes("status = 'offered'"), "readiness loss must withdraw outstanding driver offers");
+assert.ok(readinessDispatchReconciliation.includes("if not v_ready and not v_has_active_job then"), "a driver must only be forced offline after readiness loss when no active ride or delivery needs tracking");
+assert.ok(readinessDispatchReconciliation.includes("status::text in ('driver_assigned', 'driver_arriving', 'driver_arrived', 'in_progress')") && readinessDispatchReconciliation.includes("status::text in ('assigned', 'arriving', 'arrived', 'in_progress')"), "active rides and deliveries must preserve driver location until their terminal transition");
+assert.ok(readinessDispatchReconciliation.includes("after insert or update or delete on public.sjelle_driver_documents") && readinessDispatchReconciliation.includes("after insert or update or delete on public.sjelle_vehicles"), "new, changed or deleted evidence must immediately reconcile driver dispatch");
+assert.ok(readinessDispatchReconciliation.includes("after update of review_status on public.sjelle_driver_profiles"), "driver approval, rejection and suspension must withdraw outstanding offers");
+assert.ok(readinessDispatchReconciliation.includes("after update of status, driver_id on public.sjelle_rides") && readinessDispatchReconciliation.includes("after update of status, driver_id on public.sjelle_delivery_jobs"), "completion, cancellation and reassignment must re-evaluate a driver's readiness");
+assert.ok(readinessDispatchReconciliation.includes("revoke all on function public.sjelle_reconcile_driver_dispatch_after_readiness_change(uuid, boolean) from public, anon, authenticated, service_role"), "readiness reconciliation must not be exposed as a callable RPC");
+assert.ok(!readinessDispatchReconciliation.includes("update public.sjelle_rides") && !readinessDispatchReconciliation.includes("update public.sjelle_delivery_jobs"), "readiness reconciliation must not rewrite or interrupt active jobs");
+console.log("Sjelle driver evidence changes withdraw stale offers and safely reconcile online state after active jobs.");
