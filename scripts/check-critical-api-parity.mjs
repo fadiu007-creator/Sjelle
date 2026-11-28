@@ -420,7 +420,7 @@ assert.ok(driverBrowserSmoke.includes("DRIVER_VERIFICATION_REQUIRED") && driverB
 console.log("Sjelle ride and delivery commencement evidence guards are covered by API, portal and migration parity checks.");
 
 
-const readinessDispatchReconciliation = readFileSync("supabase/migrations/20261128090000_sjelle_reconcile_dispatch_after_evidence_change.sql", "utf8");
+const readinessDispatchReconciliation = readFileSync("supabase/migrations/20261128085307_sjelle_reconcile_dispatch_after_evidence_change.sql", "utf8");
 assert.ok(readinessDispatchReconciliation.includes("create or replace function public.sjelle_reconcile_driver_dispatch_after_readiness_change"), "driver evidence changes must reconcile dispatch eligibility in the database");
 assert.ok(readinessDispatchReconciliation.includes("for update"), "dispatch readiness reconciliation must serialize against profile and evidence changes");
 assert.ok(readinessDispatchReconciliation.includes("order by document_type, created_at desc, id desc"), "dispatch reconciliation must evaluate the deterministic latest mandatory documents");
